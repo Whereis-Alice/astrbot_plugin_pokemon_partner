@@ -40,7 +40,7 @@
 | 图鉴查询 | 编号/中英日名称/形态名查询，含种族值、特性、弱点、进化链与世代图鉴说明 |
 | 对战工具 | 能力值计算、双向属性相性、克制推荐、双宝可梦对比、招式表、配招校验、回合制模拟、队伍分析、种族值筛选 |
 | 冠军赛数据 | 使用率排名、单只配置、道具反查、跨赛季趋势（需要自行抓取本地 SQLite） |
-| LLM 工具 | 图鉴、对战、冠军赛与伙伴系统共 32 个原子工具，供模型在群聊中组合调用 |
+| LLM 工具 | 图鉴、对战、冠军赛与伙伴系统共 33 个原子工具，供模型在群聊中组合调用 |
 | 离线可用 | 除可选的 PokéAPI 与立绘下载外不发起网络请求 |
 
 ## 快速开始
@@ -112,7 +112,7 @@ python -m pip install -r astrbot_plugin_pokemon_partner/requirements.txt
 55% / 30% / 12% / 3%。把某一档设为 0 就不再产出该档。
 
 首次获得的伙伴会写入图鉴；重复伙伴折算星尘。开启「把地区形态/超级进化等形态计入卡池」
-后，卡池从 1025 项扩展到 1320 项，每项独立收藏。
+后，卡池会从 1025 项扩到 1229 项（缺少种族值的形态行会被跳过），每项独立收藏。
 
 ### 保底
 
@@ -194,7 +194,7 @@ python -m pip install -r astrbot_plugin_pokemon_partner/requirements.txt
 | `ssr_pity_after` | `30` | 连续多少次未出 SSR 后必出；0 关闭 |
 | `new_pity_after` | `0` | 连续多少次重复后必出新；0 关闭 |
 | `allow_duplicate_draw` | `true` | 关闭后优先抽未拥有的伙伴 |
-| `include_alternate_forms` | `false` | 是否把形态计入卡池 |
+| `include_alternate_forms` | `false` | 是否把形态计入卡池（开启后 1229 项） |
 | `shiny_chance_percent` | `1.5` | 闪光概率 |
 | `duplicate_dust` | `2/6/20/80` | 重复伙伴折算星尘 |
 | `spark_costs` | `20/60/150/400` | 星尘兑换价格 |
