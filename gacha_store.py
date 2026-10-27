@@ -18,6 +18,16 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping
 
 try:
+    import fcntl
+except ImportError:  # Windows
+    fcntl = None
+
+try:
+    import msvcrt
+except ImportError:  # POSIX
+    msvcrt = None
+
+try:
     from .gacha import (
         ALL_COLLECTED_BONUS,
         ALL_COLLECTED_DUST,
@@ -71,6 +81,13 @@ def _as_int(value: Any, default: int, lo: int | None = None, hi: int | None = No
     return result
 
 
+def _as_float(value: Any, default: float = 0.0) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
 def today_key() -> str:
     """按服务器本地日期跨天重置。"""
     return datetime.now().astimezone().date().isoformat()
@@ -88,6 +105,7 @@ class GachaStore:
     ) -> None:
         self.state_dir = Path(state_dir)
         self.state_path = self.state_dir / "state.json"
+        self.lock_path = self.state_dir / "state.lock"
         self.rules = rules
         self.rng = rng or random.Random()
         self._lock = threading.RLock()
@@ -167,15 +185,86 @@ class GachaStore:
                 "伙伴数据文件已损坏，为避免覆盖原数据已停止写入。"
                 f"请备份并检查 {self.state_path} 后重启插件。"
             )
-        payload = json.dumps(self.state, ensure_ascii=False, indent=2, sort_keys=True)
-        tmp = self.state_path.with_suffix(".json.tmp")
-        tmp.write_text(payload, encoding="utf-8")
-        if self.state_path.is_file() and self._is_readable_state(self.state_path):
-            try:
-                os.replace(self.state_path, self.state_path.with_suffix(".json.bak"))
-            except OSError:
-                pass
-        os.replace(tmp, self.state_path)
+        with self._file_lock():
+            # 另一个实例（例如插件重载期间新旧并存）可能已经写入过，先合并磁盘数据。
+            self._merge_from_disk()
+            now = time.time()
+            for scope_data in self.state.get("scopes", {}).values():
+                users = (
+                    scope_data.get("users")
+                    if isinstance(scope_data, Mapping)
+                    else None
+                )
+                if not isinstance(users, Mapping):
+                    continue
+                for profile in users.values():
+                    if isinstance(profile, dict):
+                        profile["updated_at"] = now
+            payload = json.dumps(
+                self.state, ensure_ascii=False, indent=2, sort_keys=True
+            )
+            tmp = self.state_path.with_suffix(".json.tmp")
+            tmp.write_text(payload, encoding="utf-8")
+            if self.state_path.is_file() and self._is_readable_state(self.state_path):
+                try:
+                    os.replace(
+                        self.state_path, self.state_path.with_suffix(".json.bak")
+                    )
+                except OSError:
+                    pass
+            os.replace(tmp, self.state_path)
+
+    def _file_lock(self):
+        """跨进程/跨实例互斥锁。拿不到锁时退化为仅进程内锁，不影响可用性。"""
+        return _CrossProcessLock(self.lock_path)
+
+    def _merge_from_disk(self) -> None:
+        """把磁盘上更新后的用户资料合并进内存，避免覆盖别人的写入。"""
+        if not self.state_path.is_file():
+            return
+        try:
+            raw = json.loads(self.state_path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return
+        if not isinstance(raw, dict) or raw.get("version") != STATE_VERSION:
+            return
+        disk_scopes = raw.get("scopes")
+        if not isinstance(disk_scopes, Mapping):
+            return
+        local_scopes = self.state.setdefault("scopes", {})
+        if not isinstance(local_scopes, dict):
+            return
+        for scope, disk_scope in disk_scopes.items():
+            disk_users = (
+                disk_scope.get("users") if isinstance(disk_scope, Mapping) else None
+            )
+            if not isinstance(disk_users, Mapping):
+                continue
+            local_scope = local_scopes.setdefault(str(scope), {})
+            if not isinstance(local_scope, dict):
+                local_scope = {}
+                local_scopes[str(scope)] = local_scope
+            local_users = local_scope.setdefault("users", {})
+            if not isinstance(local_users, dict):
+                local_users = {}
+                local_scope["users"] = local_users
+            for user_id, disk_profile in disk_users.items():
+                if not isinstance(disk_profile, Mapping):
+                    continue
+                key = str(user_id)
+                local_profile = local_users.get(key)
+                if not isinstance(local_profile, Mapping):
+                    local_users[str(user_id)] = json.loads(
+                        json.dumps(disk_profile, ensure_ascii=False)
+                    )
+                    continue
+                # 同一用户被两个实例同时改过时，取 `updated_at` 较新的那份。
+                if _as_float(disk_profile.get("updated_at"), 0.0) > _as_float(
+                    local_profile.get("updated_at"), 0.0
+                ):
+                    local_users[key] = json.loads(
+                        json.dumps(disk_profile, ensure_ascii=False)
+                    )
 
     @staticmethod
     def _is_readable_state(path: Path) -> bool:
@@ -707,3 +796,52 @@ def _normalise(value: Any) -> str:
 
     text = str(value or "").strip().casefold()
     return re.sub(r"[\s·・\-_—–（）()【】\[\]「」『』]", "", text)
+
+
+class _CrossProcessLock:
+    """跨平台文件锁：POSIX 用 ``fcntl``，Windows 用 ``msvcrt``。
+
+    单进程内的并发已经由 ``RLock`` 保证；文件锁只用于防止多个插件实例
+    （例如热重载瞬间新旧实例并存）互相覆盖状态文件。
+    """
+
+    def __init__(self, path: Path) -> None:
+        self.path = path
+        self._handle = None
+
+    def __enter__(self) -> "_CrossProcessLock":
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self._handle = open(self.path, "a+b")
+            if fcntl is not None:
+                fcntl.flock(self._handle.fileno(), fcntl.LOCK_EX)
+            elif msvcrt is not None:
+                self._handle.seek(0)
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_LOCK, 1)
+        except OSError as exc:
+            logger.warning("伙伴数据文件锁不可用，仅使用进程内锁: %s", exc)
+            if self._handle is not None:
+                try:
+                    self._handle.close()
+                except OSError:
+                    pass
+                self._handle = None
+        return self
+
+    def __exit__(self, *_exc: object) -> None:
+        if self._handle is None:
+            return
+        try:
+            if fcntl is not None:
+                fcntl.flock(self._handle.fileno(), fcntl.LOCK_UN)
+            elif msvcrt is not None:
+                self._handle.seek(0)
+                msvcrt.locking(self._handle.fileno(), msvcrt.LK_UNLCK, 1)
+        except OSError:
+            pass
+        finally:
+            try:
+                self._handle.close()
+            except OSError:
+                pass
+            self._handle = None

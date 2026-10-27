@@ -1565,6 +1565,56 @@ def test_render_does_not_block_event_loop():
     )
 
 
+def test_multi_instance_no_data_loss():
+    section("伙伴数据 / 多实例并发写入")
+    import random
+    import tempfile
+    from pathlib import Path
+
+    from gacha import GachaRules, build_partners
+    from gacha_store import GachaStore
+
+    db = PokedexDB()
+    rules = GachaRules.from_config(
+        {"daily_draw_limit": 10, "draw_cooldown_seconds": 0, "shiny_chance_percent": 0}
+    )
+    partners = build_partners(db, rules)
+
+    with tempfile.TemporaryDirectory() as td:
+        folder = Path(td)
+        # 模拟插件热重载：两个实例同时存活，各自持有启动时的快照。
+        first = GachaStore(folder, partners, rules, rng=random.Random(1))
+        second = GachaStore(folder, partners, rules, rng=random.Random(2))
+        first.draw("g", "ua", "a", today="2026-10-27")
+        second.draw("g", "ub", "b", today="2026-10-27")
+        first.draw("g", "ua2", "a2", today="2026-10-27")
+
+        reloaded = GachaStore(folder, partners, rules, rng=random.Random(3))
+        users = sorted(reloaded.state["scopes"]["g"]["users"])
+        check(
+            "两个实例的写入都不丢失",
+            users == ["ua", "ua2", "ub"],
+            str(users),
+        )
+
+    with tempfile.TemporaryDirectory() as td:
+        folder = Path(td)
+        first = GachaStore(folder, partners, rules, rng=random.Random(4))
+        second = GachaStore(folder, partners, rules, rng=random.Random(5))
+        first.draw("g", "same", "n", today="2026-10-27")
+        before = GachaStore(folder, partners, rules, rng=random.Random(6))
+        baseline = before.get_profile("g", "same", today="2026-10-27").used_today
+        # second 持有旧快照（updated_at 更早），写入不应把计数改小。
+        second.draw("g", "same", "n", today="2026-10-27")
+        third = GachaStore(folder, partners, rules, rng=random.Random(6))
+        used = third.get_profile("g", "same", today="2026-10-27").used_today
+        check(
+            "同一用户并发写入时计数不倒退",
+            used >= baseline,
+            f"before={baseline}, after={used}",
+        )
+
+
 def test_champions_db():
     """冠军赛查询层：临时库写入 -> 排名/配置/反查/趋势/幂等。"""
     import sqlite3
@@ -1730,5 +1780,6 @@ if __name__ == "__main__":
     test_exchange_arg_parsing()
     test_store_recovery()
     test_render_does_not_block_event_loop()
+    test_multi_instance_no_data_loss()
     print(f"\n结果：{PASS} 通过 / {FAIL} 失败")
     sys.exit(1 if FAIL else 0)
