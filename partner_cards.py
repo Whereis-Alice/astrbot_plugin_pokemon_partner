@@ -106,6 +106,26 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font, width: int) -> list[str]:
     return lines or [""]
 
 
+def _limited_wrapped_lines(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    font,
+    width: int,
+    max_lines: int,
+) -> list[str]:
+    """按宽度换行并限制行数；超长时只在最后一行加省略号。"""
+    lines = _wrap(draw, text, font, width)
+    lines = [
+        line if index == 0 else line.lstrip("，。；：、！？")
+        for index, line in enumerate(lines)
+    ]
+    if len(lines) <= max_lines:
+        return lines
+    lines = lines[:max_lines]
+    lines[-1] = _ellipsize(draw, lines[-1] + "…", font, width)
+    return lines
+
+
 def _ellipsize(draw: ImageDraw.ImageDraw, text: str, font, width: int) -> str:
     """把超宽文本截断成一行并以省略号收尾，避免压到右侧徽章。"""
     if draw.textlength(text, font=font) <= width:
@@ -118,6 +138,32 @@ def _ellipsize(draw: ImageDraw.ImageDraw, text: str, font, width: int) -> str:
             break
         out += ch
     return (out or text[:1]) + ellipsis
+
+
+def _fit_text_font(
+    draw: ImageDraw.ImageDraw,
+    text: str,
+    width: int,
+    max_size: int,
+    min_size: int,
+):
+    """在可读范围内选择最大字号，尽量完整显示长名称。"""
+    for size in range(max_size, min_size - 1, -2):
+        font = _font(size)
+        if draw.textlength(text, font=font) <= width:
+            return font
+    return _font(min_size)
+
+
+def _gender_text(value: str) -> str:
+    compact = str(value or "").replace(" ", "")
+    if compact == "♂0%♀0%":
+        return "无性别"
+    if compact == "♂0%♀100%":
+        return "仅雌性"
+    if compact == "♂100%♀0%":
+        return "仅雄性"
+    return str(value or "")
 
 
 def _gradient(size: tuple[int, int]) -> Image.Image:
@@ -591,7 +637,7 @@ def _draw_hero_result(
         _pill(draw, (badge_end + (76 if item.is_new else 0), badge_y), "闪光", GOLD)
 
     # 名字
-    name_font = _font(58)
+    name_font = _fit_text_font(draw, item.name, width, 58, 34)
     name = _ellipsize(draw, item.name, name_font, width)
     draw.text((x, badge_y + 62), name, font=name_font, fill=GOLD if item.shiny else TEXT)
 
@@ -615,72 +661,69 @@ def _draw_hero_result(
             fill=SUBTEXT,
         )
 
-    # 基础信息：分类 / 身高体重 / 特性
+    # 立绘下方严格分成左右两栏：左侧基础资料与完整进化链，右侧图鉴摘要。
     info_top = top + art_size + 18
-    info = _info_lines(item)
-    line_font = _font(23)
-    for index, line in enumerate(info):
-        draw.text(
-            (PAD + 40, info_top + index * 40),
-            _ellipsize(draw, line, line_font, W - PAD * 2 - 80),
-            font=line_font,
-            fill=SUBTEXT,
-        )
+    left_x = PAD + 40
+    left_width = x - left_x - 28
+    line_font = _font(19)
+    line_h = 24
+    cursor = info_top
+    max_bottom = height - 132
 
-    # 弱点 / 抗性（最多两行）
-    matchups = _matchup_lines(item, line_font)
-    for index, line in enumerate(matchups):
-        draw.text(
-            (PAD + 40, info_top + len(info) * 40 + 8 + index * 40),
-            _ellipsize(draw, line, line_font, W - PAD * 2 - 80),
-            font=line_font,
-            fill=SUBTEXT,
-        )
-
-    extra_lines = []
-    egg_groups = str(item.row.get("egg_groups") or "").strip()
-    gender_ratio = str(item.row.get("gender_ratio") or "").strip()
-    if egg_groups or gender_ratio:
-        extra_lines.append(
-            " · ".join(
-                part
-                for part in (
-                    f"蛋群：{egg_groups}" if egg_groups else "",
-                    f"性别：{gender_ratio}" if gender_ratio else "",
-                )
-                if part
+    def draw_block(lines: Sequence[str], max_lines: int, gap: int = 0) -> None:
+        nonlocal cursor
+        for line in lines:
+            wrapped = _limited_wrapped_lines(
+                draw, line, line_font, left_width, max_lines
             )
+            for rendered in wrapped:
+                if cursor + line_h > max_bottom:
+                    return
+                draw.text(
+                    (left_x, cursor),
+                    rendered,
+                    font=line_font,
+                    fill=SUBTEXT,
+                )
+                cursor += line_h
+        cursor += gap
+
+    info = _info_lines(item)
+    for index, line in enumerate(info):
+        draw_block([line], 2 if index == 1 else 1)
+
+    cursor += 4
+    draw_block(_matchup_lines(item, line_font), 2)
+    cursor += 4
+
+    egg_groups = str(item.row.get("egg_groups") or "").strip()
+    gender_ratio = _gender_text(str(item.row.get("gender_ratio") or "").strip())
+    detail = " · ".join(
+        part
+        for part in (
+            f"蛋群：{egg_groups}" if egg_groups else "",
+            f"性别：{gender_ratio}" if gender_ratio else "",
         )
+        if part
+    )
+    if detail:
+        draw_block([detail], 2, gap=4)
+
     evolution = str(item.row.get("evolution") or "").strip()
     if evolution:
-        extra_lines.append(f"进化：{evolution}")
-    extra_top = info_top + (len(info) + len(matchups)) * 40 + 16
-    for index, line in enumerate(extra_lines[:2]):
-        draw.text(
-            (PAD + 40, extra_top + index * 40),
-            _ellipsize(draw, line, line_font, W - PAD * 2 - 80),
-            font=line_font,
-            fill=SUBTEXT,
-        )
+        draw_block([f"进化：{evolution}"], 6)
 
-    # 右侧摘要利用立绘与种族值下方的空间，让单抽既有视觉主体也有可读资料。
+    # 右侧摘要使用完整半栏宽度，并显著增加可读行数。
     profile = str(item.row.get("profile") or "").strip()
     if profile:
-        profile_font = _font(21)
-        profile_lines = _wrap(draw, profile, profile_font, width)
-        profile_lines = [
-            line if index == 0 else line.lstrip("，。；：、！？")
-            for index, line in enumerate(profile_lines)
-        ]
-        if len(profile_lines) > 5:
-            profile_lines = profile_lines[:5]
-            profile_lines[-1] = _ellipsize(
-                draw, profile_lines[-1] + "…", profile_font, width
-            )
-        draw.text((x, top + 510), "图鉴摘要", font=_font(23), fill=SUBTEXT)
+        profile_font = _font(20)
+        profile_lines = _limited_wrapped_lines(
+            draw, profile, profile_font, width, 11
+        )
+        draw.text((x, top + 508), "图鉴摘要", font=_font(23), fill=SUBTEXT)
         for index, line in enumerate(profile_lines):
             draw.text(
-                (x, top + 548 + index * 31),
+                (x, top + 544 + index * 28),
                 line,
                 font=profile_font,
                 fill=SUBTEXT,
@@ -739,7 +782,13 @@ def _draw_result_grid(
             _placeholder_art(draw, (art_x, art_y, art_size, 0), item.rarity)
 
         name_y = art_y + art_size + 12
-        name_font = _font(25 if columns == 3 else 30)
+        name_font = _fit_text_font(
+            draw,
+            item.name,
+            card_w - 28,
+            25 if columns == 3 else 30,
+            19 if columns == 3 else 22,
+        )
         name = _ellipsize(draw, item.name, name_font, card_w - 28)
         tw = draw.textlength(name, font=name_font)
         draw.text(

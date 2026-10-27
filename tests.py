@@ -1215,6 +1215,7 @@ def test_partner_cards():
     from gacha import GachaRules, build_partners
     from gacha_store import GachaStore
     from partner_cards import (
+        _gender_text,
         render_collection_card,
         render_draw_card,
         render_profile_card,
@@ -1222,6 +1223,12 @@ def test_partner_cards():
     )
 
     db = PokedexDB()
+    check(
+        "无性别与单性别文案",
+        _gender_text("♂0% ♀0%") == "无性别"
+        and _gender_text("♂0% ♀100%") == "仅雌性"
+        and _gender_text("♂100% ♀0%") == "仅雄性",
+    )
     rules = GachaRules.from_config(
         {"draw_cooldown_seconds": 0, "shiny_chance_percent": 10}
     )
@@ -1859,6 +1866,68 @@ def test_webui_theme_namespace():
     )
 
 
+def test_scope_identity():
+    section("会话隔离 / 平台群标识兼容")
+    from types import SimpleNamespace
+
+    import main
+
+    class Event:
+        def __init__(
+            self,
+            *,
+            user: str = "u1",
+            session: str = "",
+            group: str = "",
+            private: bool = False,
+            raw=None,
+        ):
+            self.message_obj = SimpleNamespace(raw_message=raw or {})
+            self.unified_msg_origin = f"platform:session:{session or group}"
+            self._user = user
+            self._session = session
+            self._group = group
+            self._private = private
+
+        def get_sender_id(self):
+            return self._user
+
+        def get_session_id(self):
+            return self._session
+
+        def get_group_id(self):
+            return self._group
+
+        def get_sender_name(self):
+            return "测试用户"
+
+        def is_private_chat(self):
+            return self._private
+
+    scope = main.PokemonPartnerPlugin._scope
+    first = scope(Event(session="group-a"))[0]
+    second = scope(Event(session="group-b"))[0]
+    check(
+        "群 ID 缺失时使用会话 ID 隔离",
+        first == "group:group-a" and second == "group:group-b" and first != second,
+        f"{first} / {second}",
+    )
+
+    raw_first = scope(Event(session="shared", raw={"group_openid": "openid-a"}))[0]
+    raw_second = scope(Event(session="shared", raw={"group_openid": "openid-b"}))[0]
+    check(
+        "原始事件群标识优先于重复会话 ID",
+        raw_first != raw_second
+        and raw_first == "group:openid-a"
+        and raw_second == "group:openid-b",
+        f"{raw_first} / {raw_second}",
+    )
+    check(
+        "私聊仍按用户隔离",
+        scope(Event(session="private-a", private=True))[0] == "private:u1",
+    )
+
+
 def test_session_isolation_and_my_pokemon():
     section("会话隔离 / 我的宝可梦")
     import random
@@ -2066,6 +2135,7 @@ if __name__ == "__main__":
     test_webui_settings_rollback_and_artwork()
     test_webui_bridge_protocol()
     test_webui_theme_namespace()
+    test_scope_identity()
     test_session_isolation_and_my_pokemon()
     print(f"\n结果：{PASS} 通过 / {FAIL} 失败")
     sys.exit(1 if FAIL else 0)

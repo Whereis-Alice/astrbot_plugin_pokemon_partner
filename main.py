@@ -191,7 +191,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.1.2",
+    "v1.1.3",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -279,14 +279,37 @@ class PokemonPartnerPlugin(Star):
     def _scope(event: AstrMessageEvent) -> tuple[str, str, str]:
         """返回 ``(scope, user_id, nickname)``。
 
-        群聊按群隔离，私聊按用户隔离。少数平台拿不到 sender_id 时回退到会话 ID，
-        避免所有私聊用户被塞进同一个 ``private:unknown`` 而串档。
+        群聊按平台会话 ID 隔离，私聊按用户隔离。部分适配器不会填充
+        ``message_obj.group_id``；此时必须回退到会话 ID，不能误判成私聊。
         """
-        user_id = event.get_sender_id() or ""
-        group_id = event.get_group_id()
+        user_id = str(event.get_sender_id() or "")
+        session_id = str(event.get_session_id() or "")
+        group_id = str(event.get_group_id() or "")
         if not user_id:
-            user_id = str(getattr(event, "session_id", "") or "unknown")
-        scope = f"group:{group_id}" if group_id else f"private:{user_id}"
+            user_id = session_id or "unknown"
+
+        is_private = bool(event.is_private_chat())
+        if is_private:
+            scope = f"private:{user_id}"
+        else:
+            group_key = group_id
+            if not group_key:
+                raw = getattr(getattr(event, "message_obj", None), "raw_message", None)
+                for key in ("group_id", "group_openid", "channel_id", "chat_id", "room_id"):
+                    value = (
+                        raw.get(key)
+                        if isinstance(raw, dict)
+                        else getattr(raw, key, None)
+                    )
+                    if value:
+                        group_key = str(value)
+                        break
+            if not group_key:
+                group_key = session_id
+            if not group_key:
+                group_key = str(getattr(event, "unified_msg_origin", "") or "unknown")
+            scope = f"group:{group_key}"
+
         nickname = event.get_sender_name() or ""
         return scope, user_id, nickname
 
