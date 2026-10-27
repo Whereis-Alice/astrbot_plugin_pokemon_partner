@@ -1,4 +1,4 @@
-"""伙伴抽取的规则与数据模型（不依赖 AstrBot，可独立单测）。
+"""宝可梦抽取的规则与数据模型（不依赖 AstrBot，可独立单测）。
 
 职责边界：
 
@@ -39,7 +39,7 @@ DEFAULT_RARE_MIN_BST = 400
 DEFAULT_SUPER_RARE_MIN_BST = 480
 DEFAULT_ULTRA_RARE_MIN_BST = 580
 
-# 收集里程碑：(伙伴数, 奖励星尘, 当日额外次数)
+# 收集里程碑：(宝可梦数, 奖励星尘, 当日额外次数)
 MILESTONE_REWARDS: dict[int, tuple[int, int]] = {
     10: (30, 0),
     30: (80, 0),

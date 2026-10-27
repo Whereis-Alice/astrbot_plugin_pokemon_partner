@@ -1,12 +1,12 @@
 {
   "gacha_enabled": {
-    "description": "启用伙伴召唤",
+    "description": "启用宝可梦抽取",
     "type": "bool",
     "default": true,
     "hint": "关闭后不加载抽卡系统，图鉴、对战和冠军赛功能不受影响。"
   },
   "draws_per_command": {
-    "description": "每次召唤的伙伴数量",
+    "description": "每次召唤的宝可梦数量",
     "type": "int",
     "default": 1,
     "slider": {"min": 1, "max": 10, "step": 1},
@@ -78,17 +78,17 @@
     "hint": "连续这么多次没出 SSR 时，下一次必出 SSR。0 表示关闭。计数按用户分别保存。"
   },
   "new_pity_after": {
-    "description": "新伙伴保底次数",
+    "description": "新宝可梦保底次数",
     "type": "int",
     "default": 0,
     "slider": {"min": 0, "max": 200, "step": 1},
     "hint": "连续这么多次重复后，下一次强制未拥有。0 表示关闭。默认关闭，避免图鉴过快集齐。"
   },
   "allow_duplicate_draw": {
-    "description": "允许抽到已拥有的伙伴",
+    "description": "允许抽到已拥有的宝可梦",
     "type": "bool",
     "default": true,
-    "hint": "关闭后优先从尚未拥有的伙伴中抽取；全部拥有后仍可能重复并折算星尘。"
+    "hint": "关闭后优先从尚未拥有的宝可梦中抽取；全部拥有后仍可能重复并折算星尘。"
   },
   "include_alternate_forms": {
     "description": "把地区形态/超级进化等形态计入卡池",
@@ -104,9 +104,9 @@
     "hint": "每次抽取独立判定。闪光与普通分开收藏，重复闪光折算更多星尘。"
   },
   "duplicate_dust": {
-    "description": "重复伙伴折算星尘",
+    "description": "重复宝可梦折算星尘",
     "type": "object",
-    "hint": "抽到已拥有的同稀有度伙伴时获得。若重复的是闪光形态，还会乘以「闪光星尘倍率」。",
+    "hint": "抽到已拥有的同稀有度宝可梦时获得。若重复的是闪光形态，还会乘以「闪光星尘倍率」。",
     "items": {
       "C": {"description": "普通重复", "type": "int", "default": 2},
       "R": {"description": "稀有重复", "type": "int", "default": 6},
@@ -117,7 +117,7 @@
   "spark_costs": {
     "description": "星尘兑换价格",
     "type": "object",
-    "hint": "用星尘定向兑换未拥有伙伴的价格。闪光兑换会乘以「闪光兑换倍率」。",
+    "hint": "用星尘定向兑换未拥有宝可梦的价格。闪光兑换会乘以「闪光兑换倍率」。",
     "items": {
       "C": {"description": "普通", "type": "int", "default": 20},
       "R": {"description": "稀有", "type": "int", "default": 60},

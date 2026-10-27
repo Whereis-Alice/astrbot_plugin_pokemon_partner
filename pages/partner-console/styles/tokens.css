@@ -1,0 +1,83 @@
+/* 设计令牌：颜色、间距、阴影。跟随 AstrBot Dashboard 的明暗外观。 */
+:root {
+  color-scheme: light dark;
+
+  --font-sans: "Inter", "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system,
+    "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
+  --radius-sm: 6px;
+  --radius-md: 8px;
+  --radius-lg: 8px;
+  --radius-pill: 999px;
+
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 24px;
+  --space-6: 32px;
+
+  --dur-fast: 120ms;
+  --dur-mid: 220ms;
+
+  --rarity-c: #64748b;
+  --rarity-r: #3b82f6;
+  --rarity-sr: #a855f7;
+  --rarity-ssr: #f59e0b;
+  --positive: #10b981;
+  --negative: #ef4444;
+  --accent: #6366f1;
+  --accent-soft: rgba(99, 102, 241, 0.12);
+}
+
+/* 浅色 */
+:root,
+[data-partner-theme="light"] {
+  --bg: #f6f7fb;
+  --bg-panel: #ffffff;
+  --bg-sunken: #eef1f7;
+  --bg-hover: #f1f4fa;
+  --border: #e3e8f0;
+  --border-strong: #cfd7e5;
+  --text: #0f172a;
+  --text-muted: #5b6577;
+  --text-faint: #8a94a6;
+  --shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
+  --type-chip-text: #ffffff;
+}
+
+/* 深色 */
+[data-partner-theme="dark"] {
+  --bg: #0b1120;
+  --bg-panel: #131c2f;
+  --bg-sunken: #0f1728;
+  --bg-hover: #1a2540;
+  --border: #24314c;
+  --border-strong: #33415f;
+  --text: #e8eefb;
+  --text-muted: #9aa7bf;
+  --text-faint: #6b7a94;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+  --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.45);
+  --accent-soft: rgba(129, 140, 248, 0.16);
+}
+
+/* 跟随系统：用媒体查询实现，JS 只负责写 data-partner-theme="auto" */
+@media (prefers-color-scheme: dark) {
+  [data-partner-theme="auto"] {
+    --bg: #0b1120;
+    --bg-panel: #131c2f;
+    --bg-sunken: #0f1728;
+    --bg-hover: #1a2540;
+    --border: #24314c;
+    --border-strong: #33415f;
+    --text: #e8eefb;
+    --text-muted: #9aa7bf;
+    --text-faint: #6b7a94;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 8px 28px rgba(0, 0, 0, 0.45);
+    --accent-soft: rgba(129, 140, 248, 0.16);
+  }
+}

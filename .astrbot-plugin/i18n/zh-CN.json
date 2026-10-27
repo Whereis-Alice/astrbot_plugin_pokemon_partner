@@ -1,0 +1,11 @@
+{
+  "metadata": {
+    "display_name": "宝可梦图鉴"
+  },
+  "pages": {
+    "partner-console": {
+      "title": "宝可梦图鉴管理台",
+      "desc": "查看宝可梦图鉴、管理群友已获得的宝可梦、调整抽取规则与概率。"
+    }
+  }
+}

@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-partner-theme="auto">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>宝可梦图鉴 · 管理台</title>
+    <link rel="stylesheet" href="./styles/tokens.css" />
+    <link rel="stylesheet" href="./styles/base.css" />
+    <link rel="stylesheet" href="./styles/views.css" />
+  </head>
+  <body>
+    <div class="shell" id="shell" aria-busy="true">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 48 48" focusable="false">
+              <defs>
+                <linearGradient id="ballTop" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#ff7a8a" />
+                  <stop offset="1" stop-color="#e11d48" />
+                </linearGradient>
+                <linearGradient id="ballBottom" x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0" stop-color="#f8fafc" />
+                  <stop offset="1" stop-color="#cbd5e1" />
+                </linearGradient>
+              </defs>
+              <circle cx="24" cy="24" r="19" fill="url(#ballBottom)" />
+              <path d="M5 24a19 19 0 0 1 38 0z" fill="url(#ballTop)" />
+              <path d="M5 24h38" stroke="#0f172a" stroke-width="3.4" />
+              <circle cx="24" cy="24" r="6.4" fill="#0f172a" />
+              <circle cx="24" cy="24" r="4.4" fill="#f8fafc" />
+              <circle cx="24" cy="24" r="2.4" fill="#38bdf8" />
+              <circle cx="24" cy="24" r="19" fill="none" stroke="#0f172a" stroke-width="2.2" />
+            </svg>
+          </span>
+          <span class="brand-copy">
+            <strong>宝可梦图鉴</strong>
+            <small>Pokémon Console</small>
+          </span>
+        </div>
+
+        <nav class="nav" id="nav" aria-label="管理台导航">
+          <button class="nav-item" type="button" data-view="overview">
+            <i data-icon="gauge"></i><span>概览</span>
+          </button>
+          <button class="nav-item" type="button" data-view="dex">
+            <i data-icon="book"></i><span>宝可梦图鉴</span>
+          </button>
+          <button class="nav-item" type="button" data-view="members">
+            <i data-icon="users"></i><span>宝可梦管理</span>
+          </button>
+          <button class="nav-item" type="button" data-view="rules">
+            <i data-icon="sliders"></i><span>概率与规则</span>
+          </button>
+          <button class="nav-item" type="button" data-view="settings">
+            <i data-icon="wrench"></i><span>设置</span>
+          </button>
+        </nav>
+
+        <div class="topbar-actions">
+          <div class="segmented" id="themeSwitch" role="group" aria-label="界面主题">
+            <button type="button" data-theme="auto" aria-pressed="true">跟随</button>
+            <button type="button" data-theme="light" aria-pressed="false">浅色</button>
+            <button type="button" data-theme="dark" aria-pressed="false">深色</button>
+          </div>
+          <button class="icon-button" id="refreshButton" type="button" title="刷新当前页" aria-label="刷新当前页">
+            <i data-icon="refresh"></i>
+          </button>
+        </div>
+      </header>
+
+      <main class="workspace">
+        <!-- ============================ 概览 ============================ -->
+        <section class="view" data-panel="overview" hidden>
+          <div class="view-head">
+            <div>
+              <h1>数据概览</h1>
+              <p class="muted">卡池构成、玩家活跃与数据健康状态。</p>
+            </div>
+          </div>
+
+          <div class="stat-grid" id="overviewStats"></div>
+
+          <div class="split">
+            <section class="card">
+              <header class="card-head">
+                <h2>卡池构成</h2>
+                <span class="muted">按种族值阈值划分</span>
+              </header>
+              <div class="rarity-bars" id="poolBars"></div>
+            </section>
+            <section class="card">
+              <header class="card-head">
+                <h2>运行状态</h2>
+              </header>
+              <dl class="kv" id="healthList"></dl>
+            </section>
+          </div>
+        </section>
+
+        <!-- ============================ 图鉴 ============================ -->
+        <section class="view" data-panel="dex" hidden>
+          <div class="view-head">
+            <div>
+              <h1>宝可梦图鉴</h1>
+              <p class="muted">本地中文数据，1025 只默认形态与 295 个地区/特殊形态。</p>
+            </div>
+          </div>
+
+          <div class="filters">
+            <label class="field grow">
+              <span>搜索</span>
+              <input id="dexSearch" type="search" placeholder="名称、英文名、编号" autocomplete="off" />
+            </label>
+            <label class="field">
+              <span>属性</span>
+              <select id="dexType"><option value="">全部</option></select>
+            </label>
+            <label class="field">
+              <span>世代</span>
+              <select id="dexGen"><option value="">全部</option></select>
+            </label>
+            <label class="field">
+              <span>稀有度</span>
+              <select id="dexRarity">
+                <option value="">全部</option>
+                <option value="SSR">SSR 传说</option>
+                <option value="SR">SR 史诗</option>
+                <option value="R">R 稀有</option>
+                <option value="C">C 普通</option>
+              </select>
+            </label>
+            <label class="field checkbox">
+              <input id="dexForms" type="checkbox" />
+              <span>含形态</span>
+            </label>
+          </div>
+
+          <div class="dex-layout">
+            <div class="dex-main">
+              <div class="list-meta" id="dexMeta"></div>
+              <div class="dex-grid" id="dexGrid"></div>
+              <div class="pager" id="dexPager"></div>
+            </div>
+          </div>
+          <div class="drawer-backdrop" id="dexDrawerBackdrop" hidden></div>
+          <aside
+            class="dex-drawer"
+            id="dexDetail"
+            role="dialog"
+            aria-modal="true"
+            aria-label="宝可梦图鉴详情"
+            tabindex="-1"
+            hidden
+          ></aside>
+        </section>
+
+        <!-- ============================ 宝可梦管理 ============================ -->
+        <section class="view" data-panel="members" hidden>
+          <div class="view-head">
+            <div>
+              <h1>宝可梦管理</h1>
+              <p class="muted">按会话查看成员，调整星尘、次数与保底。写操作与群聊共用同一份数据。</p>
+            </div>
+          </div>
+
+          <div class="filters">
+            <label class="field grow">
+              <span>会话</span>
+              <select id="memberScope"><option value="">全部会话</option></select>
+            </label>
+            <label class="field grow">
+              <span>搜索成员</span>
+              <input id="memberSearch" type="search" placeholder="昵称或用户 ID" autocomplete="off" />
+            </label>
+            <button class="button ghost" id="resetScopeButton" type="button">重置该会话今日次数</button>
+          </div>
+
+          <div class="list-meta" id="memberMeta"></div>
+          <div class="table-wrap">
+            <table class="data-table" id="memberTable">
+              <thead>
+                <tr>
+                  <th>成员</th>
+                  <th>会话</th>
+                  <th class="num">收集</th>
+                  <th class="num">闪光</th>
+                  <th class="num">星尘</th>
+                  <th class="num">今日</th>
+                  <th class="num">SSR 保底</th>
+                  <th>操作</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="pager" id="memberPager"></div>
+        </section>
+
+        <!-- ============================ 规则 ============================ -->
+        <section class="view" data-panel="rules" hidden>
+          <div class="view-head">
+            <div>
+              <h1>概率与规则</h1>
+              <p class="muted">「配置值」是你在设置中填的；「实际生效」已剔除空卡池档位。</p>
+            </div>
+          </div>
+          <div class="split">
+            <section class="card">
+              <header class="card-head"><h2>稀有度概率</h2></header>
+              <div class="rarity-bars" id="ruleBars"></div>
+            </section>
+            <section class="card">
+              <header class="card-head"><h2>阈值与上限</h2></header>
+              <dl class="kv" id="ruleLimits"></dl>
+            </section>
+          </div>
+          <section class="card">
+            <header class="card-head"><h2>星尘经济</h2></header>
+            <div class="table-wrap">
+              <table class="data-table compact" id="ruleEconomy">
+                <thead>
+                  <tr><th>稀有度</th><th class="num">重复折算</th><th class="num">兑换价格</th></tr>
+                </thead>
+                <tbody></tbody>
+              </table>
+            </div>
+          </section>
+        </section>
+
+        <!-- ============================ 设置 ============================ -->
+        <section class="view" data-panel="settings" hidden>
+          <div class="view-head">
+            <div>
+              <h1>设置</h1>
+              <p class="muted">保存前会在服务端校验；非法配置会被拒绝，不会写坏插件。</p>
+            </div>
+          </div>
+          <form class="card form" id="settingsForm">
+            <div class="form-grid" id="settingsGrid"></div>
+            <footer class="form-actions">
+              <button class="button primary" type="submit">保存并重载抽卡</button>
+              <button class="button ghost" type="button" id="settingsReload">放弃修改</button>
+              <span class="form-status" id="settingsStatus" role="status"></span>
+            </footer>
+          </form>
+        </section>
+      </main>
+
+      <div class="toast-stack" id="toasts" aria-live="polite"></div>
+    </div>
+    <script type="module" src="./app.js"></script>
+  </body>
+</html>

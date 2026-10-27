@@ -170,6 +170,14 @@ def test_main_imports():
     class _Dummy:
         pass
 
+    class _MessageChain:
+        def __init__(self):
+            self.chain = []
+
+        def message(self, text):
+            self.chain.append(text)
+            return self
+
     def _command(name=None, alias=None, **kw):
         def deco(fn):
             registered["commands"].append(name or fn.__name__)
@@ -203,6 +211,7 @@ def test_main_imports():
             PermissionType=types.SimpleNamespace(ADMIN="admin"),
         ),
         AstrMessageEvent=_Dummy,
+        MessageChain=_MessageChain,
     )
     _mod(
         "astrbot.api.star",
@@ -227,20 +236,26 @@ def test_main_imports():
             },
         ),
     )
+    _mod(
+        "astrbot.api.web",
+        jsonify=lambda payload: payload,
+        request=types.SimpleNamespace(args={}, get_json=lambda **kw: None),
+    )
 
     import main  # 导入即触发指令/工具装饰器注册（下方有引用，勿删）
 
     expected_cmds = {
-        "伙伴帮助",
+        "图鉴帮助",
         "今日宝可梦",
-        "伙伴概率",
-        "伙伴图鉴",
-        "伙伴资料",
-        "伙伴兑换",
-        "伙伴排行",
-        "伙伴重置",
-        "伙伴加次数",
-        "伙伴重置群",
+        "抽取概率",
+        "我的宝可梦",
+        "收集资料",
+        "兑换宝可梦",
+        "收集排行",
+        "重置今日宝可梦",
+        "增加宝可梦次数",
+        "重置本群宝可梦",
+        "下载立绘",
         "宝可梦",
         "特性",
         "招式",
@@ -259,7 +274,7 @@ def test_main_imports():
         expected_cmds <= set(registered["commands"]),
         str(expected_cmds - set(registered["commands"])),
     )
-    legacy_aliases = {"宝可梦图鉴", "宝可梦帮助", "pm", "pokedex"}
+    legacy_aliases = {"宝可梦图鉴", "图鉴帮助", "pm", "pokedex"}
     check(
         "不带旧插件别名",
         not (legacy_aliases & set(registered["aliases"])),
@@ -267,8 +282,19 @@ def test_main_imports():
     )
     check(
         "今日宝可梦保留旧抽卡别名",
-        {"伙伴召唤", "召唤伙伴", "抽伙伴"} <= set(registered["aliases"]),
+        {"抽取宝可梦", "抽宝可梦"} <= set(registered["aliases"]),
         str(registered["aliases"]),
+    )
+    command_surface = set(registered["commands"]) | set(registered["aliases"])
+    collisions = sorted(
+        name
+        for name in command_surface
+        if name != "宝可梦" and name.startswith("宝可梦")
+    )
+    check(
+        "除图鉴主指令外没有宝可梦前缀冲突",
+        not collisions,
+        str(collisions),
     )
 
     expected_tools = {
@@ -374,7 +400,7 @@ def test_main_imports():
             str(out)[:120],
         )
         out = await _run(plugin.cmd_pokemon(_Ev2(), ""), _Ev2())
-        check("宝可梦 无参 → 帮助", any("宝可梦伙伴图鉴" in r for r in out))
+        check("宝可梦 无参 → 帮助", any("宝可梦图鉴" in r for r in out))
         out = await plugin.tool_search_pokemon(_Ev2(), "丰缘")
         check("search_pokemon 工具含地区图鉴", "图鉴" in out, out[:120])
         out = await plugin.tool_query_item(_Ev2(), "讲究围巾")
@@ -866,9 +892,9 @@ def test_champ_arg_parser():
     check("N赛季 + 状态视图", a["season"] == "M-7" and a["view"] == "status")
 
 
-# ---------------- 伙伴抽卡 ----------------
+# ---------------- 宝可梦抽卡 ----------------
 def test_gacha_rules():
-    section("伙伴抽卡 / 配置与稀有度")
+    section("宝可梦抽卡 / 配置与稀有度")
     from gacha import (
         DEFAULT_DUPLICATE_DUST,
         DEFAULT_SPARK_COSTS,
@@ -963,7 +989,7 @@ def test_gacha_rules():
 
 
 def test_gacha_store():
-    section("伙伴抽卡 / 记录、保底与兑换")
+    section("宝可梦抽卡 / 记录、保底与兑换")
     import random
     import tempfile
     from pathlib import Path
@@ -1059,10 +1085,10 @@ def test_gacha_store():
         except GachaError:
             check("重复兑换应报错", True)
         try:
-            store.exchange("group:1", "u1", "不存在的伙伴")
-            check("未知伙伴应报错", False)
+            store.exchange("group:1", "u1", "不存在的宝可梦")
+            check("未知宝可梦应报错", False)
         except GachaError:
-            check("未知伙伴应报错", True)
+            check("未知宝可梦应报错", True)
 
         store.add_bonus("group:1", "u1", 2)
         check(
@@ -1077,7 +1103,7 @@ def test_gacha_store():
 
 
 def test_gacha_pity_and_shiny():
-    section("伙伴抽卡 / 保底与闪光")
+    section("宝可梦抽卡 / 保底与闪光")
     import random
     import tempfile
     from pathlib import Path
@@ -1178,7 +1204,7 @@ def test_gacha_pity_and_shiny():
 
 
 def test_partner_cards():
-    section("伙伴卡片渲染")
+    section("宝可梦卡片渲染")
     import io
     import random
     import tempfile
@@ -1238,7 +1264,7 @@ def test_partner_cards():
 
 
 def test_gacha_empty_rarity_pool():
-    section("伙伴抽卡 / 空稀有度档位")
+    section("宝可梦抽卡 / 空稀有度档位")
     import random
     import tempfile
     from pathlib import Path
@@ -1311,7 +1337,7 @@ def test_gacha_empty_rarity_pool():
 
 
 def test_collection_pagination():
-    section("伙伴图鉴 / 分页按已收集计算")
+    section("我的宝可梦 / 分页按已收集计算")
     import io
     import random
     import tempfile
@@ -1358,7 +1384,7 @@ def test_collection_pagination():
 
 
 def test_card_extreme_inputs():
-    section("伙伴卡片 / 极端输入")
+    section("宝可梦卡片 / 极端输入")
     import io
     import os
     import tempfile
@@ -1434,7 +1460,7 @@ def test_artwork_cache_bounded():
 
 
 def test_exchange_arg_parsing():
-    section("伙伴兑换 / 参数解析")
+    section("宝可梦兑换 / 参数解析")
     import main  # 依赖 test_main_imports 注入的 stub
 
     class _Ev:
@@ -1442,28 +1468,28 @@ def test_exchange_arg_parsing():
             self.message_str = text
 
     parse = main.PokemonPartnerPlugin._parse_exchange_args
-    name, shiny, unknown = parse(_Ev("伙伴兑换 皮卡丘"), "")
+    name, shiny, unknown = parse(_Ev("兑换宝可梦 皮卡丘"), "")
     check("单个名称", name == "皮卡丘" and not shiny and not unknown, str((name, shiny, unknown)))
-    name, shiny, unknown = parse(_Ev("伙伴兑换 皮卡丘 闪光"), "皮卡丘")
+    name, shiny, unknown = parse(_Ev("兑换宝可梦 皮卡丘 闪光"), "皮卡丘")
     check(
         "名称+闪光（第二个词被 AstrBot 截断时仍正确）",
         name == "皮卡丘" and shiny and not unknown,
         str((name, shiny, unknown)),
     )
-    name, shiny, unknown = parse(_Ev("/伙伴兑换 超梦 异色"), "")
+    name, shiny, unknown = parse(_Ev("/兑换宝可梦 超梦 异色"), "")
     check("带斜杠与别名标记", name == "超梦" and shiny and not unknown, str((name, shiny, unknown)))
-    name, shiny, unknown = parse(_Ev("伙伴兑换 皮卡丘 闪光 多余"), "")
+    name, shiny, unknown = parse(_Ev("兑换宝可梦 皮卡丘 闪光 多余"), "")
     check(
         "多余词被显式报告而不是静默丢弃",
         name == "皮卡丘" and shiny and unknown == ["多余"],
         str((name, shiny, unknown)),
     )
-    name, shiny, unknown = parse(_Ev("伙伴兑换 闪光"), "")
+    name, shiny, unknown = parse(_Ev("兑换宝可梦 闪光"), "")
     check("只给闪光标记时名称为空", name == "" and shiny, str((name, shiny, unknown)))
 
 
 def test_store_recovery():
-    section("伙伴数据 / 损坏恢复")
+    section("宝可梦数据 / 损坏恢复")
     import random
     import tempfile
     from pathlib import Path
@@ -1571,7 +1597,7 @@ def test_render_does_not_block_event_loop():
 
 
 def test_multi_instance_no_data_loss():
-    section("伙伴数据 / 多实例并发写入")
+    section("宝可梦数据 / 多实例并发写入")
     import random
     import tempfile
     from pathlib import Path
@@ -1617,6 +1643,206 @@ def test_multi_instance_no_data_loss():
             "同一用户并发写入时计数不倒退",
             used >= baseline,
             f"before={baseline}, after={used}",
+        )
+
+
+def test_draw_card_includes_artwork():
+    section("抽卡卡片 / 立绘与信息")
+    import io
+    import random
+    import tempfile
+    from pathlib import Path
+
+    from PIL import Image
+
+    from artwork import ArtworkCache
+    from gacha import GachaRules, build_partners
+    from gacha_store import GachaStore
+    from partner_cards import render_draw_card
+
+    db = PokedexDB()
+    rules = GachaRules.from_config(
+        {"daily_draw_limit": 10, "draw_cooldown_seconds": 0, "shiny_chance_percent": 0}
+    )
+    partners = build_partners(db, rules)
+    pika = next(p for p in partners if p.dex == 25)
+
+    with tempfile.TemporaryDirectory() as td:
+        art_dir = Path(td) / "art"
+        art_dir.mkdir()
+        # 用纯色块代替网络立绘，验证渲染确实把图片贴进卡片。
+        Image.new("RGBA", (300, 300), (255, 220, 0, 255)).save(art_dir / "0025.png")
+        cache = ArtworkCache(art_dir, db=db, allow_download=False)
+
+        with tempfile.TemporaryDirectory() as store_dir:
+            store = GachaStore(
+                Path(store_dir), (pika,), rules, rng=random.Random(1)
+            )
+            outcome = store.draw("g", "u", "n", today="2026-10-27")
+            with_art = render_draw_card(
+                outcome.items,
+                nickname="n",
+                remaining=outcome.remaining,
+                daily_limit=outcome.daily_limit,
+                dust=outcome.dust,
+                pity_ssr=outcome.pity_ssr,
+                ssr_pity_after=rules.ssr_pity_after,
+                image_loader=cache.load,
+            )
+            without_art = render_draw_card(
+                outcome.items,
+                nickname="n",
+                remaining=outcome.remaining,
+                daily_limit=outcome.daily_limit,
+                dust=outcome.dust,
+                pity_ssr=outcome.pity_ssr,
+                ssr_pity_after=rules.ssr_pity_after,
+                image_loader=None,
+            )
+            two = render_draw_card(
+                outcome.items * 2,
+                nickname="n",
+                remaining=outcome.remaining,
+                daily_limit=outcome.daily_limit,
+                dust=outcome.dust,
+                pity_ssr=outcome.pity_ssr,
+                ssr_pity_after=rules.ssr_pity_after,
+                image_loader=cache.load,
+            )
+            five = render_draw_card(
+                outcome.items * 5,
+                nickname="n",
+                remaining=outcome.remaining,
+                daily_limit=outcome.daily_limit,
+                dust=outcome.dust,
+                pity_ssr=outcome.pity_ssr,
+                ssr_pity_after=rules.ssr_pity_after,
+                image_loader=cache.load,
+            )
+
+        a = Image.open(io.BytesIO(with_art)).convert("RGB")
+        b = Image.open(io.BytesIO(without_art)).convert("RGB")
+        two_image = Image.open(io.BytesIO(two))
+        five_image = Image.open(io.BytesIO(five))
+        check("单抽卡片尺寸", a.width == 1080 and a.height >= 1100, str(a.size))
+        # 立绘区域应为亮黄色而非背景深蓝
+        pixel = a.getpixel((260, 420))
+        check(
+            "立绘已绘制到卡片上",
+            pixel[0] > 180 and pixel[1] > 150,
+            str(pixel),
+        )
+        check(
+            "无立绘时使用占位（与有立绘明显不同）",
+            a.getpixel((260, 420)) != b.getpixel((260, 420)),
+        )
+        check("两抽网格卡片无内容越界", two_image.size == (1080, 770), str(two_image.size))
+        check("五抽网格卡片无内容越界", five_image.size == (1080, 988), str(five_image.size))
+
+
+def test_webui_settings_rollback_and_artwork():
+    section("WebUI / 配置回滚与图鉴立绘")
+    import asyncio
+    import base64
+    import tempfile
+    from pathlib import Path
+
+    from PIL import Image
+
+    from artwork import ArtworkCache
+    from gacha import GachaRules, build_partners
+    from webui import PokemonPartnerWebUI
+
+    class Config(dict):
+        def save_config(self):
+            return None
+
+    class Plugin:
+        def __init__(self):
+            self.config = Config({"gacha_enabled": True, "value": 1})
+            self.partner_service = object()
+            self.artwork = None
+            self._partner_init_error = ""
+            self.attempts = 0
+
+        def _init_partners(self):
+            self.attempts += 1
+            if self.attempts == 1:
+                self.partner_service = None
+                self._partner_init_error = "forced failure"
+            else:
+                self.partner_service = object()
+                self._partner_init_error = ""
+
+    plugin = Plugin()
+    webui = PokemonPartnerWebUI(plugin)
+    try:
+        webui._apply_settings({"gacha_enabled": True, "value": 2})
+        rolled_back = False
+    except RuntimeError:
+        rolled_back = True
+    check(
+        "重载失败时恢复旧配置与旧服务",
+        rolled_back
+        and plugin.config["value"] == 1
+        and plugin.partner_service is not None
+        and plugin.attempts == 2,
+        str((plugin.config, plugin.attempts)),
+    )
+
+    db = PokedexDB()
+    rules = GachaRules.from_config(
+        {"daily_draw_limit": 3, "draw_cooldown_seconds": 0}
+    )
+    partner = next(p for p in build_partners(db, rules) if p.dex == 25)
+    with tempfile.TemporaryDirectory() as td:
+        art_dir = Path(td)
+        Image.new("RGBA", (64, 64), (255, 220, 0, 255)).save(art_dir / "0025.png")
+        plugin.artwork = ArtworkCache(art_dir, db=db, allow_download=False)
+        url = asyncio.run(webui._artwork_data_url(partner.row))
+        payload = url.partition(",")[2]
+        check(
+            "图鉴详情返回可显示的立绘 data URL",
+            url.startswith("data:image/png;base64,")
+            and len(base64.b64decode(payload)) > 100,
+            url[:48],
+        )
+
+
+def test_session_isolation_and_my_pokemon():
+    section("会话隔离 / 我的宝可梦")
+    import random
+    import tempfile
+    from pathlib import Path
+
+    from gacha import GachaRules, build_partners
+    from gacha_store import GachaStore
+
+    db = PokedexDB()
+    rules = GachaRules.from_config(
+        {"daily_draw_limit": 20, "draw_cooldown_seconds": 0, "shiny_chance_percent": 0}
+    )
+    partners = build_partners(db, rules)
+
+    with tempfile.TemporaryDirectory() as td:
+        store = GachaStore(Path(td), partners, rules, rng=random.Random(7))
+        store.draw("group:1001", "u1", "甲", count=5, today="2026-10-27")
+        store.draw("group:2002", "u1", "甲", count=3, today="2026-10-27")
+        a = store.get_profile("group:1001", "u1", today="2026-10-27")
+        b = store.get_profile("group:2002", "u1", today="2026-10-27")
+        check(
+            "同一用户在不同群的数据独立",
+            a.collected != b.collected and a.used_today == 5 and b.used_today == 3,
+            f"A={a.collected}/{a.used_today}, B={b.collected}/{b.used_today}",
+        )
+        check(
+            "「我的宝可梦」只返回本群已获得",
+            len(store.owned_partners("group:1001", "u1")) == a.collected
+            and len(store.owned_partners("group:2002", "u1")) == b.collected,
+        )
+        check(
+            "另一个群看不到别人的收藏",
+            store.get_profile("group:3003", "u1", today="2026-10-27").collected == 0,
         )
 
 
@@ -1786,5 +2012,8 @@ if __name__ == "__main__":
     test_store_recovery()
     test_render_does_not_block_event_loop()
     test_multi_instance_no_data_loss()
+    test_draw_card_includes_artwork()
+    test_webui_settings_rollback_and_artwork()
+    test_session_isolation_and_my_pokemon()
     print(f"\n结果：{PASS} 通过 / {FAIL} 失败")
     sys.exit(1 if FAIL else 0)

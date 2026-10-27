@@ -1,4 +1,4 @@
-"""伙伴立绘获取与本地缓存。
+"""宝可梦立绘获取与本地缓存。
 
 优先级：
 
@@ -31,10 +31,19 @@ SPRITE_URL = (
     "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/"
     "pokemon/other/official-artwork/{dex}.png"
 )
+SPRITE_URL_HOME = (
+    "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/"
+    "pokemon/other/home/{dex}.png"
+)
 SPRITE_URL_FALLBACK = (
     "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{dex}.png"
 )
 MAX_CACHED_IMAGES = 160
+DOWNLOAD_CONCURRENCY = 8
+SHINY_SPRITE_URL = (
+    "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/"
+    "pokemon/other/official-artwork/shiny/{dex}.png"
+)
 
 
 class ArtworkCache:
@@ -130,8 +139,21 @@ class ArtworkCache:
                 out.append((int(row["id"]), target))
         return out
 
-    async def prefetch(self, rows: Iterable[Mapping[str, Any]], limit: int = 30) -> int:
-        """下载缺失立绘，返回成功数量。网络失败不抛异常。"""
+    async def prefetch(
+        self,
+        rows: Iterable[Mapping[str, Any]],
+        limit: int = 30,
+        *,
+        wait: bool = True,
+    ) -> int:
+        """下载缺失立绘，返回成功数量。
+
+        Args:
+            rows: 需要立绘的图鉴行。
+            limit: 单次最多下载数量。
+            wait: 为 ``True`` 时等全部下载完成（抽卡前需要）；
+                为 ``False`` 时只发起后台任务（图鉴浏览等场景）。
+        """
         if not self.allow_download:
             return 0
         todo = self.missing(rows)[:limit]
@@ -143,26 +165,32 @@ class ArtworkCache:
         except ImportError:
             return 0
         timeout = aiohttp.ClientTimeout(total=self.timeout)
-        saved = 0
         async with aiohttp.ClientSession(timeout=timeout) as session:
-            for dex, target in todo:
-                data = await self._download(session, dex)
-                if data is None:
-                    continue
+            results = await asyncio.gather(
+                *(self._download(session, dex) for dex, _ in todo),
+                return_exceptions=True,
+            )
+        saved = 0
+        for (_dex, target), data in zip(todo, results):
+            if isinstance(data, Exception) or data is None:
+                continue
+            try:
                 target.write_bytes(data)
                 saved += 1
+            except OSError:
+                continue
         return saved
 
     async def _download(self, session, dex: int) -> bytes | None:
-        """依次尝试官方高清图与普通精灵图，兼容网络受限的环境。"""
-        for url in (SPRITE_URL, SPRITE_URL_FALLBACK):
+        """依次尝试官方高清图、HOME 图与普通精灵图，兼容网络受限的环境。"""
+        for url in (SPRITE_URL, SPRITE_URL_HOME, SPRITE_URL_FALLBACK):
             try:
                 async with session.get(url.format(dex=dex)) as resp:
                     if resp.status != 200:
                         continue
                     content_type = resp.headers.get("Content-Type", "")
                     if "image" not in content_type.lower():
-                        logger.debug(f"伙伴立绘 #{dex} 返回非图片内容: {content_type}")
+                        logger.debug(f"宝可梦立绘 #{dex} 返回非图片内容: {content_type}")
                         continue
                     declared = int(resp.headers.get("Content-Length") or 0)
                     if declared > 8 * 1024 * 1024:
@@ -176,7 +204,7 @@ class ArtworkCache:
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
-                logger.debug(f"伙伴立绘下载失败 #{dex}: {type(exc).__name__}: {exc}")
+                logger.debug(f"宝可梦立绘下载失败 #{dex}: {type(exc).__name__}: {exc}")
         return None
 
     def cleanup_cache(self, keep: Iterable[int] | None = None) -> int:
@@ -195,3 +223,89 @@ class ArtworkCache:
                 except OSError:
                     continue
         return removed
+
+    def cached_count(self) -> int:
+        """已缓存的本地立绘数量。"""
+        if not self.cache_dir.is_dir():
+            return 0
+        return sum(1 for _ in self.cache_dir.glob("*.png"))
+
+    async def download_all(
+        self,
+        rows: Iterable[Mapping[str, Any]],
+        *,
+        progress=None,
+        chunk_size: int = 40,
+    ) -> dict[str, int]:
+        """批量下载全部缺失立绘；可重复执行，已下载的会跳过。
+
+        Args:
+            rows: 需要立绘的图鉴行；重复编号自动去重。
+            progress: 每批回调 ``(已完成, 总数, 本次成功数)``。
+            chunk_size: 每批数量，控制并发与进度回报粒度。
+
+        Returns:
+            ``{"total", "saved", "skipped", "failed"}``。
+        """
+        unique: dict[int, Mapping[str, Any]] = {}
+        for row in rows:
+            try:
+                dex = int(row.get("id"))
+            except (TypeError, ValueError):
+                continue
+            unique.setdefault(dex, row)
+
+        total = len(unique)
+        if not self.allow_download:
+            return {"total": total, "saved": 0, "skipped": 0, "failed": 0}
+
+        todo = self.missing(unique.values())
+        skipped = total - len(todo)
+        if not todo:
+            return {"total": total, "saved": 0, "skipped": skipped, "failed": 0}
+
+        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            import aiohttp
+        except ImportError:
+            return {
+                "total": total,
+                "saved": 0,
+                "skipped": skipped,
+                "failed": len(todo),
+            }
+
+        timeout = aiohttp.ClientTimeout(total=self.timeout)
+        semaphore = asyncio.Semaphore(DOWNLOAD_CONCURRENCY)
+        saved = failed = 0
+
+        async def run_one(session, dex: int) -> tuple[int, bytes | None]:
+            async with semaphore:
+                return dex, await self._download(session, dex)
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for start in range(0, len(todo), chunk_size):
+                batch = todo[start : start + chunk_size]
+                results = await asyncio.gather(
+                    *(run_one(session, dex) for dex, _ in batch)
+                )
+                for (_dex, target), (_result_dex, data) in zip(batch, results):
+                    if not data:
+                        failed += 1
+                        continue
+                    try:
+                        target.write_bytes(data)
+                        saved += 1
+                    except OSError:
+                        failed += 1
+                if progress is not None:
+                    try:
+                        progress(min(start + len(batch), len(todo)), len(todo), saved)
+                    except Exception:
+                        pass
+        return {
+            "total": total,
+            "saved": saved,
+            "skipped": skipped,
+            "failed": failed,
+        }

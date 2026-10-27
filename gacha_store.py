@@ -145,20 +145,20 @@ class GachaStore:
             try:
                 raw = json.loads(path.read_text(encoding="utf-8"))
             except (OSError, ValueError, TypeError) as exc:
-                logger.warning("伙伴数据文件无法读取，尝试下一份备份: %s (%s)", path, exc)
+                logger.warning("宝可梦数据文件无法读取，尝试下一份备份: %s (%s)", path, exc)
                 continue
             if isinstance(raw, dict) and raw.get("version") == STATE_VERSION:
                 if path is not self.state_path:
                     self._restored_from_backup = True
                     logger.warning(
-                        "伙伴主数据损坏或缺失，已从备份恢复: %s", path
+                        "宝可梦主数据损坏或缺失，已从备份恢复: %s", path
                     )
                     self._snapshot_corrupt_state()
                 return raw
-            logger.warning("伙伴数据文件版本不匹配，已跳过: %s", path)
+            logger.warning("宝可梦数据文件版本不匹配，已跳过: %s", path)
         if self.state_path.exists():
             logger.error(
-                "伙伴数据无法恢复，将以空数据启动。原文件保留在 %s，"
+                "宝可梦数据无法恢复，将以空数据启动。原文件保留在 %s，"
                 "请人工检查后再继续使用，避免覆盖。",
                 self.state_path,
             )
@@ -173,7 +173,7 @@ class GachaStore:
             stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
             target = self.state_path.with_name(f"state.corrupt-{stamp}.json")
             shutil.copy2(self.state_path, target)
-            logger.warning("已保留损坏的伙伴数据快照: %s", target)
+            logger.warning("已保留损坏的宝可梦数据快照: %s", target)
         except OSError as exc:
             logger.warning("保留损坏数据快照失败: %s", exc)
 
@@ -182,7 +182,7 @@ class GachaStore:
         if getattr(self, "_load_failed", False):
             # 主文件与备份都不可读时拒绝写入，避免用空数据覆盖掉仅存的现场。
             raise GachaError(
-                "伙伴数据文件已损坏，为避免覆盖原数据已停止写入。"
+                "宝可梦数据文件已损坏，为避免覆盖原数据已停止写入。"
                 f"请备份并检查 {self.state_path} 后重启插件。"
             )
         with self._file_lock():
@@ -469,7 +469,7 @@ class GachaStore:
     def leaderboard(
         self, scope: str, limit: int = 10
     ) -> list[tuple[int, str, int, int]]:
-        """``[(名次, 昵称, 伙伴数, 闪光数)]``。"""
+        """``[(名次, 昵称, 宝可梦数, 闪光数)]``。"""
         with self._lock:
             scope_data = self.state.get("scopes", {}).get(str(scope), {})
             users = scope_data.get("users", {}) if isinstance(scope_data, Mapping) else {}
@@ -707,7 +707,7 @@ class GachaStore:
         if partner is None:
             hint = self.suggestion_for(keyword)
             extra = f"你要找的是：{'、'.join(hint)}" if hint else ""
-            raise GachaError(f"没有找到可兑换的伙伴「{keyword}」。{extra}".strip())
+            raise GachaError(f"没有找到可兑换的宝可梦「{keyword}」。{extra}".strip())
         today = today or today_key()
         with self._lock:
             profile = self._profile(scope, user_id, nickname)
@@ -819,7 +819,7 @@ class _CrossProcessLock:
                 self._handle.seek(0)
                 msvcrt.locking(self._handle.fileno(), msvcrt.LK_LOCK, 1)
         except OSError as exc:
-            logger.warning("伙伴数据文件锁不可用，仅使用进程内锁: %s", exc)
+            logger.warning("宝可梦数据文件锁不可用，仅使用进程内锁: %s", exc)
             if self._handle is not None:
                 try:
                     self._handle.close()

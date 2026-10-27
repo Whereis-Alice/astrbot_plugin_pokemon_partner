@@ -10,5 +10,7 @@ venv/
 .ruff_cache/
 data/champions.db
 data/partner_state/
+data/cmd_config.json
+data/t2i_templates/
 state.json
 state.json.bak

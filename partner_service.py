@@ -1,4 +1,4 @@
-"""伙伴系统的业务编排：图鉴库 + 抽卡存储 + 图片素材。
+"""宝可梦系统的业务编排：图鉴库 + 抽卡存储 + 图片素材。
 
 这一层不依赖 AstrBot，负责把 :mod:`gacha` 与 :mod:`pokedex_db` 组装起来，
 并处理素材查找。插件入口只做事件/消息转换，方便以后加 WebUI 或测试。
@@ -58,9 +58,9 @@ class PartnerService:
     def recovery_notice(self) -> str:
         """数据从备份恢复或无法读取时的用户可见提示；正常时返回空串。"""
         if getattr(self.store, "_load_failed", False):
-            return "伙伴数据文件损坏且备份不可用，已停止写入以保护原文件，请联系管理员检查。"
+            return "宝可梦数据文件损坏且备份不可用，已停止写入以保护原文件，请联系管理员检查。"
         if getattr(self.store, "_restored_from_backup", False):
-            return "提示：检测到伙伴主数据损坏，已从备份恢复，最后一次写入可能丢失。"
+            return "提示：检测到宝可梦主数据损坏，已从备份恢复，最后一次写入可能丢失。"
         return ""
 
     def pool_counts(self) -> dict[str, int]:
@@ -100,10 +100,10 @@ class PartnerService:
         if rules.ssr_pity_after:
             lines.append(f"SSR 保底：连续 {rules.ssr_pity_after} 次未出则必出")
         if rules.new_pity_after:
-            lines.append(f"新伙伴保底：连续 {rules.new_pity_after} 次重复后必出新")
+            lines.append(f"新宝可梦保底：连续 {rules.new_pity_after} 次重复后必出新")
         lines.append(f"闪光概率 {rules.shiny_chance_percent:g}%")
         return "\n".join(lines)
 
     def exchange_hint(self, partner: Partner) -> str:
         cost = self.store.rules.spark_cost_for(partner.rarity)
-        return f"伙伴兑换 {partner.name}（{cost} 星尘）"
+        return f"兑换宝可梦 {partner.name}（{cost} 星尘）"

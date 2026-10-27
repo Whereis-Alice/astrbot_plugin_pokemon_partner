@@ -1,4 +1,4 @@
-"""astrbot_plugin_pokemon_partner — 宝可梦伙伴图鉴插件
+"""astrbot_plugin_pokemon_partner — 宝可梦图鉴插件
 
 本地中文图鉴库（pokemon-dataset-zh 生成，https://github.com/42arch/pokemon-dataset-zh）
 + Pillow 图片卡片为主，PokéAPI 官方数据作为补充（可在配置中关闭）。
@@ -6,15 +6,15 @@
 
 设计原则：LLM 工具保持原子化（供模型组合调用）；聊天指令只保留粗粒度
 功能模块，不镜像每个原子能力（跨表搜索等原子能力仅存在于工具层）。
-伙伴抽取的逻辑在 gacha.py，渲染在 partner_cards.py，入口只做编排。
+宝可梦抽取的逻辑在 gacha.py，渲染在 partner_cards.py，入口只做编排。
 
 指令：
-  伙伴帮助               总帮助
+  图鉴帮助                 总帮助
  今日宝可梦             每日抽取（数量、概率、保底均可配置）
-  伙伴图鉴 [页码]        我的收藏
-  伙伴资料               次数/星尘/保底进度
-  伙伴兑换 <名称> [闪光] 星尘定向兑换
-  伙伴排行               本群收集排行
+  我的宝可梦 [页码]        我的收藏
+  收集资料                 次数/星尘/保底进度
+  兑换宝可梦 <名称> [闪光] 星尘定向兑换
+  收集排行                 本群收集排行
   宝可梦 <编号或名称>    图鉴详情（图片卡片，含冠军赛名次）
   宝可梦 <名> 招式表/能力值  图鉴子视图
   特性/招式/道具/性格 <名称> 数据查询
@@ -32,7 +32,7 @@ from typing import ClassVar
 
 import astrbot.api.message_components as Comp
 from astrbot.api import AstrBotConfig, logger
-from astrbot.api.event import AstrMessageEvent, filter
+from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, register
 
 try:
@@ -62,6 +62,7 @@ try:
         render_rarity_legend,
     )
     from .partner_service import PartnerService
+    from .webui import PokemonPartnerWebUI
     from .wishmaker_card import build_wishmaker_markdown
 except ImportError:  # 兼容以普通模块方式加载插件
     from battle_engine import (
@@ -90,6 +91,7 @@ except ImportError:  # 兼容以普通模块方式加载插件
         render_rarity_legend,
     )
     from partner_service import PartnerService
+    from webui import PokemonPartnerWebUI
     from wishmaker_card import build_wishmaker_markdown
 
 PLUGIN_ID = "astrbot_plugin_pokemon_partner"
@@ -188,8 +190,8 @@ def nature_table_text() -> str:
 @register(
     PLUGIN_ID,
     "Whereis-Alice",
-    "宝可梦伙伴图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.0.0",
+    "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
+    "v1.1.0",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -203,39 +205,64 @@ class PokemonPartnerPlugin(Star):
         self.champions = ChampionsDB(self.config.get("champions_db_path") or None)
         self.partner_service: PartnerService | None = None
         self.artwork: ArtworkCache | None = None
+        self._artwork_task: asyncio.Task | None = None
         self._partner_init_error = ""
         self._init_partners()
+        self.webui: PokemonPartnerWebUI | None = None
+        try:
+            self.webui = PokemonPartnerWebUI(self)
+            self.webui.register()
+        except Exception as exc:
+            self.webui = None
+            logger.warning(f"[{PLUGIN_ID}] WebUI 注册失败，聊天功能继续运行: {exc}")
 
     async def terminate(self):
+        task = self._artwork_task
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
         await self.api.close()
 
-    # ---------- 伙伴系统 ----------
+    # ---------- 宝可梦系统 ----------
     def _init_partners(self) -> None:
         """构建抽卡服务。配置错误不应阻断图鉴功能。"""
+        self._partner_init_error = ""
         if not self.config.get("gacha_enabled", True):
+            self.partner_service = None
+            self.artwork = None
             return
         try:
             rules = GachaRules.from_config(self.config)
             data_dir = self._partner_state_dir()
-            self.artwork = ArtworkCache(
+            artwork = ArtworkCache(
                 data_dir / "artwork",
                 images_dir=self.config.get("images_dir") or None,
                 db=self.db,
                 allow_download=self.config.get("fallback_web_image", True),
                 timeout=float(self.config.get("pokeapi_timeout", 15)),
             )
-            self.partner_service = PartnerService.create(
+            partner_service = PartnerService.create(
                 self.db,
                 data_dir / "gacha",
                 rules,
-                artwork_loader=self.artwork.load,
+                artwork_loader=artwork.load,
             )
         except ConfigError as exc:
-            self._partner_init_error = f"抽卡配置有误，已停用伙伴系统：{exc}"
+            self.partner_service = None
+            self.artwork = None
+            self._partner_init_error = f"抽卡配置有误，已停用宝可梦系统：{exc}"
             logger.error(f"[{PLUGIN_ID}] {self._partner_init_error}")
         except Exception as exc:
-            self._partner_init_error = f"伙伴系统初始化失败：{exc}"
-            logger.error(f"[{PLUGIN_ID}] 伙伴系统初始化失败: {exc}")
+            self.partner_service = None
+            self.artwork = None
+            self._partner_init_error = f"宝可梦系统初始化失败：{exc}"
+            logger.error(f"[{PLUGIN_ID}] 宝可梦系统初始化失败: {exc}")
+        else:
+            self.artwork = artwork
+            self.partner_service = partner_service
 
     def _partner_state_dir(self) -> Path:
         """数据目录：优先 AstrBot 标准 plugin_data；独立运行时回退到插件目录。"""
@@ -265,12 +292,26 @@ class PokemonPartnerPlugin(Star):
 
     def _partner_or_error(self) -> PartnerService:
         if self.partner_service is None:
-            hint = self._partner_init_error or "伙伴系统已关闭（配置 gacha_enabled=false）。"
+            hint = self._partner_init_error or "宝可梦系统已关闭（配置 gacha_enabled=false）。"
             raise GachaError(hint)
         return self.partner_service
 
+    async def _ensure_artwork(self, rows: list[dict]) -> None:
+        """抽卡前补齐立绘，最多等待几秒；失败则卡片用占位图，不影响结果。"""
+        if self.artwork is None or not rows:
+            return
+        try:
+            await asyncio.wait_for(
+                self.artwork.prefetch(rows, limit=len(rows)),
+                timeout=8.0,
+            )
+        except asyncio.TimeoutError:
+            logger.warning(f"[{PLUGIN_ID}] 立绘下载超时，使用现有缓存渲染")
+        except Exception as exc:
+            logger.warning(f"[{PLUGIN_ID}] 立绘下载失败: {exc}")
+
     def _card_enabled(self) -> bool:
-        """伙伴卡片是否启用；关闭时全部回退纯文本。"""
+        """宝可梦卡片是否启用；关闭时全部回退纯文本。"""
         return bool(self.config.get("enable_image_card", True))
 
     @staticmethod
@@ -314,6 +355,8 @@ class PokemonPartnerPlugin(Star):
             text = self._draw_text(outcome, nickname)
             yield event.plain_result(f"{notice}\n{text}" if notice else text)
             return
+        # 先把本批立绘取齐再渲染，否则卡片里只会是占位图。
+        await self._ensure_artwork([item.row for item in outcome.items])
         try:
             png = await asyncio.to_thread(
                 render_draw_card,
@@ -348,14 +391,14 @@ class PokemonPartnerPlugin(Star):
         else:
             yield event.chain_result([Comp.Image.fromBytes(png)])
 
-    @filter.command("伙伴帮助", alias={"伙伴菜单"})
+    @filter.command("图鉴帮助", alias={"图鉴菜单", "帮助菜单"})
     async def cmd_partner_help(self, event: AstrMessageEvent):
-        """伙伴系统帮助：抽卡、图鉴、兑换与查询指令总览。"""
+        """宝可梦系统帮助：抽卡、图鉴、兑换与查询指令总览。"""
         yield event.plain_result(self._partner_help_text())
 
-    @filter.command("今日宝可梦", alias={"伙伴召唤", "召唤伙伴", "抽伙伴"})
+    @filter.command("今日宝可梦", alias={"抽取宝可梦", "抽宝可梦"})
     async def cmd_partner_draw(self, event: AstrMessageEvent):
-        """今日宝可梦：抽取伙伴。每次数量与稀有度概率由插件配置决定。"""
+        """今日宝可梦：抽取宝可梦。每次数量与稀有度概率由插件配置决定。"""
         try:
             service = self._partner_or_error()
             scope, user_id, nickname = self._scope(event)
@@ -369,21 +412,10 @@ class PokemonPartnerPlugin(Star):
             logger.error(f"[{PLUGIN_ID}] 今日宝可梦抽取失败: {exc}")
             yield event.plain_result("抽取失败，请稍后再试。")
             return
-        # 立绘下载不阻塞抽卡结果；本次没有缓存时先显示占位图，下次自然命中。
-        if self.artwork is not None and self._card_enabled():
-            try:
-                asyncio.create_task(
-                    self.artwork.prefetch(
-                        [item.row for item in outcome.items],
-                        limit=len(outcome.items),
-                    )
-                )
-            except Exception:
-                logger.warning(f"[{PLUGIN_ID}] 立绘后台预取启动失败")
         async for result in self._send_draw_card(event, outcome, nickname or "训练家"):
             yield result
 
-    @filter.command("伙伴概率", alias={"伙伴规则"})
+    @filter.command("抽取概率", alias={"抽取规则", "抽卡概率"})
     async def cmd_partner_odds(self, event: AstrMessageEvent):
         """查看稀有度概率、保底与每日次数。"""
         try:
@@ -402,7 +434,7 @@ class PokemonPartnerPlugin(Star):
             yield event.plain_result(str(exc))
             return
         except Exception as exc:
-            logger.error(f"[{PLUGIN_ID}] 伙伴概率卡渲染失败: {exc}")
+            logger.error(f"[{PLUGIN_ID}] 宝可梦概率卡渲染失败: {exc}")
             yield event.plain_result(service.rule_text())
             return
         if png is None:
@@ -410,9 +442,9 @@ class PokemonPartnerPlugin(Star):
             return
         yield event.chain_result([Comp.Image.fromBytes(png)])
 
-    @filter.command("伙伴图鉴", alias={"伙伴收藏"})
+    @filter.command("我的宝可梦", alias={"我的图鉴", "图鉴收藏"})
     async def cmd_partner_collection(self, event: AstrMessageEvent, page: str = "1"):
-        """查看已收集伙伴。伙伴图鉴 <页码> 翻页。"""
+        """查看已收集宝可梦。我的宝可梦 <页码> 翻页。"""
         try:
             service = self._partner_or_error()
             scope, user_id, nickname = self._scope(event)
@@ -423,7 +455,7 @@ class PokemonPartnerPlugin(Star):
             return
         if not owned:
             yield event.plain_result(
-                "你还没有收集到伙伴。发送「今日宝可梦」开始今天的邂逅吧。"
+                "你还没有收集到宝可梦。发送「今日宝可梦」开始今天的邂逅吧。"
             )
             return
         page_size = 24
@@ -452,7 +484,7 @@ class PokemonPartnerPlugin(Star):
             yield event.chain_result([Comp.Image.fromBytes(png)])
             return
         lines = [
-            f"【伙伴图鉴】{nickname or summary.nickname} "
+            f"【我的宝可梦】{nickname or summary.nickname} "
             f"{summary.collected}/{summary.total}（第 {page_no}/{pages} 页）"
         ]
         lines += [
@@ -463,7 +495,7 @@ class PokemonPartnerPlugin(Star):
         ]
         yield event.plain_result("\n".join(lines))
 
-    @filter.command("伙伴资料", alias={"伙伴进度"})
+    @filter.command("收集资料", alias={"图鉴资料", "我的资料"})
     async def cmd_partner_profile(self, event: AstrMessageEvent):
         """查看收集进度、剩余次数、星尘与保底进度。"""
         try:
@@ -491,30 +523,30 @@ class PokemonPartnerPlugin(Star):
             yield event.chain_result([Comp.Image.fromBytes(png)])
             return
         lines = [
-            f"【伙伴资料】{summary.nickname}",
+            f"【宝可梦资料】{summary.nickname}",
             f"已收集 {summary.collected}/{summary.total}（{summary.percent:.1f}%）",
-            f"闪光伙伴 {summary.shiny_count} 位｜星尘 {summary.dust}",
+            f"闪光宝可梦 {summary.shiny_count} 位｜星尘 {summary.dust}",
             f"今日剩余 {summary.remaining}/{summary.daily_limit} 次",
             f"SSR 保底 {summary.pity_ssr}｜连续未出新 {summary.pity_new}",
             f"本群排名：第 {rank} 名" if rank else "",
         ]
         yield event.plain_result("\n".join(line for line in lines if line))
 
-    @filter.command("伙伴兑换", alias={"伙伴换取"})
+    @filter.command("兑换宝可梦", alias={"换取宝可梦"})
     async def cmd_partner_exchange(self, event: AstrMessageEvent, keyword: str = ""):
-        """用星尘定向兑换未拥有的伙伴。伙伴兑换 <名称> [闪光]。"""
+        """用星尘定向兑换未拥有的宝可梦。兑换宝可梦 <名称> [闪光]。"""
         if not keyword:
             yield event.plain_result(
-                "用法：伙伴兑换 <伙伴名称> [闪光]\n"
-                "例如：伙伴兑换 皮卡丘 / 伙伴兑换 皮卡丘 闪光\n"
-                "重复伙伴会自动折算星尘；闪光兑换消耗更多星尘。"
+                "用法：兑换宝可梦 <宝可梦名称> [闪光]\n"
+                "例如：兑换宝可梦 皮卡丘 / 兑换宝可梦 皮卡丘 闪光\n"
+                "重复宝可梦会自动折算星尘；闪光兑换消耗更多星尘。"
             )
             return
         name, shiny, unknown = self._parse_exchange_args(event, keyword)
         if not name:
             hint = f"无法识别的参数：{'、'.join(unknown)}\n" if unknown else ""
             yield event.plain_result(
-                hint + "用法：伙伴兑换 <伙伴名称> [闪光]"
+                hint + "用法：兑换宝可梦 <宝可梦名称> [闪光]"
             )
             return
         try:
@@ -553,13 +585,13 @@ class PokemonPartnerPlugin(Star):
         """解析兑换参数，返回 ``(名称, 是否闪光, 未识别词)``。
 
         AstrBot 会按空格把参数切成多个，这里改用完整消息文本：剥掉指令名与
-        闪光标记后，其余内容整体作为伙伴名称，避免名称被截断或词被静默丢弃。
+        闪光标记后，其余内容整体作为宝可梦名称，避免名称被截断或词被静默丢弃。
         """
         shiny_words = {"闪光", "异色", "shiny"}
         raw = str(getattr(event, "message_str", "") or "").strip()
         if raw.startswith("/"):
             raw = raw[1:].strip()
-        for command in ("伙伴兑换", "伙伴换取"):
+        for command in ("兑换宝可梦", "换取宝可梦"):
             if raw.startswith(command):
                 raw = raw[len(command) :].strip()
                 break
@@ -578,9 +610,9 @@ class PokemonPartnerPlugin(Star):
         # 名称本身不含空格；多于一个词通常意味着用户多写了内容，明确报出来。
         return words[0], shiny, words[1:]
 
-    @filter.command("伙伴排行")
+    @filter.command("收集排行", alias={"图鉴排行"})
     async def cmd_partner_ranking(self, event: AstrMessageEvent):
-        """查看当前会话的伙伴收集排行。"""
+        """查看当前会话的宝可梦收集排行。"""
         try:
             service = self._partner_or_error()
             scope, user_id, nickname = self._scope(event)
@@ -590,9 +622,9 @@ class PokemonPartnerPlugin(Star):
             yield event.plain_result(str(exc))
             return
         if not rows:
-            yield event.plain_result("还没有人收集伙伴，发送「今日宝可梦」抢下第一名吧。")
+            yield event.plain_result("还没有人收集宝可梦，发送「今日宝可梦」抢下第一名吧。")
             return
-        lines = ["【伙伴收集排行】"]
+        lines = ["【宝可梦收集排行】"]
         medals = {1: "🥇", 2: "🥈", 3: "🥉"}
         for rank, name, collected, shiny in rows:
             prefix = medals.get(rank, f"{rank}.")
@@ -601,10 +633,10 @@ class PokemonPartnerPlugin(Star):
             lines.append(f"你的排名：第 {my_rank} 名")
         yield event.plain_result("\n".join(lines))
 
-    @filter.command("伙伴重置")
+    @filter.command("重置今日宝可梦", alias={"重置宝可梦次数"})
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_partner_reset(self, event: AstrMessageEvent):
-        """管理员重置自己今天的召唤次数。"""
+        """管理员重置自己今天的宝可梦抽取次数。"""
         try:
             service = self._partner_or_error()
             scope, user_id, _nickname = self._scope(event)
@@ -612,14 +644,14 @@ class PokemonPartnerPlugin(Star):
         except GachaError as exc:
             yield event.plain_result(str(exc))
             return
-        yield event.plain_result("今天的召唤次数已重置。")
+        yield event.plain_result("今天的宝可梦抽取次数已重置。")
 
-    @filter.command("伙伴加次数")
+    @filter.command("增加宝可梦次数", alias={"增加抽取次数"})
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_partner_add_bonus(
         self, event: AstrMessageEvent, amount: str = "1"
     ):
-        """管理员给自己增加今日次数。伙伴加次数 <数量>。"""
+        """管理员给自己增加今日次数。增加宝可梦次数 <数量>。"""
         try:
             count = max(1, min(100, int(amount)))
         except (TypeError, ValueError):
@@ -636,10 +668,10 @@ class PokemonPartnerPlugin(Star):
             return
         yield event.plain_result(f"已增加 {count} 次，今日额外次数累计 {total}。")
 
-    @filter.command("伙伴重置群")
+    @filter.command("重置本群宝可梦", alias={"重置本群次数"})
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def cmd_partner_reset_group(self, event: AstrMessageEvent):
-        """管理员重置本群所有人今天的召唤次数。"""
+        """管理员重置本群所有人今天的宝可梦抽取次数。"""
         group_id = event.get_group_id()
         if not group_id:
             yield event.plain_result("该指令仅支持群聊。")
@@ -654,16 +686,108 @@ class PokemonPartnerPlugin(Star):
             return
         yield event.plain_result(f"已重置本群 {changed} 位成员的今日次数。")
 
+    @filter.command("下载立绘", alias={"下载全部立绘", "缓存立绘"})
+    @filter.permission_type(filter.PermissionType.ADMIN)
+    async def cmd_download_artwork(self, event: AstrMessageEvent):
+        """管理员一键下载全部宝可梦立绘到本地，之后抽卡更快。
+
+        可重复执行：已存在的会跳过，中断后再发一次即可续传。
+        """
+        if self.artwork is None:
+            yield event.plain_result("立绘缓存未初始化，请检查插件配置后重载。")
+            return
+        if not self.config.get("fallback_web_image", True):
+            yield event.plain_result(
+                "配置里关闭了「本地立绘缺失时使用网络官方图」，"
+                "请先在设置中开启后再下载。"
+            )
+            return
+        if getattr(self, "_artwork_task", None) is not None:
+            yield event.plain_result("已经有一个下载任务在运行，请等它完成。")
+            return
+
+        artwork = self.artwork
+        rows = list(self.db.table("pokemon"))
+        before = artwork.cached_count()
+        self._artwork_task = asyncio.create_task(
+            self._run_artwork_download(event, rows, artwork)
+        )
+        yield event.plain_result(
+            f"开始下载立绘：共 {len(rows)} 条数据，"
+            f"本地已有 {before} 张，缺失的会并发下载。完成前请勿重复执行。"
+        )
+
+    async def _run_artwork_download(self, event, rows, artwork) -> None:
+        """后台下载，按批次推进度，结束时汇报结果。"""
+        started = asyncio.get_running_loop().time()
+        try:
+            result = await artwork.download_all(
+                rows,
+                progress=self._artwork_progress(event, started),
+                chunk_size=40,
+            )
+        except Exception as exc:
+            logger.error(f"[{PLUGIN_ID}] 立绘批量下载失败: {exc}")
+            await self._notify(event, f"立绘下载失败：{exc}")
+            return
+        finally:
+            self._artwork_task = None
+
+        elapsed = asyncio.get_running_loop().time() - started
+        lines = [
+            "【立绘下载完成】",
+            f"卡池条目：{result['total']}",
+            f"本次下载：{result['saved']} 张",
+            f"已存在跳过：{result['skipped']} 张",
+            f"下载失败：{result['failed']} 张",
+            f"本地合计：{artwork.cached_count()} 张",
+            f"耗时：{elapsed:.1f} 秒",
+        ]
+        if result["failed"]:
+            lines.append("失败项可再次发送「下载立绘」重试，已存在的会自动跳过。")
+        await self._notify(event, "\n".join(lines))
+
+    def _artwork_progress(self, event, started: float):
+        """每 200 张或每 15 秒回报一次进度，避免刷屏。"""
+        state = {"last": 0.0, "last_count": 0}
+
+        def report(done: int, total: int, saved: int) -> None:
+            now = asyncio.get_running_loop().time()
+            if done < total and done - state["last_count"] < 200:
+                if now - state["last"] < 15:
+                    return
+            state["last"] = now
+            state["last_count"] = done
+            asyncio.create_task(
+                self._notify(
+                    event,
+                    f"立绘下载中：{done}/{total}（成功 {saved}，"
+                    f"已用 {now - started:.0f} 秒）",
+                )
+            )
+
+        return report
+
+    async def _notify(self, event, message: str) -> None:
+        """主动推送到触发指令的会话。"""
+        try:
+            await self.context.send_message(
+                event.unified_msg_origin, MessageChain().message(message)
+            )
+        except Exception:
+            logger.debug(f"[{PLUGIN_ID}] 无法主动推送下载进度")
+
     def _partner_help_text(self) -> str:
         base = (
-            "🎒 宝可梦伙伴图鉴\n"
+            "🎒 宝可梦图鉴\n"
             "今日宝可梦 — 每日固定次数抽取（数量与概率由配置决定）\n"
-            "伙伴图鉴 [页码] — 我的伙伴收藏\n"
-            "伙伴资料 — 收集进度、星尘、保底与排名\n"
-            "伙伴兑换 <名称> [闪光] — 用星尘定向获得\n"
-            "伙伴排行 — 本群收集排行\n"
-            "伙伴概率 — 查看稀有度概率与规则\n"
-            "伙伴重置 — 管理员重置自己的次数；伙伴重置群 — 重置本群\n"
+            "我的宝可梦 [页码] — 查看我在本群已获得的宝可梦\n"
+            "收集资料 — 收集进度、星尘、保底与排名\n"
+            "兑换宝可梦 <名称> [闪光] — 用星尘定向获得\n"
+            "收集排行 — 本群收集排行\n"
+            "抽取概率 — 查看稀有度概率与规则\n"
+            "重置今日宝可梦 — 管理员重置自己的次数；重置本群宝可梦 — 重置本群\n"
+            "下载立绘 — 管理员一键缓存全部宝可梦图片\n"
             "\n图鉴与对战：\n"
             "宝可梦 <编号/名称> — 图鉴卡片\n"
             "宝可梦 <名称> 招式表 [等级] — 可学招式与推荐配招\n"
@@ -686,11 +810,11 @@ class PokemonPartnerPlugin(Star):
             logger.warning(f"[{PLUGIN_ID}] 帮助文案追加抽卡规则失败: {exc}")
         return base
 
-    # ---------- 伙伴 LLM 工具 ----------
+    # ---------- 宝可梦 LLM 工具 ----------
     @filter.llm_tool(name="pokemon_partner_draw")
     async def tool_partner_draw(self, event: AstrMessageEvent):
         """为当前用户抽取今日宝可梦（消耗今日次数），返回本次结果。
-        用户明确要求抽卡、召唤伙伴时使用。不要替用户编造未返回的伙伴。
+        用户明确要求抽卡、抽取宝可梦时使用。不要替用户编造未返回的宝可梦。
         """
         try:
             service = self._partner_or_error()
@@ -707,7 +831,7 @@ class PokemonPartnerPlugin(Star):
 
     @filter.llm_tool(name="pokemon_partner_profile")
     async def tool_partner_profile(self, event: AstrMessageEvent):
-        """查询当前用户的伙伴收集进度：已收集数、闪光数、星尘、今日剩余次数、
+        """查询当前用户的宝可梦收集进度：已收集数、闪光数、星尘、今日剩余次数、
         SSR 保底和连续未出新计数。用户问“我还差多少”“我今天还能抽几次”时使用。
         """
         try:
@@ -720,9 +844,9 @@ class PokemonPartnerPlugin(Star):
         except GachaError as exc:
             return str(exc)
         lines = [
-            f"【{summary.nickname} 的伙伴资料】",
+            f"【{summary.nickname} 的宝可梦资料】",
             f"已收集 {summary.collected}/{summary.total}（{summary.percent:.1f}%）",
-            f"闪光伙伴 {summary.shiny_count}｜星尘 {summary.dust}",
+            f"闪光宝可梦 {summary.shiny_count}｜星尘 {summary.dust}",
             f"今日剩余 {summary.remaining}/{summary.daily_limit} 次",
             f"SSR 保底 {summary.pity_ssr}｜连续未出新 {summary.pity_new}",
             f"本群排名：第 {rank} 名" if rank else "",
@@ -733,7 +857,7 @@ class PokemonPartnerPlugin(Star):
     async def tool_partner_collection(
         self, event: AstrMessageEvent, page: int = 1, page_size: int = 20
     ):
-        """列出当前用户已收集的伙伴（分页），用于回答“我有哪些伙伴”“我有没有皮卡丘”。
+        """列出当前用户已收集的宝可梦（分页），用于回答“我有哪些宝可梦”“我有没有皮卡丘”。
         Args:
             page(int): 页码，从 1 开始
             page_size(int): 每页数量（1-40），默认 20
@@ -745,7 +869,7 @@ class PokemonPartnerPlugin(Star):
         except GachaError as exc:
             return str(exc)
         if not owned:
-            return "当前用户还没有收集到任何伙伴。"
+            return "当前用户还没有收集到任何宝可梦。"
         size = max(1, min(40, int(page_size)))
         pages = max(1, (len(owned) + size - 1) // size)
         page = max(1, min(pages, int(page)))
@@ -763,9 +887,9 @@ class PokemonPartnerPlugin(Star):
     async def tool_partner_exchange(
         self, event: AstrMessageEvent, keyword: str, shiny: bool = False
     ):
-        """用星尘兑换指定未拥有伙伴。用户明确要求兑换时调用，不可用于赠送他人。
+        """用星尘兑换指定未拥有宝可梦。用户明确要求兑换时调用，不可用于赠送他人。
         Args:
-            keyword(str): 伙伴中文名、英文名或图鉴编号
+            keyword(str): 宝可梦中文名、英文名或图鉴编号
             shiny(bool): 是否兑换闪光版本（消耗更多星尘），默认 false
         """
         try:
@@ -1967,9 +2091,9 @@ class PokemonPartnerPlugin(Star):
 
     def _help_text(self) -> str:
         return (
-            "🎒 宝可梦伙伴图鉴\n"
-            "今日宝可梦 / 伙伴图鉴 [页码] / 伙伴资料 / 伙伴兑换 <名称> [闪光]\n"
-            "伙伴排行 / 伙伴概率 / 伙伴帮助 — 抽卡与收藏\n"
+            "🎒 宝可梦图鉴\n"
+            "今日宝可梦 / 我的宝可梦 [页码] / 收集资料 / 兑换宝可梦 <名称> [闪光]\n"
+            "收集排行 / 抽取概率 / 图鉴帮助 — 抽卡与收藏\n"
             "宝可梦 <编号/名称> — 图鉴卡片（头部带冠军赛名次）\n"
             "宝可梦 <名称> 招式表 [等级] — 可学招式与推荐配招\n"
             "宝可梦 <名称> 能力值 [等级 个体 性格] — 等级能力值计算\n"
