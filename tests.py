@@ -1517,6 +1517,54 @@ def test_store_recovery():
         )
 
 
+def test_render_does_not_block_event_loop():
+    section("渲染 / 不阻塞事件循环")
+    import asyncio
+    import inspect
+
+    from card_renderer import CardRenderer
+
+    check(
+        "render_pokemon 是异步接口",
+        inspect.iscoroutinefunction(CardRenderer.render_pokemon),
+    )
+    check(
+        "同步实现独立存在，供线程池调用",
+        not inspect.iscoroutinefunction(CardRenderer.render_pokemon_sync),
+    )
+
+    async def _measure() -> float:
+        db = PokedexDB()
+        renderer = CardRenderer()
+        row = db.pokemon("烈咬陆鲨")
+        gaps: list[float] = []
+        stop = asyncio.Event()
+
+        async def ticker() -> None:
+            import time
+
+            last = time.perf_counter()
+            while not stop.is_set():
+                await asyncio.sleep(0.01)
+                now = time.perf_counter()
+                gaps.append(now - last)
+                last = now
+
+        task = asyncio.create_task(ticker())
+        await asyncio.sleep(0.05)
+        await renderer.render_pokemon(row, db)
+        stop.set()
+        await task
+        return max(gaps) if gaps else 0.0
+
+    gap = asyncio.run(_measure())
+    check(
+        "渲染期间事件循环停顿小于 0.1s",
+        gap < 0.1,
+        f"max gap={gap:.3f}s",
+    )
+
+
 def test_champions_db():
     """冠军赛查询层：临时库写入 -> 排名/配置/反查/趋势/幂等。"""
     import sqlite3
@@ -1681,5 +1729,6 @@ if __name__ == "__main__":
     test_artwork_cache_bounded()
     test_exchange_arg_parsing()
     test_store_recovery()
+    test_render_does_not_block_event_loop()
     print(f"\n结果：{PASS} 通过 / {FAIL} 失败")
     sys.exit(1 if FAIL else 0)

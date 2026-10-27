@@ -81,6 +81,21 @@ class PokeAPIClient:
         if self._session and not self._session.closed:
             await self._session.close()
 
+    async def fetch_bytes(self, url: str) -> bytes | None:
+        """下载二进制资源（如官方立绘），复用内部 session；失败返回 None。"""
+        if self._session is None or self._session.closed:
+            self._session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=self.timeout)
+            )
+        async with self._session.get(url) as resp:
+            if resp.status != 200:
+                return None
+            content_type = resp.headers.get("Content-Type", "")
+            if content_type and "image" not in content_type.lower():
+                return None
+            data = await resp.read()
+        return data or None
+
     # ---------- 对应 pokeapi_get_pokemon ----------
     async def get_pokemon(self, name_or_id: str) -> dict | None:
         pk = await self._get(f"pokemon/{name_or_id}")

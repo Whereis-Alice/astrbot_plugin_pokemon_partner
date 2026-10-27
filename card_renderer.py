@@ -853,6 +853,21 @@ class CardRenderer:
         champion: dict | None = None,
     ) -> bytes | None:
         """组装种族值与进化链立绘并渲染卡片；失败返回 None（调用方回退文本）。"""
+        # 渲染是同步 CPU/IO 活，转交线程池，避免阻塞 AstrBot 事件循环。
+        import asyncio
+
+        return await asyncio.to_thread(
+            self.render_pokemon_sync, row, db, image_bytes, champion
+        )
+
+    def render_pokemon_sync(
+        self,
+        row: dict,
+        db,
+        image_bytes: bytes | None = None,
+        champion: dict | None = None,
+    ) -> bytes | None:
+        """``render_pokemon`` 的同步实现，可在工作线程里直接调用。"""
         try:
             parsed = db.first_stats(row)
             stats, total = parsed if parsed else ([], 0)

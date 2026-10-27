@@ -30,7 +30,6 @@ import re
 from pathlib import Path
 from typing import ClassVar
 
-import aiohttp
 import astrbot.api.message_components as Comp
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
@@ -833,13 +832,7 @@ class PokemonPartnerPlugin(Star):
                 f"https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/"
                 f"pokemon/other/official-artwork/{int(row.get('id', 0))}.png"
             )
-            if self.api._session is None or self.api._session.closed:
-                self.api._session = aiohttp.ClientSession(
-                    timeout=aiohttp.ClientTimeout(total=self.api.timeout)
-                )
-            async with self.api._session.get(url) as resp:
-                if resp.status == 200:
-                    return await resp.read()
+            return await self.api.fetch_bytes(url)
         except Exception as e:
             logger.warning(f"网络立绘获取失败: {e}")
         return None
@@ -864,8 +857,12 @@ class PokemonPartnerPlugin(Star):
         text = self.db.format_row(row, fields=POKEMON_FIELDS) + hint
         if card and self.config.get("enable_image_card", True):
             img_bytes = await self._artwork_bytes(row)
+            # render_pokemon 内部已把同步渲染放进线程池。
             png = await self.renderer.render_pokemon(
-                row, self.db, img_bytes, champion=self._champ_card_info(row)
+                row,
+                self.db,
+                img_bytes,
+                champion=self._champ_card_info(row),
             )
             if png:
                 comps = [Comp.Image.fromBytes(png)]
@@ -1473,7 +1470,13 @@ class PokemonPartnerPlugin(Star):
         except ValueError:
             yield event.plain_result("个体下限 / TID / SID 需要是数字")
             return
-        count, rows = self.db.wishmaker_query(nature=nature, min_iv=iv_floor, tsv=tsv)
+        # 65536 行全表扫描，放线程池避免阻塞事件循环。
+        count, rows = await asyncio.to_thread(
+            self.db.wishmaker_query,
+            nature=nature,
+            min_iv=iv_floor,
+            tsv=tsv,
+        )
         if not count:
             yield event.plain_result(
                 f"没有符合的目标（性格请从：{WISHMAKER_NATURES} 中选择）"
@@ -1488,8 +1491,13 @@ class PokemonPartnerPlugin(Star):
             yield result
             return
         try:
-            png = self.renderer.render_wishmaker_card(
-                nature, iv_floor, count, rows, tsv
+            png = await asyncio.to_thread(
+                self.renderer.render_wishmaker_card,
+                nature,
+                iv_floor,
+                count,
+                rows,
+                tsv,
             )
             yield event.chain_result([Comp.Image.fromBytes(png)])
         except Exception as e:
