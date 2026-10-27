@@ -310,8 +310,10 @@ class PokemonPartnerPlugin(Star):
 
     async def _send_draw_card(self, event, outcome, nickname: str):
         service = self._partner_or_error()
+        notice = service.recovery_notice()
         if not self._card_enabled():
-            yield event.plain_result(self._draw_text(outcome, nickname))
+            text = self._draw_text(outcome, nickname)
+            yield event.plain_result(f"{notice}\n{text}" if notice else text)
             return
         try:
             png = await asyncio.to_thread(
@@ -329,9 +331,12 @@ class PokemonPartnerPlugin(Star):
             logger.warning(f"[{PLUGIN_ID}] 抽卡卡片渲染失败: {exc}")
             png = None
         if png is None:
-            yield event.plain_result(self._draw_text(outcome, nickname))
+            text = self._draw_text(outcome, nickname)
+            yield event.plain_result(f"{notice}\n{text}" if notice else text)
             return
         extra = []
+        if notice:
+            extra.append(notice)
         for reward in outcome.milestones:
             bonus = f"，额外 {reward.bonus} 次" if reward.bonus else ""
             extra.append(
@@ -506,14 +511,12 @@ class PokemonPartnerPlugin(Star):
                 "重复伙伴会自动折算星尘；闪光兑换消耗更多星尘。"
             )
             return
-        tokens = keyword.split()
-        shiny = any(token in {"闪光", "异色", "shiny"} for token in tokens[1:])
-        name = next(
-            (token for token in tokens if token not in {"闪光", "异色", "shiny"}),
-            "",
-        )
+        name, shiny, unknown = self._parse_exchange_args(event, keyword)
         if not name:
-            yield event.plain_result("请提供要兑换的伙伴名称。")
+            hint = f"无法识别的参数：{'、'.join(unknown)}\n" if unknown else ""
+            yield event.plain_result(
+                hint + "用法：伙伴兑换 <伙伴名称> [闪光]"
+            )
             return
         try:
             service = self._partner_or_error()
@@ -543,6 +546,38 @@ class PokemonPartnerPlugin(Star):
                 f"🎉 收集达到 {reward.threshold} 位：获得 {reward.dust} 星尘{bonus}"
             )
         yield event.plain_result("\n".join(lines))
+
+    @staticmethod
+    def _parse_exchange_args(
+        event: AstrMessageEvent, keyword: str
+    ) -> tuple[str, bool, list[str]]:
+        """解析兑换参数，返回 ``(名称, 是否闪光, 未识别词)``。
+
+        AstrBot 会按空格把参数切成多个，这里改用完整消息文本：剥掉指令名与
+        闪光标记后，其余内容整体作为伙伴名称，避免名称被截断或词被静默丢弃。
+        """
+        shiny_words = {"闪光", "异色", "shiny"}
+        raw = str(getattr(event, "message_str", "") or "").strip()
+        if raw.startswith("/"):
+            raw = raw[1:].strip()
+        for command in ("伙伴兑换", "伙伴换取"):
+            if raw.startswith(command):
+                raw = raw[len(command) :].strip()
+                break
+        else:
+            raw = keyword.strip()
+
+        shiny = False
+        words: list[str] = []
+        for token in raw.split():
+            if token.lower() in shiny_words:
+                shiny = True
+            else:
+                words.append(token)
+        if not words:
+            return "", shiny, []
+        # 名称本身不含空格；多于一个词通常意味着用户多写了内容，明确报出来。
+        return words[0], shiny, words[1:]
 
     @filter.command("伙伴排行")
     async def cmd_partner_ranking(self, event: AstrMessageEvent):

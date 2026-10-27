@@ -55,6 +55,14 @@ class PartnerService:
     def partners(self) -> tuple[Partner, ...]:
         return self.store.partners
 
+    def recovery_notice(self) -> str:
+        """数据从备份恢复或无法读取时的用户可见提示；正常时返回空串。"""
+        if getattr(self.store, "_load_failed", False):
+            return "伙伴数据文件损坏且备份不可用，已停止写入以保护原文件，请联系管理员检查。"
+        if getattr(self.store, "_restored_from_backup", False):
+            return "提示：检测到伙伴主数据损坏，已从备份恢复，最后一次写入可能丢失。"
+        return ""
+
     def pool_counts(self) -> dict[str, int]:
         return {rarity: len(items) for rarity, items in self.store.by_rarity.items()}
 

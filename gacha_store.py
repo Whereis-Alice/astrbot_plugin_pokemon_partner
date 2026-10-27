@@ -7,8 +7,10 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import random
+import shutil
 import threading
 import time
 from datetime import date, datetime, timedelta
@@ -53,6 +55,8 @@ except ImportError:  # 兼容以普通模块方式加载
     )
 
 STATE_VERSION = 2
+
+logger = logging.getLogger(__name__)
 
 
 def _as_int(value: Any, default: int, lo: int | None = None, hi: int | None = None) -> int:
@@ -111,6 +115,8 @@ class GachaStore:
                     bucket = self._name_buckets.setdefault(key, [])
                     if partner not in bucket:
                         bucket.append(partner)
+        self._load_failed = False
+        self._restored_from_backup = False
         self.state = self._load()
 
     # ---------- 持久化 ----------
@@ -120,23 +126,65 @@ class GachaStore:
                 continue
             try:
                 raw = json.loads(path.read_text(encoding="utf-8"))
-            except (OSError, ValueError, TypeError):
+            except (OSError, ValueError, TypeError) as exc:
+                logger.warning("伙伴数据文件无法读取，尝试下一份备份: %s (%s)", path, exc)
                 continue
             if isinstance(raw, dict) and raw.get("version") == STATE_VERSION:
+                if path is not self.state_path:
+                    self._restored_from_backup = True
+                    logger.warning(
+                        "伙伴主数据损坏或缺失，已从备份恢复: %s", path
+                    )
+                    self._snapshot_corrupt_state()
                 return raw
+            logger.warning("伙伴数据文件版本不匹配，已跳过: %s", path)
+        if self.state_path.exists():
+            logger.error(
+                "伙伴数据无法恢复，将以空数据启动。原文件保留在 %s，"
+                "请人工检查后再继续使用，避免覆盖。",
+                self.state_path,
+            )
+            self._load_failed = True
         return {"version": STATE_VERSION, "scopes": {}}
+
+    def _snapshot_corrupt_state(self) -> None:
+        """把损坏的主文件另存一份，避免后续写入抹掉现场。"""
+        try:
+            if not self.state_path.is_file():
+                return
+            stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+            target = self.state_path.with_name(f"state.corrupt-{stamp}.json")
+            shutil.copy2(self.state_path, target)
+            logger.warning("已保留损坏的伙伴数据快照: %s", target)
+        except OSError as exc:
+            logger.warning("保留损坏数据快照失败: %s", exc)
 
     def _save(self) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
+        if getattr(self, "_load_failed", False):
+            # 主文件与备份都不可读时拒绝写入，避免用空数据覆盖掉仅存的现场。
+            raise GachaError(
+                "伙伴数据文件已损坏，为避免覆盖原数据已停止写入。"
+                f"请备份并检查 {self.state_path} 后重启插件。"
+            )
         payload = json.dumps(self.state, ensure_ascii=False, indent=2, sort_keys=True)
         tmp = self.state_path.with_suffix(".json.tmp")
         tmp.write_text(payload, encoding="utf-8")
-        if self.state_path.is_file():
+        if self.state_path.is_file() and self._is_readable_state(self.state_path):
             try:
                 os.replace(self.state_path, self.state_path.with_suffix(".json.bak"))
             except OSError:
                 pass
         os.replace(tmp, self.state_path)
+
+    @staticmethod
+    def _is_readable_state(path: Path) -> bool:
+        """只有能解析的旧文件才值得保留为备份。"""
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError, TypeError):
+            return False
+        return isinstance(raw, dict) and raw.get("version") == STATE_VERSION
 
     def reload(self) -> None:
         with self._lock:

@@ -1396,6 +1396,127 @@ def test_card_extreme_inputs():
     )
 
 
+def test_artwork_cache_bounded():
+    section("立绘缓存 / 内存上限")
+    import tempfile
+    from pathlib import Path
+
+    from PIL import Image
+
+    from artwork import ArtworkCache
+
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        for i in range(1, 41):
+            Image.new("RGBA", (64, 64), (i, 0, 0, 255)).save(root / f"{i:04d}.png")
+        cache = ArtworkCache(root)
+        cache.max_images = 8
+        for i in range(1, 41):
+            cache.load({"id": i})
+        check(
+            "缓存数量不超过上限",
+            cache.cache_size() == 8,
+            str(cache.cache_size()),
+        )
+        cache.load({"id": 40})
+        check(
+            "重复访问命中后仍不超上限",
+            cache.cache_size() == 8,
+            str(cache.cache_size()),
+        )
+        cache.clear_cache()
+        check("clear_cache 能清空", cache.cache_size() == 0)
+
+
+def test_exchange_arg_parsing():
+    section("伙伴兑换 / 参数解析")
+    import main  # 依赖 test_main_imports 注入的 stub
+
+    class _Ev:
+        def __init__(self, text):
+            self.message_str = text
+
+    parse = main.PokemonPartnerPlugin._parse_exchange_args
+    name, shiny, unknown = parse(_Ev("伙伴兑换 皮卡丘"), "")
+    check("单个名称", name == "皮卡丘" and not shiny and not unknown, str((name, shiny, unknown)))
+    name, shiny, unknown = parse(_Ev("伙伴兑换 皮卡丘 闪光"), "皮卡丘")
+    check(
+        "名称+闪光（第二个词被 AstrBot 截断时仍正确）",
+        name == "皮卡丘" and shiny and not unknown,
+        str((name, shiny, unknown)),
+    )
+    name, shiny, unknown = parse(_Ev("/伙伴兑换 超梦 异色"), "")
+    check("带斜杠与别名标记", name == "超梦" and shiny and not unknown, str((name, shiny, unknown)))
+    name, shiny, unknown = parse(_Ev("伙伴兑换 皮卡丘 闪光 多余"), "")
+    check(
+        "多余词被显式报告而不是静默丢弃",
+        name == "皮卡丘" and shiny and unknown == ["多余"],
+        str((name, shiny, unknown)),
+    )
+    name, shiny, unknown = parse(_Ev("伙伴兑换 闪光"), "")
+    check("只给闪光标记时名称为空", name == "" and shiny, str((name, shiny, unknown)))
+
+
+def test_store_recovery():
+    section("伙伴数据 / 损坏恢复")
+    import random
+    import tempfile
+    from pathlib import Path
+
+    from gacha import GachaError, GachaRules, build_partners
+    from gacha_store import GachaStore
+
+    db = PokedexDB()
+    rules = GachaRules.from_config(
+        {"daily_draw_limit": 20, "draw_cooldown_seconds": 0, "shiny_chance_percent": 0}
+    )
+    partners = build_partners(db, rules)
+    with tempfile.TemporaryDirectory() as td:
+        folder = Path(td)
+        store = GachaStore(folder, partners, rules, rng=random.Random(2))
+        for _ in range(3):
+            store.draw("g", "u", "n", today="2026-10-27")
+        expected = store.get_profile("g", "u", today="2026-10-27").collected
+
+        store.state_path.write_text("{broken", encoding="utf-8")
+        recovered = GachaStore(folder, partners, rules, rng=random.Random(2))
+        got = recovered.get_profile("g", "u", today="2026-10-27").collected
+        check(
+            "主文件损坏时从 .bak 恢复（允许丢最后一次写入）",
+            got in {expected, max(0, expected - 1)},
+            f"expected={expected}, got={got}",
+        )
+        snapshots = list(folder.glob("state.corrupt-*.json"))
+        check("损坏文件被另存为快照", len(snapshots) == 1, str([p.name for p in snapshots]))
+        recovered.draw("g", "u", "n", today="2026-10-27")
+        backup_text = recovered.state_path.with_suffix(".json.bak").read_text(
+            encoding="utf-8"
+        )
+        check(
+            "恢复后写入不会把损坏文件复制成新备份",
+            not backup_text.startswith("{broken") and backup_text.strip().startswith("{"),
+            backup_text[:20],
+        )
+
+    with tempfile.TemporaryDirectory() as td:
+        folder = Path(td)
+        store = GachaStore(folder, partners, rules, rng=random.Random(3))
+        store.draw("g", "u", "n", today="2026-10-27")
+        store.state_path.write_text("{broken", encoding="utf-8")
+        store.state_path.with_suffix(".json.bak").write_text("{broken", encoding="utf-8")
+        broken = GachaStore(folder, partners, rules, rng=random.Random(3))
+        try:
+            broken.draw("g", "u", "n", today="2026-10-27")
+            check("两份文件都损坏时拒绝覆盖写入", False)
+        except GachaError:
+            check("两份文件都损坏时拒绝覆盖写入", True)
+        check(
+            "损坏文件仍保留在磁盘上",
+            store.state_path.exists()
+            and store.state_path.read_text(encoding="utf-8") == "{broken",
+        )
+
+
 def test_champions_db():
     """冠军赛查询层：临时库写入 -> 排名/配置/反查/趋势/幂等。"""
     import sqlite3
@@ -1557,5 +1678,8 @@ if __name__ == "__main__":
     test_gacha_empty_rarity_pool()
     test_collection_pagination()
     test_card_extreme_inputs()
+    test_artwork_cache_bounded()
+    test_exchange_arg_parsing()
+    test_store_recovery()
     print(f"\n结果：{PASS} 通过 / {FAIL} 失败")
     sys.exit(1 if FAIL else 0)

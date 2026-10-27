@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Iterable, Mapping
 
@@ -33,6 +34,7 @@ SPRITE_URL = (
 SPRITE_URL_FALLBACK = (
     "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/{dex}.png"
 )
+MAX_CACHED_IMAGES = 160
 
 
 class ArtworkCache:
@@ -52,8 +54,9 @@ class ArtworkCache:
         self.db = db
         self.allow_download = allow_download
         self.timeout = timeout
-        self._images: dict[str, Image.Image] = {}
+        self._images: OrderedDict[str, Image.Image] = OrderedDict()
         self._failed: set[str] = set()
+        self.max_images = MAX_CACHED_IMAGES
 
     # ---------- 同步读取（渲染线程） ----------
     def _local_path(self, row: Mapping[str, Any]) -> Path | None:
@@ -91,6 +94,7 @@ class ArtworkCache:
             return None
         cached = self._images.get(key)
         if cached is not None:
+            self._images.move_to_end(key)
             return cached
         try:
             image = Image.open(path).convert("RGBA")
@@ -99,11 +103,18 @@ class ArtworkCache:
             self._failed.add(key)
             return None
         self._images[key] = image
+        # 有界 LRU：长期运行时不会把上千张立绘常驻内存。
+        while len(self._images) > self.max_images:
+            self._images.popitem(last=False)
         return image
 
     def clear_cache(self) -> None:
         self._images.clear()
         self._failed.clear()
+
+    def cache_size(self) -> int:
+        """当前常驻内存的立绘数量（调试与测试用）。"""
+        return len(self._images)
 
     # ---------- 异步预取 ----------
     def missing(self, rows: Iterable[Mapping[str, Any]]) -> list[tuple[int, Path]]:

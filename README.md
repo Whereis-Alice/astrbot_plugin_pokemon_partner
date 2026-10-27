@@ -241,6 +241,10 @@ data/plugin_data/astrbot_plugin_pokemon_partner/
 `state.json` 使用临时文件 + `os.replace` 原子写入，并保留一份 `.bak`。写入失败不会破坏
 旧文件。备份或迁移时请复制整个 `astrbot_plugin_pokemon_partner` 数据目录。
 
+如果 `state.json` 损坏，插件会自动从 `.bak` 恢复（可能丢失最后一次写入），并把损坏
+文件另存为 `state.corrupt-<时间>.json`；主文件与备份都无法读取时会停止写入并提示管理员
+检查，而不是用空数据覆盖。恢复后不会再把损坏文件复制成新的备份。
+
 群聊按群隔离，私聊按用户隔离：同一个人在 A 群和 B 群的收藏互不影响。更换群号或清空
 数据目录都会重置对应收藏，操作前请备份。
 
