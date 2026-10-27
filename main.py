@@ -264,6 +264,10 @@ class PokemonPartnerPlugin(Star):
             raise GachaError(hint)
         return self.partner_service
 
+    def _card_enabled(self) -> bool:
+        """伙伴卡片是否启用；关闭时全部回退纯文本。"""
+        return bool(self.config.get("enable_image_card", True))
+
     @staticmethod
     def _draw_text(outcome, nickname: str) -> str:
         lines = [f"【伙伴召唤】{nickname}"]
@@ -300,6 +304,9 @@ class PokemonPartnerPlugin(Star):
 
     async def _send_draw_card(self, event, outcome, nickname: str):
         service = self._partner_or_error()
+        if not self._card_enabled():
+            yield event.plain_result(self._draw_text(outcome, nickname))
+            return
         try:
             png = await asyncio.to_thread(
                 render_draw_card,
@@ -371,15 +378,22 @@ class PokemonPartnerPlugin(Star):
         """查看稀有度概率、保底与每日次数。"""
         try:
             service = self._partner_or_error()
-            png = await asyncio.to_thread(
-                render_rarity_legend, service.store.rules, service.pool_counts()
+            png = (
+                await asyncio.to_thread(
+                    render_rarity_legend, service.store.rules, service.pool_counts()
+                )
+                if self._card_enabled()
+                else None
             )
         except GachaError as exc:
             yield event.plain_result(str(exc))
             return
         except Exception as exc:
             logger.error(f"[{PLUGIN_ID}] 伙伴概率卡渲染失败: {exc}")
-            yield event.plain_result("伙伴概率卡渲染失败，请稍后再试。")
+            yield event.plain_result(service.rule_text())
+            return
+        if png is None:
+            yield event.plain_result(service.rule_text())
             return
         yield event.chain_result([Comp.Image.fromBytes(png)])
 
@@ -406,20 +420,21 @@ class PokemonPartnerPlugin(Star):
         except (TypeError, ValueError):
             page_no = 1
         chunk = owned[(page_no - 1) * page_size : page_no * page_size]
-        try:
-            png = await asyncio.to_thread(
-                render_collection_card,
-                chunk,
-                nickname=nickname or summary.nickname,
-                page=page_no,
-                page_size=page_size,
-                total=summary.total,
-                collected=summary.collected,
-                image_loader=service.artwork,
-            )
-        except Exception as exc:
-            logger.warning(f"[{PLUGIN_ID}] 图鉴卡渲染失败: {exc}")
-            png = None
+        png = None
+        if self._card_enabled():
+            try:
+                png = await asyncio.to_thread(
+                    render_collection_card,
+                    chunk,
+                    nickname=nickname or summary.nickname,
+                    page=page_no,
+                    page_size=page_size,
+                    total=summary.total,
+                    collected=summary.collected,
+                    image_loader=service.artwork,
+                )
+            except Exception as exc:
+                logger.warning(f"[{PLUGIN_ID}] 图鉴卡渲染失败: {exc}")
         if png is not None:
             yield event.chain_result([Comp.Image.fromBytes(png)])
             return
@@ -448,16 +463,17 @@ class PokemonPartnerPlugin(Star):
         except GachaError as exc:
             yield event.plain_result(str(exc))
             return
-        try:
-            png = await asyncio.to_thread(
-                render_profile_card,
-                summary,
-                rank=rank,
-                rules=service.store.rules,
-            )
-        except Exception as exc:
-            logger.warning(f"[{PLUGIN_ID}] 资料卡渲染失败: {exc}")
-            png = None
+        png = None
+        if self._card_enabled():
+            try:
+                png = await asyncio.to_thread(
+                    render_profile_card,
+                    summary,
+                    rank=rank,
+                    rules=service.store.rules,
+                )
+            except Exception as exc:
+                logger.warning(f"[{PLUGIN_ID}] 资料卡渲染失败: {exc}")
         if png is not None:
             yield event.chain_result([Comp.Image.fromBytes(png)])
             return

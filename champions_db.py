@@ -132,7 +132,9 @@ def resolve_db_path(explicit: str | Path | None = None) -> Path:
     if explicit:
         return Path(explicit).expanduser()
 
-    env_path = os.environ.get("POKEMON_PARTNER_CHAMPIONS_DB")
+    env_path = os.environ.get("POKEMON_PARTNER_CHAMPIONS_DB") or os.environ.get(
+        "POKEDEX_CHAMPIONS_DB"
+    )
     if env_path:
         return Path(env_path).expanduser()
 

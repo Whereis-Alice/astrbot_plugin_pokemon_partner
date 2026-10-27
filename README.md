@@ -208,7 +208,7 @@ python -m pip install -r astrbot_plugin_pokemon_partner/requirements.txt
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
 | `images_dir` | 空 | pokemon-dataset-zh 的 `data/images` 目录 |
-| `enable_image_card` | `true` | 关闭后图鉴返回纯文本 |
+| `enable_image_card` | `true` | 关闭后所有图片卡片（含伙伴卡片）返回纯文本 |
 | `fallback_web_image` | `true` | 本地缺图时使用网络官方图 |
 | `pokeapi_enabled` | `true` | PokéAPI 补充查询 |
 | `pokeapi_timeout` | `15` | PokéAPI 超时秒数 |
