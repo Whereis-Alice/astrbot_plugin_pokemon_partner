@@ -54,7 +54,7 @@ try:
     )
     from .pokeapi_client import PokeAPIClient
     from .pokedex_db import TABLES, PokedexDB
-    from .gacha import ConfigError, GachaError, GachaRules, Partner, rarity_label
+    from .gacha import ConfigError, GachaError, GachaRules, rarity_label
     from .artwork import ArtworkCache
     from .partner_cards import (
         render_collection_card,
@@ -82,7 +82,7 @@ except ImportError:  # 兼容以普通模块方式加载插件
     )
     from pokeapi_client import PokeAPIClient
     from pokedex_db import TABLES, PokedexDB
-    from gacha import ConfigError, GachaError, GachaRules, Partner, rarity_label
+    from gacha import ConfigError, GachaError, GachaRules, rarity_label
     from artwork import ArtworkCache
     from partner_cards import (
         render_collection_card,
@@ -360,7 +360,7 @@ class PokemonPartnerPlugin(Star):
             yield event.plain_result("伙伴召唤失败，请稍后再试。")
             return
         # 立绘下载不阻塞抽卡结果；本次没有缓存时先显示占位图，下次自然命中。
-        if self.artwork is not None:
+        if self.artwork is not None and self._card_enabled():
             try:
                 asyncio.create_task(
                     self.artwork.prefetch(
@@ -369,7 +369,7 @@ class PokemonPartnerPlugin(Star):
                     )
                 )
             except Exception:
-                logger.debug(f"[{PLUGIN_ID}] 立绘后台预取启动失败", exc_info=True)
+                logger.warning(f"[{PLUGIN_ID}] 立绘后台预取启动失败")
         async for result in self._send_draw_card(event, outcome, nickname or "训练家"):
             yield result
 

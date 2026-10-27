@@ -10,9 +10,9 @@ from __future__ import annotations
 
 import io
 import math
-from typing import Callable, Iterable, Sequence
+from typing import Callable, Sequence
 
-from PIL import Image, ImageDraw, ImageFilter, ImageFont
+from PIL import Image, ImageDraw, ImageFont
 
 try:
     from .card_renderer import load_font
@@ -194,7 +194,6 @@ def _draw_result_rows(
     name_font, meta_font, small = _font(34), _font(23), _font(21)
     for index, item in enumerate(items):
         color = RARITY_COLORS.get(item.rarity, RARITY_COLORS["C"])
-        glow = RARITY_GLOW.get(item.rarity, RARITY_GLOW["C"])
         box = [PAD, y, W - PAD, y + 150]
         _round_panel(
             draw,
@@ -450,13 +449,14 @@ def render_profile_card(
     else:
         hint = "全部伙伴已收集，图鉴完成！"
     day_hint = "发送「伙伴召唤」开始今天的邂逅。"
-    draw.text((PAD + 4, height - 76), f"{hint} · {day_hint}", font=_font(22), fill=SUBTEXT)
+    draw.text((PAD + 4, height - 76), hint, font=_font(22), fill=SUBTEXT)
+    draw.text((PAD + 4, height - 42), day_hint, font=_font(22), fill=SUBTEXT)
     return _encode(base)
 
 
 def render_rarity_legend(rules: GachaRules, pool_counts: dict[str, int]) -> bytes:
     """概率与规则说明卡，帮助页和抽卡前提示共用。"""
-    height = 640
+    height = 700
     base = _gradient((W, height)).convert("RGBA")
     draw = ImageDraw.Draw(base)
     _starfield(draw, W, height)

@@ -296,7 +296,6 @@ class CardRenderer:
         """绘制排版好的进化链，返回新的 y。base 是卡片底图（贴立绘用）。"""
         small, arrow_font, cond_font = self._font(27), self._font(30), self._font(18)
         draw.text((x_label, y + (EVO_IMG - 27) // 2), "进化", font=small, fill=SUBTEXT)
-        x0 = x_label + 90
         for ri, (items, rh) in enumerate(rows):
             for kind, x, a, b in items:
                 if kind == "node":

@@ -875,7 +875,8 @@ def test_gacha_rules():
     rules = GachaRules.from_config({})
     check(
         "默认权重 55/30/12/3",
-        rules.weight_list() == [55, 30, 12, 3],
+        rules.weight_list() == [DEFAULT_WEIGHTS[r] for r in ("C", "R", "SR", "SSR")]
+        == [55, 30, 12, 3],
         str(rules.weight_list()),
     )
     check(

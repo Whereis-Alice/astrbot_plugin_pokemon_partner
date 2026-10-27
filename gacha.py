@@ -21,7 +21,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Iterable, Mapping
+from typing import Any, Mapping
 
 RARITIES: tuple[str, ...] = ("C", "R", "SR", "SSR")
 RARITY_NAMES: dict[str, str] = {

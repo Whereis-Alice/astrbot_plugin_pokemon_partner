@@ -11,7 +11,6 @@ import os
 import random
 import threading
 import time
-from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -342,6 +341,8 @@ class GachaStore:
                 if not isinstance(profile, Mapping):
                     continue
                 owned = self._owned(profile)
+                if not owned:
+                    continue
                 rows.append(
                     (
                         len(owned),
@@ -486,6 +487,11 @@ class GachaStore:
             limit = self.rules.daily_limit + self._bonus(profile, today)
             remaining = max(0, limit - used)
             if remaining <= 0:
+                if limit <= 0:
+                    raise GachaError(
+                        "当前没有可用的召唤次数。请联系管理员开放每日次数，"
+                        "或等待收集里程碑发放额外次数。"
+                    )
                 raise GachaError(f"今天的 {limit} 次伙伴召唤已经用完了，明天再来吧。")
             actual = min(requested, remaining)
             items: list[DrawItem] = []
