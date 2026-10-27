@@ -251,9 +251,15 @@ class PokemonPartnerPlugin(Star):
 
     @staticmethod
     def _scope(event: AstrMessageEvent) -> tuple[str, str, str]:
-        """返回 ``(scope, user_id, nickname)``；私聊按用户隔离。"""
-        user_id = event.get_sender_id() or "unknown"
+        """返回 ``(scope, user_id, nickname)``。
+
+        群聊按群隔离，私聊按用户隔离。少数平台拿不到 sender_id 时回退到会话 ID，
+        避免所有私聊用户被塞进同一个 ``private:unknown`` 而串档。
+        """
+        user_id = event.get_sender_id() or ""
         group_id = event.get_group_id()
+        if not user_id:
+            user_id = str(getattr(event, "session_id", "") or "unknown")
         scope = f"group:{group_id}" if group_id else f"private:{user_id}"
         nickname = event.get_sender_name() or ""
         return scope, user_id, nickname
@@ -380,7 +386,10 @@ class PokemonPartnerPlugin(Star):
             service = self._partner_or_error()
             png = (
                 await asyncio.to_thread(
-                    render_rarity_legend, service.store.rules, service.pool_counts()
+                    render_rarity_legend,
+                    service.store.rules,
+                    service.pool_counts(),
+                    service.effective_weights(),
                 )
                 if self._card_enabled()
                 else None
@@ -639,8 +648,8 @@ class PokemonPartnerPlugin(Star):
             service = self.partner_service
             if service:
                 base += "\n\n【当前抽卡规则】\n" + service.rule_text()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning(f"[{PLUGIN_ID}] 帮助文案追加抽卡规则失败: {exc}")
         return base
 
     # ---------- 伙伴 LLM 工具 ----------
@@ -755,16 +764,19 @@ class PokemonPartnerPlugin(Star):
             return str(exc)
         counts = service.pool_counts()
         rules = service.store.rules
-        total = sum(rules.weight_list()) or 1
+        weights = service.effective_weights()
+        total = sum(weights.values()) or 1
         lines = ["【伙伴召唤规则】"]
         for rarity in ("SSR", "SR", "R", "C"):
-            pct = rules.weights.get(rarity, 0) / total * 100
+            pct = weights.get(rarity, 0) / total * 100
             lines.append(
                 f"{rarity}（{rarity_label(rarity)}）：{pct:g}%，池内 {counts.get(rarity, 0)} 位"
             )
         lines.append(f"每次召唤 {rules.draws_per_command} 位，每日 {rules.daily_limit} 次")
         lines.append(
-            f"SSR 保底：{rules.ssr_pity_after} 次" if rules.ssr_pity_after else "SSR 保底：关闭"
+            f"SSR 保底：{rules.ssr_pity_after} 次"
+            if rules.ssr_pity_after and counts.get("SSR")
+            else "SSR 保底：未启用（已关闭或卡池无 SSR）"
         )
         lines.append(f"闪光概率：{rules.shiny_chance_percent:g}%")
         return "\n".join(lines)

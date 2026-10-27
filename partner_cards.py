@@ -84,6 +84,20 @@ def _wrap(draw: ImageDraw.ImageDraw, text: str, font, width: int) -> list[str]:
     return lines or [""]
 
 
+def _ellipsize(draw: ImageDraw.ImageDraw, text: str, font, width: int) -> str:
+    """把超宽文本截断成一行并以省略号收尾，避免压到右侧徽章。"""
+    if draw.textlength(text, font=font) <= width:
+        return text
+    ellipsis = "…"
+    budget = width - draw.textlength(ellipsis, font=font)
+    out = ""
+    for ch in text:
+        if draw.textlength(out + ch, font=font) > budget:
+            break
+        out += ch
+    return (out or text[:1]) + ellipsis
+
+
 def _gradient(size: tuple[int, int]) -> Image.Image:
     width, height = size
     img = Image.new("RGB", (1, height))
@@ -217,8 +231,14 @@ def _draw_result_rows(
         title = f"#{item.dex_raw}  {item.name}"
         if item.shiny:
             title += "  ✦"
+        title = _ellipsize(draw, title, name_font, W - PAD - 210 - tx)
         draw.text((tx, y + 24), title, font=name_font, fill=GOLD if item.shiny else TEXT)
-        meta = f"{item.types or '未知属性'} · 种族值 {item.bst}"
+        meta = _ellipsize(
+            draw,
+            f"{item.types or '未知属性'} · 种族值 {item.bst}",
+            meta_font,
+            W - PAD - 210 - tx,
+        )
         draw.text((tx, y + 74), meta, font=meta_font, fill=SUBTEXT)
         if item.shiny:
             draw.text(
@@ -374,7 +394,8 @@ def render_collection_card(
             fill=GOLD if shiny else SUBTEXT,
         )
 
-    pages = max(1, math.ceil(total / max(1, page_size)))
+    # 分页按"已收集"计算；total 是卡池规模，只用于展示进度。
+    pages = max(1, math.ceil(len(owned) / max(1, page_size))) if owned else 1
     foot = f"第 {page}/{pages} 页 · 伙伴图鉴 <页码> 翻页 · 伙伴兑换 <名称> 定向获取"
     tw = draw.textlength(foot, font=small)
     draw.text(((W - tw) / 2, height - 66), foot, font=small, fill=SUBTEXT)
@@ -454,22 +475,35 @@ def render_profile_card(
     return _encode(base)
 
 
-def render_rarity_legend(rules: GachaRules, pool_counts: dict[str, int]) -> bytes:
-    """概率与规则说明卡，帮助页和抽卡前提示共用。"""
+def render_rarity_legend(
+    rules: GachaRules,
+    pool_counts: dict[str, int],
+    effective_weights: dict[str, int] | None = None,
+) -> bytes:
+    """概率与规则说明卡。
+
+    Args:
+        rules: 抽卡规则。
+        pool_counts: 各档卡池数量。
+        effective_weights: 实际生效权重（已剔除空档位）。为 ``None`` 时退回配置权重。
+    """
     height = 700
     base = _gradient((W, height)).convert("RGBA")
     draw = ImageDraw.Draw(base)
     _starfield(draw, W, height)
     _round_panel(draw, [16, 16, W - 16, height - 16], fill=(17, 24, 43), radius=28)
     draw.text((PAD, PAD), "稀有度与概率", font=_font(44), fill=TEXT)
-    total_weight = sum(rules.weight_list()) or 1
+    weights = effective_weights or dict(
+        zip(("C", "R", "SR", "SSR"), rules.weight_list())
+    )
+    total_weight = sum(weights.values()) or 1
     y = PAD + 86
     for rarity in ("SSR", "SR", "R", "C"):
         color = RARITY_COLORS[rarity]
         _round_panel(draw, [PAD, y, W - PAD, y + 96], fill=PANEL_ALT, radius=18)
         draw.rounded_rectangle([PAD, y, PAD + 10, y + 96], radius=5, fill=color)
         _rarity_badge(draw, (PAD + 30, y + 26), rarity)
-        pct = rules.weights.get(rarity, 0) / total_weight * 100
+        pct = weights.get(rarity, 0) / total_weight * 100
         count = pool_counts.get(rarity, 0)
         draw.text(
             (W - PAD - 260, y + 24),
@@ -486,7 +520,11 @@ def render_rarity_legend(rules: GachaRules, pool_counts: dict[str, int]) -> byte
         y += 108
     notes = [
         f"每次召唤固定 {rules.draws_per_command} 位；每日 {rules.daily_limit} 次。",
-        f"连续 {rules.ssr_pity_after} 次未出 SSR 时，下一次必出 SSR。" if rules.ssr_pity_after else "SSR 保底已关闭。",
+        (
+            f"连续 {rules.ssr_pity_after} 次未出 SSR 时，下一次必出 SSR。"
+            if rules.ssr_pity_after and pool_counts.get("SSR", 0)
+            else "SSR 保底未启用（已关闭或卡池无 SSR）。"
+        ),
         f"闪光概率 {rules.shiny_chance_percent:g}%，重复伙伴折算星尘。",
     ]
     for note in notes:

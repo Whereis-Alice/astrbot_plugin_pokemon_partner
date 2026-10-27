@@ -58,6 +58,10 @@ class PartnerService:
     def pool_counts(self) -> dict[str, int]:
         return {rarity: len(items) for rarity, items in self.store.by_rarity.items()}
 
+    def effective_weights(self) -> dict[str, int]:
+        """实际生效的稀有度权重（已剔除空档位）。"""
+        return self.store.effective_weights()
+
     def artwork(self, row: Mapping[str, Any]) -> Any | None:
         if self.artwork_loader is None:
             return None
@@ -74,10 +78,12 @@ class PartnerService:
 
     def rule_text(self) -> str:
         rules = self.store.rules
-        total = sum(rules.weight_list()) or 1
+        effective = self.effective_weights()
+        total = sum(effective.values()) or 1
         weights = "｜".join(
-            f"{rarity} {rules.weights.get(rarity, 0) / total * 100:g}%"
+            f"{rarity} {effective[rarity] / total * 100:g}%"
             for rarity in ("SSR", "SR", "R", "C")
+            if rarity in effective
         )
         lines = [
             f"每次召唤 {rules.draws_per_command} 位，每日 {rules.daily_limit} 次",

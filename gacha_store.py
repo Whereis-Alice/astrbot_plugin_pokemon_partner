@@ -377,12 +377,45 @@ class GachaStore:
             return better + 1
 
     # ---------- 抽卡 ----------
-    def _roll_rarity(self, profile: Mapping[str, Any]) -> str:
+    def effective_weights(self) -> dict[str, int]:
+        """实际可用的稀有度权重。
+
+        若配置给了某档权重但该档卡池为空，强行抽取只能回退到全池，会让展示概率
+        与实际结果不符。这里直接剔除空档位后再归一化，保底也只针对可用档位。
+        """
+        usable = {
+            rarity: weight
+            for rarity, weight in zip(RARITIES, self.rules.weight_list())
+            if weight > 0 and self.by_rarity.get(rarity)
+        }
+        if usable:
+            return usable
+        # 所有配置档位都为空时退化为全池等概率，至少保证能抽。
+        return {
+            rarity: 1 for rarity in RARITIES if self.by_rarity.get(rarity)
+        } or {"C": 1}
+
+    def pity_rarity(self) -> str | None:
+        """当前是否触发 SSR 保底；卡池没有 SSR 时返回 ``None``。"""
         after = self.rules.ssr_pity_after
+        if after <= 0 or not self.by_rarity.get("SSR"):
+            return None
+        return "SSR"
+
+    def _roll_rarity(self, profile: Mapping[str, Any]) -> str:
+        pity_target = self.pity_rarity()
         pity = max(0, _as_int(profile.get("pity_ssr"), 0))
-        if after > 0 and pity >= after - 1:
-            return "SSR"
-        return self.rng.choices(RARITIES, weights=self.rules.weight_list(), k=1)[0]
+        if (
+            pity_target
+            and self.rules.ssr_pity_after > 0
+            and pity >= self.rules.ssr_pity_after - 1
+        ):
+            return pity_target
+        weights = self.effective_weights()
+        rarities = list(weights)
+        return self.rng.choices(
+            rarities, weights=[weights[r] for r in rarities], k=1
+        )[0]
 
     def _choose(
         self, rarity: str, *, force_new: bool, owned: Mapping[str, tuple[int, int]]
@@ -431,11 +464,11 @@ class GachaStore:
         dust = 0 if is_new else self.rules.dust_for(partner.rarity, shiny)
         if dust:
             profile["dust"] = max(0, _as_int(profile.get("dust"), 0)) + dust
-        profile["pity_ssr"] = (
-            0
-            if partner.rarity == "SSR"
-            else max(0, _as_int(profile.get("pity_ssr"), 0)) + 1
-        )
+        # 卡池没有 SSR 时保底无法兑现，不要累积计数，否则补上数据后会连续爆发。
+        if partner.rarity == "SSR" or not self.by_rarity.get("SSR"):
+            profile["pity_ssr"] = 0
+        else:
+            profile["pity_ssr"] = max(0, _as_int(profile.get("pity_ssr"), 0)) + 1
         profile["pity_new"] = (
             0 if is_new else max(0, _as_int(profile.get("pity_new"), 0)) + 1
         )

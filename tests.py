@@ -1232,6 +1232,170 @@ def test_partner_cards():
             check(f"{label}卡片可解码且宽度 1080", ok)
 
 
+def test_gacha_empty_rarity_pool():
+    section("伙伴抽卡 / 空稀有度档位")
+    import random
+    import tempfile
+    from pathlib import Path
+
+    from gacha import GachaRules, Partner
+    from gacha_store import GachaStore
+
+    rows = [
+        {
+            "id": str(i),
+            "id_raw": f"{i:04d}",
+            "name_zh": f"P{i}",
+            "name_en": f"P{i}",
+            "form_name": "",
+            "types": "一般",
+            "stats": "HP50/攻击50/防御50/特攻50/特防50/速度50（总和300）",
+        }
+        for i in range(1, 6)
+    ]
+
+    class _StubDB:
+        def table(self, _name):
+            return rows
+
+        @staticmethod
+        def first_stats(_row):
+            return None, 300
+
+    rules = GachaRules.from_config(
+        {
+            "rarity_weights": {"C": 0, "R": 0, "SR": 0, "SSR": 100},
+            "daily_draw_limit": 10,
+            "draw_cooldown_seconds": 0,
+            "ssr_pity_after": 3,
+            "shiny_chance_percent": 0,
+        }
+    )
+    partners = tuple(
+        Partner(
+            key=str(row["id"]),
+            dex=int(row["id"]),
+            dex_raw=row["id_raw"],
+            name=row["name_zh"],
+            types=row["types"],
+            bst=300,
+            rarity="C",
+            row=row,
+        )
+        for row in rows
+    )
+    with tempfile.TemporaryDirectory() as td:
+        store = GachaStore(Path(td), partners, rules, rng=random.Random(1))
+        check(
+            "空档位被剔除后权重落到可用档",
+            store.effective_weights() == {"C": 1},
+            str(store.effective_weights()),
+        )
+        check("卡池无 SSR 时保底不生效", store.pity_rarity() is None)
+        outcome = store.draw("g", "u", "n", count=5, today="2026-10-27")
+        check(
+            "仍能正常抽满且只出可用档",
+            len(outcome.items) == 5
+            and all(item.rarity == "C" for item in outcome.items),
+            str([item.rarity for item in outcome.items]),
+        )
+        check(
+            "无 SSR 时不累积保底计数",
+            store.get_profile("g", "u", today="2026-10-27").pity_ssr == 0,
+        )
+
+
+def test_collection_pagination():
+    section("伙伴图鉴 / 分页按已收集计算")
+    import io
+    import random
+    import tempfile
+    from pathlib import Path
+
+    from PIL import Image
+
+    from gacha import GachaRules, build_partners
+    from gacha_store import GachaStore
+    from partner_cards import render_collection_card
+
+    db = PokedexDB()
+    rules = GachaRules.from_config(
+        {"daily_draw_limit": 100, "draw_cooldown_seconds": 0, "shiny_chance_percent": 0}
+    )
+    with tempfile.TemporaryDirectory() as td:
+        store = GachaStore(
+            Path(td), build_partners(db, rules), rules, rng=random.Random(5)
+        )
+        store.draw("s", "u", "n", count=30, today="2026-10-27")
+        owned = store.owned_partners("s", "u")
+        summary = store.get_profile("s", "u", today="2026-10-27")
+        data = render_collection_card(
+            owned,
+            nickname="n",
+            page=1,
+            page_size=24,
+            total=summary.total,
+            collected=summary.collected,
+        )
+        image = Image.open(io.BytesIO(data))
+        expected_pages = -(-len(owned) // 24)
+        check(
+            "图鉴卡片可渲染",
+            image.width == 1080 and image.height > 0,
+            f"{len(owned)} 位",
+        )
+        check(
+            "分页数按已收集数计算，与卡池总量无关",
+            expected_pages == max(1, -(-len(owned) // 24))
+            and expected_pages < summary.total,
+            f"pages={expected_pages}, collected={len(owned)}, total={summary.total}",
+        )
+
+
+def test_card_extreme_inputs():
+    section("伙伴卡片 / 极端输入")
+    import io
+    import os
+    import tempfile
+
+    from PIL import Image
+
+    from gacha import DrawItem
+    from partner_cards import render_draw_card
+
+    os.environ.setdefault("ASTRBOT_ROOT", tempfile.mkdtemp(prefix="partner-cards-"))
+    row = {"id": "1", "id_raw": "0001", "name_zh": "超长名字" * 6}
+    item = DrawItem(
+        key="1",
+        dex=1,
+        dex_raw="0001",
+        name=row["name_zh"],
+        types="草/毒/飞行/龙/恶",
+        bst=999,
+        rarity="SSR",
+        shiny=True,
+        is_new=False,
+        dust=12345,
+        owned_count=9,
+        row=row,
+    )
+    data = render_draw_card(
+        [item] * 10,
+        nickname="很长的训练家昵称" * 3,
+        remaining=0,
+        daily_limit=10,
+        dust=999999,
+        pity_ssr=999,
+        ssr_pity_after=30,
+    )
+    image = Image.open(io.BytesIO(data))
+    check(
+        "10 连 + 超长名称/昵称仍可渲染",
+        image.width == 1080 and image.height > 1000,
+        str(image.size),
+    )
+
+
 def test_champions_db():
     """冠军赛查询层：临时库写入 -> 排名/配置/反查/趋势/幂等。"""
     import sqlite3
@@ -1390,5 +1554,8 @@ if __name__ == "__main__":
     test_gacha_store()
     test_gacha_pity_and_shiny()
     test_partner_cards()
+    test_gacha_empty_rarity_pool()
+    test_collection_pagination()
+    test_card_extreme_inputs()
     print(f"\n结果：{PASS} 通过 / {FAIL} 失败")
     sys.exit(1 if FAIL else 0)
