@@ -1809,6 +1809,27 @@ def test_webui_settings_rollback_and_artwork():
         )
 
 
+def test_webui_bridge_protocol():
+    section("WebUI / Bridge 调用协议")
+    core_js = (
+        ROOT / "pages" / "partner-console" / "js" / "core.js"
+    ).read_text(encoding="utf-8")
+    check(
+        "Bridge GET 使用相对 endpoint 与独立参数",
+        "bridge.apiGet(bridgeEndpoint(path), query)" in core_js,
+    )
+    check(
+        "Bridge POST 使用相对 endpoint",
+        "bridge.apiPost(bridgeEndpoint(path), body ?? {})" in core_js,
+    )
+    check(
+        "Bridge endpoint 禁止查询串和路径穿越",
+        "new URLSearchParams" not in core_js
+        and "endpoint.split(\"/\")" in core_js
+        and "/[?#\\\\]/" in core_js,
+    )
+
+
 def test_session_isolation_and_my_pokemon():
     section("会话隔离 / 我的宝可梦")
     import random
@@ -2014,6 +2035,7 @@ if __name__ == "__main__":
     test_multi_instance_no_data_loss()
     test_draw_card_includes_artwork()
     test_webui_settings_rollback_and_artwork()
+    test_webui_bridge_protocol()
     test_session_isolation_and_my_pokemon()
     print(f"\n结果：{PASS} 通过 / {FAIL} 失败")
     sys.exit(1 if FAIL else 0)

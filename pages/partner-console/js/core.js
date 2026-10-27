@@ -21,16 +21,24 @@ export async function ready() {
   return context;
 }
 
+function bridgeEndpoint(path) {
+  const endpoint = String(path ?? "").replace(/^\/+/, "");
+  if (!endpoint) throw new Error("Bridge endpoint 不能为空");
+  if (/[?#\\]/.test(endpoint) || endpoint.split("/").some((part) => part === "." || part === "..")) {
+    throw new Error(`Bridge endpoint 格式无效：${endpoint}`);
+  }
+  return endpoint;
+}
+
 export async function api(path, params) {
-  const query = new URLSearchParams();
+  const query = {};
   for (const [key, value] of Object.entries(params ?? {})) {
     if (value === undefined || value === null || value === "") continue;
-    query.set(key, String(value));
+    query[key] = value;
   }
-  const suffix = query.toString() ? `?${query}` : "";
   let payload;
   try {
-    payload = await bridge.apiGet(`${path}${suffix}`);
+    payload = await bridge.apiGet(bridgeEndpoint(path), query);
   } catch (error) {
     throw new Error(`请求失败：${error?.message || error}`);
   }
@@ -43,7 +51,7 @@ export async function api(path, params) {
 export async function apiPost(path, body) {
   let payload;
   try {
-    payload = await bridge.apiPost(path, body ?? {});
+    payload = await bridge.apiPost(bridgeEndpoint(path), body ?? {});
   } catch (error) {
     throw new Error(`请求失败：${error?.message || error}`);
   }

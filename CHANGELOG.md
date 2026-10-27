@@ -124,3 +124,19 @@
 - 自动测试共 221 项通过，覆盖指令前缀冲突、两抽/五抽卡片尺寸、会话隔离、
   WebUI 配置回滚、图鉴立绘 data URL 与原有图鉴/对战功能。
 - `ruff --select F,E9`、前端 JavaScript 语法检查和桌面/移动端 Playwright 页面检查通过。
+
+## v1.1.1（2026-10-27）
+
+### 修复
+
+- 修复真实 AstrBot Dashboard 中图鉴、成员管理、规则与设置请求报
+  `Plugin bridge endpoint is invalid` 的问题。
+- WebUI Bridge GET 调用改为相对 endpoint 加独立参数对象，不再把前导 `/`、
+  `?` 查询串或 `#` 当作 endpoint；POST 同步使用规范的相对 endpoint。
+- 新增前端 endpoint 格式守卫和零依赖回归检查，避免后续再次引入同类调用。
+
+### 验证
+
+- 自动测试共 224 项通过。
+- 使用严格模拟 AstrBot Plugin Bridge 的 Playwright 测试验证：
+  `apiGet("dex", {...})`、`apiGet("dex/detail", {...})` 均可加载，悬浮详情正常打开。
