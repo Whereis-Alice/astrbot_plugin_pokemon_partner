@@ -1,0 +1,67 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img" aria-labelledby="title">
+  <title id="title">宝可梦伙伴图鉴</title>
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#1e2a4a"/>
+      <stop offset="0.55" stop-color="#2b1f4d"/>
+      <stop offset="1" stop-color="#0f172a"/>
+    </linearGradient>
+    <radialGradient id="glow" cx="0.32" cy="0.26" r="0.8">
+      <stop offset="0" stop-color="#8b5cf6" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#8b5cf6" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="ballTop" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#ff6b6b"/>
+      <stop offset="1" stop-color="#e11d48"/>
+    </linearGradient>
+    <linearGradient id="ballBottom" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#f8fafc"/>
+      <stop offset="1" stop-color="#cbd5e1"/>
+    </linearGradient>
+    <linearGradient id="ring" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#fbbf24"/>
+      <stop offset="1" stop-color="#f97316"/>
+    </linearGradient>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#020617" flood-opacity="0.6"/>
+    </filter>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="url(#bg)"/>
+  <rect width="256" height="256" rx="56" fill="url(#glow)"/>
+
+  <!-- 装饰星点 -->
+  <g fill="#c7d2fe" opacity="0.75">
+    <circle cx="44" cy="52" r="2.6"/>
+    <circle cx="212" cy="44" r="2"/>
+    <circle cx="222" cy="196" r="2.4"/>
+    <circle cx="34" cy="188" r="2"/>
+    <circle cx="188" cy="222" r="1.8"/>
+  </g>
+
+  <!-- 光晕 -->
+  <circle cx="128" cy="126" r="90" fill="none" stroke="url(#ring)" stroke-width="2.5" opacity="0.55"/>
+  <circle cx="128" cy="126" r="76" fill="#0b1224" opacity="0.55"/>
+
+  <!-- 精灵球 -->
+  <g filter="url(#shadow)">
+    <circle cx="128" cy="126" r="62" fill="url(#ballBottom)"/>
+    <path d="M66 126a62 62 0 0 1 124 0z" fill="url(#ballTop)"/>
+    <path d="M66 126h124" stroke="#0f172a" stroke-width="9"/>
+    <circle cx="128" cy="126" r="20" fill="#0f172a"/>
+    <circle cx="128" cy="126" r="14" fill="#f8fafc"/>
+    <circle cx="128" cy="126" r="8" fill="#38bdf8"/>
+    <circle cx="123" cy="121" r="3" fill="#e0f2fe" opacity="0.9"/>
+    <circle cx="128" cy="126" r="62" fill="none" stroke="#0f172a" stroke-width="6"/>
+  </g>
+
+  <!-- 闪光 -->
+  <g fill="#fde68a">
+    <path d="M188 60l5.4 13.6L207 79l-13.6 5.4L188 98l-5.4-13.6L169 79l13.6-5.4z"/>
+    <path d="M70 176l3.6 9L83 188l-9.4 3.6L70 201l-3.6-9.4L57 188l9.4-3z" opacity="0.9"/>
+  </g>
+
+  <!-- 底部书名 -->
+  
+</svg>
+

@@ -1,0 +1,14 @@
+__pycache__/
+*.pyc
+*.pyo
+.DS_Store
+.venv/
+venv/
+.idea/
+.vscode/
+.pytest_cache/
+.ruff_cache/
+data/champions.db
+data/partner_state/
+state.json
+state.json.bak

@@ -1,0 +1,195 @@
+{
+  "gacha_enabled": {
+    "description": "启用伙伴召唤",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后不加载抽卡系统，图鉴、对战和冠军赛功能不受影响。"
+  },
+  "draws_per_command": {
+    "description": "每次召唤的伙伴数量",
+    "type": "int",
+    "default": 1,
+    "slider": {"min": 1, "max": 10, "step": 1},
+    "hint": "每次发送「伙伴召唤」固定抽这么多位。要做十连就填 10；默认 1。剩余次数不足时按剩余次数抽取。"
+  },
+  "daily_draw_limit": {
+    "description": "每日召唤次数",
+    "type": "int",
+    "default": 3,
+    "slider": {"min": 0, "max": 50, "step": 1},
+    "hint": "每位用户每天可用的基础次数，按服务器本地日期重置。0 表示只有里程碑等额外次数也能抽，建议至少 1。"
+  },
+  "draw_cooldown_seconds": {
+    "description": "召唤冷却（秒）",
+    "type": "float",
+    "default": 3.0,
+    "slider": {"min": 0, "max": 60, "step": 0.5},
+    "hint": "两次召唤之间的最短间隔，防止连点刷屏。0 表示不限制。"
+  },
+  "rarity_weights": {
+    "description": "稀有度概率权重（四档）",
+    "type": "object",
+    "hint": "按权重归一化计算概率，不要求总和为 100。例如 55/30/12/3 即 55%/30%/12%/3%。某一档填 0 即不再产出该稀有度。",
+    "items": {
+      "C": {
+        "description": "普通（C）权重",
+        "type": "int",
+        "default": 55
+      },
+      "R": {
+        "description": "稀有（R）权重",
+        "type": "int",
+        "default": 30
+      },
+      "SR": {
+        "description": "史诗（SR）权重",
+        "type": "int",
+        "default": 12
+      },
+      "SSR": {
+        "description": "传说（SSR）权重",
+        "type": "int",
+        "default": 3
+      }
+    }
+  },
+  "rare_min_bst": {
+    "description": "R 稀有度最低种族值总和",
+    "type": "int",
+    "default": 400,
+    "hint": "种族值总和 >= 此值且 < SR 阈值为 R。"
+  },
+  "super_rare_min_bst": {
+    "description": "SR 稀有度最低种族值总和",
+    "type": "int",
+    "default": 480
+  },
+  "ultra_rare_min_bst": {
+    "description": "SSR 稀有度最低种族值总和",
+    "type": "int",
+    "default": 580,
+    "hint": "三个阈值必须严格递增。默认 400/480/580，对应普通/稀有/史诗/传说四档。"
+  },
+  "ssr_pity_after": {
+    "description": "SSR 保底次数",
+    "type": "int",
+    "default": 30,
+    "slider": {"min": 0, "max": 200, "step": 1},
+    "hint": "连续这么多次没出 SSR 时，下一次必出 SSR。0 表示关闭。计数按用户分别保存。"
+  },
+  "new_pity_after": {
+    "description": "新伙伴保底次数",
+    "type": "int",
+    "default": 0,
+    "slider": {"min": 0, "max": 200, "step": 1},
+    "hint": "连续这么多次重复后，下一次强制未拥有。0 表示关闭。默认关闭，避免图鉴过快集齐。"
+  },
+  "allow_duplicate_draw": {
+    "description": "允许抽到已拥有的伙伴",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后优先从尚未拥有的伙伴中抽取；全部拥有后仍可能重复并折算星尘。"
+  },
+  "include_alternate_forms": {
+    "description": "把地区形态/超级进化等形态计入卡池",
+    "type": "bool",
+    "default": false,
+    "hint": "默认只收录 1025 个默认形态。开启后卡池增至 1320 项，图鉴也更难集齐。"
+  },
+  "shiny_chance_percent": {
+    "description": "闪光概率（百分比）",
+    "type": "float",
+    "default": 1.5,
+    "slider": {"min": 0, "max": 20, "step": 0.1},
+    "hint": "每次抽取独立判定。闪光与普通分开收藏，重复闪光折算更多星尘。"
+  },
+  "duplicate_dust": {
+    "description": "重复伙伴折算星尘",
+    "type": "object",
+    "hint": "抽到已拥有的同稀有度伙伴时获得。若重复的是闪光形态，还会乘以「闪光星尘倍率」。",
+    "items": {
+      "C": {"description": "普通重复", "type": "int", "default": 2},
+      "R": {"description": "稀有重复", "type": "int", "default": 6},
+      "SR": {"description": "史诗重复", "type": "int", "default": 20},
+      "SSR": {"description": "传说重复", "type": "int", "default": 80}
+    }
+  },
+  "spark_costs": {
+    "description": "星尘兑换价格",
+    "type": "object",
+    "hint": "用星尘定向兑换未拥有伙伴的价格。闪光兑换会乘以「闪光兑换倍率」。",
+    "items": {
+      "C": {"description": "普通", "type": "int", "default": 20},
+      "R": {"description": "稀有", "type": "int", "default": 60},
+      "SR": {"description": "史诗", "type": "int", "default": 150},
+      "SSR": {"description": "传说", "type": "int", "default": 400}
+    }
+  },
+  "shiny_dust_multiplier": {
+    "description": "闪光重复星尘倍率",
+    "type": "float",
+    "default": 3.0,
+    "slider": {"min": 1, "max": 20, "step": 0.5}
+  },
+  "shiny_spark_multiplier": {
+    "description": "闪光兑换价格倍率",
+    "type": "float",
+    "default": 4.0,
+    "slider": {"min": 1, "max": 20, "step": 0.5}
+  },
+  "images_dir": {
+    "description": "宝可梦图片目录",
+    "type": "string",
+    "default": "",
+    "hint": "指向 pokemon-dataset-zh/data/images 目录（含 official/home 子目录）。留空则卡片不带本地立绘，按下方网络图回退。"
+  },
+  "enable_image_card": {
+    "description": "启用图片卡片",
+    "type": "bool",
+    "default": true,
+    "hint": "宝可梦指令以图片卡片返回；关闭后返回纯文本。伙伴召唤卡片渲染失败时也会自动回退文本。"
+  },
+  "wishmaker_style": {
+    "description": "许愿星结果输出样式",
+    "type": "string",
+    "default": "image",
+    "options": ["image", "markdown"],
+    "hint": "image=图片卡片（默认）；markdown=markdown 文本，适用于天然渲染 markdown 的平台。"
+  },
+  "fallback_web_image": {
+    "description": "本地立绘缺失时使用网络官方图",
+    "type": "bool",
+    "default": true,
+    "hint": "从 PokéAPI 官方图源下载立绘渲染卡片（仅默认形态）；无外网环境可关闭。"
+  },
+  "pokeapi_enabled": {
+    "description": "启用 PokéAPI 补充查询",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后不使用 PokéAPI（本地调试/离线环境建议关闭），仅保留本地图鉴与本地属性表。"
+  },
+  "pokeapi_timeout": {
+    "description": "PokéAPI 请求超时（秒）",
+    "type": "int",
+    "default": 15
+  },
+  "champions_db_path": {
+    "description": "冠军赛数据库路径",
+    "type": "string",
+    "default": "",
+    "hint": "champions.db 的路径。留空则使用 AstrBot 数据目录 data/plugin_data/astrbot_plugin_pokemon_partner/champions.db（与抓取脚本默认一致）。"
+  },
+  "champions_default_format": {
+    "description": "冠军赛默认对战格式",
+    "type": "string",
+    "default": "single",
+    "options": ["single", "double"],
+    "hint": "single=单打（默认），double=双打。"
+  },
+  "champions_top_n": {
+    "description": "冠军排名默认条数",
+    "type": "int",
+    "default": 10,
+    "slider": {"min": 1, "max": 50, "step": 1}
+  }
+}

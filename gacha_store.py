@@ -1,0 +1,622 @@
+"""抽卡状态存储（JSON 快照 + 原子写入）。
+
+与 :mod:`gacha` 的规则/数据类分离，方便以后替换为 SQLite 或接入 WebUI。
+所有公开方法都是线程安全的；调用方可以直接在 ``asyncio.to_thread`` 里调用。
+"""
+
+from __future__ import annotations
+
+import json
+import os
+import random
+import threading
+import time
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+from pathlib import Path
+from typing import Any, Iterable, Mapping
+
+try:
+    from .gacha import (
+        ALL_COLLECTED_BONUS,
+        ALL_COLLECTED_DUST,
+        MAX_DAILY_LIMIT,
+        MAX_DRAWS_PER_COMMAND,
+        MILESTONE_REWARDS,
+        RARITIES,
+        DrawItem,
+        DrawOutcome,
+        ExchangeResult,
+        GachaError,
+        GachaRules,
+        MilestoneReward,
+        OwnedPartner,
+        Partner,
+        ProfileSummary,
+    )
+except ImportError:  # 兼容以普通模块方式加载
+    from gacha import (
+        ALL_COLLECTED_BONUS,
+        ALL_COLLECTED_DUST,
+        MAX_DAILY_LIMIT,
+        MAX_DRAWS_PER_COMMAND,
+        MILESTONE_REWARDS,
+        RARITIES,
+        DrawItem,
+        DrawOutcome,
+        ExchangeResult,
+        GachaError,
+        GachaRules,
+        MilestoneReward,
+        OwnedPartner,
+        Partner,
+        ProfileSummary,
+    )
+
+STATE_VERSION = 2
+
+
+def _as_int(value: Any, default: int, lo: int | None = None, hi: int | None = None) -> int:
+    try:
+        result = int(value)
+    except (TypeError, ValueError):
+        result = default
+    if lo is not None:
+        result = max(lo, result)
+    if hi is not None:
+        result = min(hi, result)
+    return result
+
+
+def today_key() -> str:
+    """按服务器本地日期跨天重置。"""
+    return datetime.now().astimezone().date().isoformat()
+
+
+class GachaStore:
+    """线程安全的抽卡状态存储。"""
+
+    def __init__(
+        self,
+        state_dir: str | Path,
+        partners: Iterable[Partner],
+        rules: GachaRules,
+        rng: random.Random | None = None,
+    ) -> None:
+        self.state_dir = Path(state_dir)
+        self.state_path = self.state_dir / "state.json"
+        self.rules = rules
+        self.rng = rng or random.Random()
+        self._lock = threading.RLock()
+        self.partners = tuple(partners)
+        if not self.partners:
+            raise GachaError("抽卡池为空，请检查图鉴数据。")
+        self.by_dex: dict[int, list[Partner]] = {}
+        self.by_key: dict[str, Partner] = {}
+        self.by_rarity: dict[str, list[Partner]] = {r: [] for r in RARITIES}
+        self._name_buckets: dict[str, list[Partner]] = {}
+        for partner in self.partners:
+            self.by_key[partner.key] = partner
+            self.by_dex.setdefault(partner.dex, []).append(partner)
+            self.by_rarity.setdefault(partner.rarity, []).append(partner)
+            for value in (
+                partner.name,
+                partner.row.get("name_zh"),
+                partner.row.get("name_en"),
+                partner.row.get("name_ja"),
+                partner.dex_raw,
+                partner.dex,
+            ):
+                key = _normalise(value)
+                if key:
+                    bucket = self._name_buckets.setdefault(key, [])
+                    if partner not in bucket:
+                        bucket.append(partner)
+        self.state = self._load()
+
+    # ---------- 持久化 ----------
+    def _load(self) -> dict[str, Any]:
+        for path in (self.state_path, self.state_path.with_suffix(".json.bak")):
+            if not path.is_file():
+                continue
+            try:
+                raw = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError, TypeError):
+                continue
+            if isinstance(raw, dict) and raw.get("version") == STATE_VERSION:
+                return raw
+        return {"version": STATE_VERSION, "scopes": {}}
+
+    def _save(self) -> None:
+        self.state_dir.mkdir(parents=True, exist_ok=True)
+        payload = json.dumps(self.state, ensure_ascii=False, indent=2, sort_keys=True)
+        tmp = self.state_path.with_suffix(".json.tmp")
+        tmp.write_text(payload, encoding="utf-8")
+        if self.state_path.is_file():
+            try:
+                os.replace(self.state_path, self.state_path.with_suffix(".json.bak"))
+            except OSError:
+                pass
+        os.replace(tmp, self.state_path)
+
+    def reload(self) -> None:
+        with self._lock:
+            self.state = self._load()
+
+    # ---------- 资料读写 ----------
+    def _profile(self, scope: str, user_id: str, nickname: str = "") -> dict[str, Any]:
+        scopes = self.state.setdefault("scopes", {})
+        if not isinstance(scopes, dict):
+            scopes = {}
+            self.state["scopes"] = scopes
+        scope_data = scopes.setdefault(str(scope), {})
+        if not isinstance(scope_data, dict):
+            scope_data = {}
+            scopes[str(scope)] = scope_data
+        users = scope_data.setdefault("users", {})
+        if not isinstance(users, dict):
+            users = {}
+            scope_data["users"] = users
+        profile = users.setdefault(str(user_id), {})
+        if not isinstance(profile, dict):
+            profile = {}
+            users[str(user_id)] = profile
+        for key in ("owned", "counts", "bonus", "milestones"):
+            if not isinstance(profile.get(key), dict):
+                profile[key] = {}
+        profile["dust"] = max(0, _as_int(profile.get("dust"), 0))
+        profile["pity_ssr"] = max(0, _as_int(profile.get("pity_ssr"), 0))
+        profile["pity_new"] = max(0, _as_int(profile.get("pity_new"), 0))
+        profile["total_draws"] = max(0, _as_int(profile.get("total_draws"), 0))
+        if nickname:
+            profile["nickname"] = str(nickname)[:48]
+        return profile
+
+    @staticmethod
+    def _prune(profile: dict[str, Any], keep_days: int = 60) -> None:
+        cutoff = (date.today() - timedelta(days=keep_days)).isoformat()
+        for key in ("counts", "bonus"):
+            data = profile.get(key)
+            if not isinstance(data, dict):
+                continue
+            for day in [str(d) for d in data if str(d) < cutoff]:
+                data.pop(day, None)
+
+    @staticmethod
+    def _used(profile: Mapping[str, Any], today: str) -> int:
+        counts = profile.get("counts", {})
+        return max(0, _as_int(counts.get(today), 0)) if isinstance(counts, Mapping) else 0
+
+    @staticmethod
+    def _bonus(profile: Mapping[str, Any], today: str) -> int:
+        bonus = profile.get("bonus", {})
+        return max(0, _as_int(bonus.get(today), 0)) if isinstance(bonus, Mapping) else 0
+
+    @staticmethod
+    def _owned(profile: Mapping[str, Any]) -> dict[str, tuple[int, int]]:
+        out: dict[str, tuple[int, int]] = {}
+        owned = profile.get("owned", {})
+        if not isinstance(owned, Mapping):
+            return out
+        for key, value in owned.items():
+            if not isinstance(value, Mapping):
+                continue
+            normal = max(0, _as_int(value.get("normal"), 0))
+            shiny = max(0, _as_int(value.get("shiny"), 0))
+            if normal or shiny:
+                out[str(key)] = (normal, shiny)
+        return out
+
+    def _grant_milestones(
+        self, profile: dict[str, Any], today: str
+    ) -> list[MilestoneReward]:
+        collected = len(self._owned(profile))
+        claimed = profile.setdefault("milestones", {})
+        if not isinstance(claimed, dict):
+            claimed = {}
+            profile["milestones"] = claimed
+        rewards: list[MilestoneReward] = []
+        for threshold in sorted(MILESTONE_REWARDS):
+            if collected < threshold or str(threshold) in claimed:
+                continue
+            dust, bonus = MILESTONE_REWARDS[threshold]
+            claimed[str(threshold)] = today
+            profile["dust"] = max(0, _as_int(profile.get("dust"), 0)) + dust
+            if bonus:
+                days = profile.setdefault("bonus", {})
+                if isinstance(days, dict):
+                    days[today] = max(0, _as_int(days.get(today), 0)) + bonus
+            rewards.append(MilestoneReward(threshold, dust, bonus))
+        if collected >= len(self.partners) and "all" not in claimed:
+            claimed["all"] = today
+            profile["dust"] = (
+                max(0, _as_int(profile.get("dust"), 0)) + ALL_COLLECTED_DUST
+            )
+            days = profile.setdefault("bonus", {})
+            if isinstance(days, dict):
+                days[today] = max(0, _as_int(days.get(today), 0)) + ALL_COLLECTED_BONUS
+            rewards.append(
+                MilestoneReward(
+                    len(self.partners), ALL_COLLECTED_DUST, ALL_COLLECTED_BONUS
+                )
+            )
+        return rewards
+
+    # ---------- 查询 ----------
+    def get_profile(
+        self,
+        scope: str,
+        user_id: str,
+        nickname: str = "",
+        *,
+        today: str | None = None,
+    ) -> ProfileSummary:
+        with self._lock:
+            profile = self._profile(scope, user_id, nickname)
+            if nickname and profile.get("nickname") != str(nickname)[:48]:
+                self._save()
+            today = today or today_key()
+            used = self._used(profile, today)
+            limit = self.rules.daily_limit + self._bonus(profile, today)
+            owned = self._owned(profile)
+            return ProfileSummary(
+                nickname=str(profile.get("nickname") or nickname or "训练家"),
+                collected=len(owned),
+                total=len(self.partners),
+                shiny_count=sum(1 for v in owned.values() if v[1] > 0),
+                dust=max(0, _as_int(profile.get("dust"), 0)),
+                used_today=used,
+                daily_limit=limit,
+                remaining=max(0, limit - used),
+                pity_ssr=max(0, _as_int(profile.get("pity_ssr"), 0)),
+                pity_new=max(0, _as_int(profile.get("pity_new"), 0)),
+                total_draws=max(0, _as_int(profile.get("total_draws"), 0)),
+                next_milestone=next(
+                    (t for t in sorted(MILESTONE_REWARDS) if t > len(owned)), None
+                ),
+            )
+
+    def owned_partners(self, scope: str, user_id: str) -> list[OwnedPartner]:
+        with self._lock:
+            profile = self._profile(scope, user_id)
+            owned = profile.get("owned", {})
+            out: list[OwnedPartner] = []
+            for key, (normal, shiny) in self._owned(profile).items():
+                partner = self.by_key.get(key)
+                if partner is None:
+                    continue
+                raw = owned.get(key, {}) if isinstance(owned, Mapping) else {}
+                if not isinstance(raw, Mapping):
+                    raw = {}
+                out.append(
+                    OwnedPartner(
+                        partner=partner,
+                        normal_count=normal,
+                        shiny_count=shiny,
+                        first_normal=str(raw.get("first_normal") or ""),
+                        first_shiny=str(raw.get("first_shiny") or ""),
+                    )
+                )
+            out.sort(key=lambda item: (item.partner.dex, item.partner.name))
+            return out
+
+    def find_partner(self, keyword: str) -> Partner | None:
+        target = _normalise(keyword)
+        if not target:
+            return None
+        exact = self._name_buckets.get(target, [])
+        if len(exact) == 1:
+            return exact[0]
+        if len(exact) > 1:
+            default = [p for p in exact if p.key == str(p.dex)]
+            return default[0] if len(default) == 1 else None
+        unique = {
+            partner.key: partner
+            for key, items in self._name_buckets.items()
+            if target in key
+            for partner in items
+        }
+        return next(iter(unique.values())) if len(unique) == 1 else None
+
+    def suggestion_for(self, keyword: str, limit: int = 5) -> list[str]:
+        target = _normalise(keyword)
+        if not target:
+            return []
+        hits = {
+            partner.name
+            for key, items in self._name_buckets.items()
+            if target in key or key in target
+            for partner in items
+        }
+        return sorted(hits)[:limit]
+
+    def leaderboard(
+        self, scope: str, limit: int = 10
+    ) -> list[tuple[int, str, int, int]]:
+        """``[(名次, 昵称, 伙伴数, 闪光数)]``。"""
+        with self._lock:
+            scope_data = self.state.get("scopes", {}).get(str(scope), {})
+            users = scope_data.get("users", {}) if isinstance(scope_data, Mapping) else {}
+            rows: list[tuple[int, str, int, int]] = []
+            for user_id, profile in users.items():
+                if not isinstance(profile, Mapping):
+                    continue
+                owned = self._owned(profile)
+                rows.append(
+                    (
+                        len(owned),
+                        str(profile.get("nickname") or user_id),
+                        sum(1 for value in owned.values() if value[1] > 0),
+                        max(0, _as_int(profile.get("total_draws"), 0)),
+                    )
+                )
+            rows.sort(key=lambda item: (-item[0], -item[2], -item[3], item[1]))
+            return [
+                (index + 1, nickname, collected, shiny)
+                for index, (collected, nickname, shiny, _total) in enumerate(
+                    rows[: max(1, min(50, int(limit)))]
+                )
+            ]
+
+    def user_rank(self, scope: str, user_id: str) -> int | None:
+        with self._lock:
+            profile = self._profile(scope, user_id)
+            me = str(profile.get("nickname") or user_id)
+            mine = len(self._owned(profile))
+            better = 0
+            scope_data = self.state.get("scopes", {}).get(str(scope), {})
+            users = scope_data.get("users", {}) if isinstance(scope_data, Mapping) else {}
+            for other_id, other in users.items():
+                if not isinstance(other, Mapping):
+                    continue
+                count = len(self._owned(other))
+                name = str(other.get("nickname") or other_id)
+                if count > mine or (count == mine and name < me):
+                    better += 1
+            return better + 1
+
+    # ---------- 抽卡 ----------
+    def _roll_rarity(self, profile: Mapping[str, Any]) -> str:
+        after = self.rules.ssr_pity_after
+        pity = max(0, _as_int(profile.get("pity_ssr"), 0))
+        if after > 0 and pity >= after - 1:
+            return "SSR"
+        return self.rng.choices(RARITIES, weights=self.rules.weight_list(), k=1)[0]
+
+    def _choose(
+        self, rarity: str, *, force_new: bool, owned: Mapping[str, tuple[int, int]]
+    ) -> Partner:
+        pool = self.by_rarity.get(rarity) or list(self.partners)
+        if force_new:
+            new_pool = [p for p in pool if p.key not in owned]
+            if not new_pool:
+                new_pool = [p for p in self.partners if p.key not in owned]
+            if new_pool:
+                return self.rng.choice(new_pool)
+        if self.rules.allow_duplicate_draw is False:
+            new_pool = [p for p in pool if p.key not in owned]
+            if new_pool:
+                return self.rng.choice(new_pool)
+        return self.rng.choice(pool)
+
+    def _draw_one(
+        self, profile: dict[str, Any], today: str
+    ) -> tuple[DrawItem, list[MilestoneReward]]:
+        force_new = (
+            self.rules.new_pity_after > 0
+            and max(0, _as_int(profile.get("pity_new"), 0))
+            >= self.rules.new_pity_after
+        )
+        rarity = self._roll_rarity(profile)
+        partner = self._choose(rarity, force_new=force_new, owned=self._owned(profile))
+        shiny = (
+            self.rules.shiny_chance_percent > 0
+            and self.rng.random() * 100.0 < self.rules.shiny_chance_percent
+        )
+        owned_raw = profile.setdefault("owned", {})
+        if not isinstance(owned_raw, dict):
+            owned_raw = {}
+            profile["owned"] = owned_raw
+        entry = owned_raw.get(partner.key)
+        if not isinstance(entry, dict):
+            entry = {}
+            owned_raw[partner.key] = entry
+        variant = "shiny" if shiny else "normal"
+        before = max(0, _as_int(entry.get(variant), 0))
+        is_new = before <= 0
+        entry[variant] = before + 1
+        if is_new:
+            entry[f"first_{variant}"] = today
+        dust = 0 if is_new else self.rules.dust_for(partner.rarity, shiny)
+        if dust:
+            profile["dust"] = max(0, _as_int(profile.get("dust"), 0)) + dust
+        profile["pity_ssr"] = (
+            0
+            if partner.rarity == "SSR"
+            else max(0, _as_int(profile.get("pity_ssr"), 0)) + 1
+        )
+        profile["pity_new"] = (
+            0 if is_new else max(0, _as_int(profile.get("pity_new"), 0)) + 1
+        )
+        milestones = self._grant_milestones(profile, today)
+        return (
+            DrawItem(
+                key=partner.key,
+                dex=partner.dex,
+                dex_raw=partner.dex_raw,
+                name=partner.name,
+                types=partner.types,
+                bst=partner.bst,
+                rarity=partner.rarity,
+                shiny=shiny,
+                is_new=is_new,
+                dust=dust,
+                owned_count=before + 1,
+                row=partner.row,
+            ),
+            milestones,
+        )
+
+    def draw(
+        self,
+        scope: str,
+        user_id: str,
+        nickname: str = "",
+        count: int | None = None,
+        *,
+        now: float | None = None,
+        today: str | None = None,
+    ) -> DrawOutcome:
+        requested = _as_int(
+            count if count is not None else self.rules.draws_per_command,
+            self.rules.draws_per_command,
+            1,
+            MAX_DRAWS_PER_COMMAND,
+        )
+        now = time.time() if now is None else float(now)
+        today = today or today_key()
+        with self._lock:
+            profile = self._profile(scope, user_id, nickname)
+            last = float(profile.get("last_draw_ts") or 0.0)
+            if self.rules.cooldown_seconds > 0 and last > 0:
+                wait = self.rules.cooldown_seconds - (now - last)
+                if wait > 0:
+                    raise GachaError(f"召唤太快啦，请等待 {wait:.1f} 秒后再试。")
+            used = self._used(profile, today)
+            limit = self.rules.daily_limit + self._bonus(profile, today)
+            remaining = max(0, limit - used)
+            if remaining <= 0:
+                raise GachaError(f"今天的 {limit} 次伙伴召唤已经用完了，明天再来吧。")
+            actual = min(requested, remaining)
+            items: list[DrawItem] = []
+            milestones: list[MilestoneReward] = []
+            for _ in range(actual):
+                item, gained = self._draw_one(profile, today)
+                items.append(item)
+                milestones.extend(gained)
+            counts = profile.setdefault("counts", {})
+            if isinstance(counts, dict):
+                counts[today] = used + actual
+            profile["total_draws"] = (
+                max(0, _as_int(profile.get("total_draws"), 0)) + actual
+            )
+            profile["last_draw_ts"] = now
+            self._prune(profile)
+            self._save()
+            return DrawOutcome(
+                items=tuple(items),
+                requested=requested,
+                used_today=used + actual,
+                daily_limit=limit,
+                remaining=max(0, limit - used - actual),
+                dust=max(0, _as_int(profile.get("dust"), 0)),
+                pity_ssr=max(0, _as_int(profile.get("pity_ssr"), 0)),
+                pity_new=max(0, _as_int(profile.get("pity_new"), 0)),
+                capped=actual < requested,
+                milestones=tuple(milestones),
+            )
+
+    # ---------- 兑换 / 运营 ----------
+    def exchange(
+        self,
+        scope: str,
+        user_id: str,
+        keyword: str,
+        *,
+        shiny: bool = False,
+        nickname: str = "",
+        today: str | None = None,
+    ) -> ExchangeResult:
+        partner = self.find_partner(keyword)
+        if partner is None:
+            hint = self.suggestion_for(keyword)
+            extra = f"你要找的是：{'、'.join(hint)}" if hint else ""
+            raise GachaError(f"没有找到可兑换的伙伴「{keyword}」。{extra}".strip())
+        today = today or today_key()
+        with self._lock:
+            profile = self._profile(scope, user_id, nickname)
+            owned = profile.setdefault("owned", {})
+            if not isinstance(owned, dict):
+                owned = {}
+                profile["owned"] = owned
+            entry = owned.get(partner.key)
+            if not isinstance(entry, dict):
+                entry = {}
+            variant = "shiny" if shiny else "normal"
+            if max(0, _as_int(entry.get(variant), 0)) > 0:
+                label = "闪光" if shiny else ""
+                raise GachaError(f"你已经拥有{label}{partner.name}了。")
+            cost = self.rules.spark_cost_for(partner.rarity, shiny)
+            dust = max(0, _as_int(profile.get("dust"), 0))
+            if dust < cost:
+                raise GachaError(f"星尘不足：兑换需要 {cost}，当前只有 {dust}。")
+            profile["dust"] = dust - cost
+            entry[variant] = 1
+            entry[f"first_{variant}"] = today
+            entry.setdefault("normal", 0)
+            owned[partner.key] = entry
+            milestones = self._grant_milestones(profile, today)
+            self._save()
+            return ExchangeResult(
+                partner=partner,
+                shiny=shiny,
+                cost=cost,
+                dust=max(0, _as_int(profile.get("dust"), 0)),
+                milestones=tuple(milestones),
+            )
+
+    def add_bonus(
+        self, scope: str, user_id: str, amount: int = 1, *, today: str | None = None
+    ) -> int:
+        amount = _as_int(amount, 1, 1, MAX_DAILY_LIMIT)
+        today = today or today_key()
+        with self._lock:
+            profile = self._profile(scope, user_id)
+            bonus = profile.setdefault("bonus", {})
+            if not isinstance(bonus, dict):
+                bonus = {}
+                profile["bonus"] = bonus
+            bonus[today] = max(0, _as_int(bonus.get(today), 0)) + amount
+            self._save()
+            return bonus[today]
+
+    def reset_today(self, scope: str, user_id: str, *, today: str | None = None) -> None:
+        today = today or today_key()
+        with self._lock:
+            profile = self._profile(scope, user_id)
+            counts = profile.setdefault("counts", {})
+            if isinstance(counts, dict):
+                counts.pop(today, None)
+            self._save()
+
+    def reset_scope_today(self, scope: str, *, today: str | None = None) -> int:
+        today = today or today_key()
+        with self._lock:
+            scope_data = self.state.get("scopes", {}).get(str(scope), {})
+            users = scope_data.get("users", {}) if isinstance(scope_data, Mapping) else {}
+            changed = 0
+            for profile in users.values():
+                if not isinstance(profile, dict):
+                    continue
+                counts = profile.get("counts")
+                if isinstance(counts, dict) and today in counts:
+                    counts.pop(today)
+                    changed += 1
+            if changed:
+                self._save()
+            return changed
+
+    def set_dust(self, scope: str, user_id: str, amount: int) -> int:
+        with self._lock:
+            profile = self._profile(scope, user_id)
+            profile["dust"] = max(0, _as_int(amount, 0))
+            self._save()
+            return profile["dust"]
+
+
+def _normalise(value: Any) -> str:
+    """名称匹配：去空白、统一大小写、去掉常见标点。"""
+    import re
+
+    text = str(value or "").strip().casefold()
+    return re.sub(r"[\s·・\-_—–（）()【】\[\]「」『』]", "", text)
