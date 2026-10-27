@@ -4,20 +4,20 @@
 .stat-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-3);
+  gap: var(--pk-space-3);
 }
 
 .stat {
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-4);
-  box-shadow: var(--shadow-sm);
+  background: var(--pk-bg-panel);
+  border: 1px solid var(--pk-border);
+  border-radius: var(--pk-radius-lg);
+  padding: var(--pk-space-4);
+  box-shadow: var(--pk-shadow-sm);
 }
 
 .stat-label {
   font-size: 12px;
-  color: var(--text-muted);
+  color: var(--pk-text-muted);
   font-weight: 550;
 }
 
@@ -32,20 +32,20 @@
 .stat-note {
   margin-top: 2px;
   font-size: 11.5px;
-  color: var(--text-faint);
+  color: var(--pk-text-faint);
 }
 
 .rarity-bars {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--pk-space-3);
 }
 
 .rarity-row {
   display: grid;
   grid-template-columns: 108px minmax(0, 1fr) 92px;
   align-items: center;
-  gap: var(--space-3);
+  gap: var(--pk-space-3);
 }
 
 .rarity-name {
@@ -65,22 +65,22 @@
 
 .rarity-track {
   height: 10px;
-  background: var(--bg-sunken);
-  border-radius: var(--radius-pill);
+  background: var(--pk-bg-sunken);
+  border-radius: var(--pk-radius-pill);
   overflow: hidden;
 }
 
 .rarity-fill {
   height: 100%;
-  border-radius: var(--radius-pill);
-  transition: width var(--dur-mid) ease-out;
+  border-radius: var(--pk-radius-pill);
+  transition: width var(--pk-dur-mid) ease-out;
 }
 
 .rarity-meta {
   text-align: right;
   font-size: 12px;
   font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
+  color: var(--pk-text-muted);
 }
 
 /* ---------- 图鉴 ---------- */
@@ -91,14 +91,14 @@
 .dex-main {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--pk-space-3);
   min-width: 0;
 }
 
 .dex-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(148px, 1fr));
-  gap: var(--space-3);
+  gap: var(--pk-space-3);
 }
 
 .dex-card {
@@ -106,45 +106,45 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
-  padding: var(--space-3);
+  padding: var(--pk-space-3);
   text-align: left;
   font: inherit;
   color: inherit;
-  background: var(--bg-panel);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--rarity-c);
-  border-radius: var(--radius-md);
+  background: var(--pk-bg-panel);
+  border: 1px solid var(--pk-border);
+  border-left: 3px solid var(--pk-rarity-c);
+  border-radius: var(--pk-radius-md);
   cursor: pointer;
-  transition: border-color var(--dur-fast), transform var(--dur-fast),
-    box-shadow var(--dur-fast);
+  transition: border-color var(--pk-dur-fast), transform var(--pk-dur-fast),
+    box-shadow var(--pk-dur-fast);
 }
 
 .dex-card:hover {
   transform: translateY(-1px);
-  box-shadow: var(--shadow-md);
+  box-shadow: var(--pk-shadow-md);
 }
 
 .dex-card.selected {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--accent-soft);
+  border-color: var(--pk-accent);
+  box-shadow: 0 0 0 3px var(--pk-accent-soft);
 }
 
 .dex-card[data-rarity="R"] {
-  border-left-color: var(--rarity-r);
+  border-left-color: var(--pk-rarity-r);
 }
 
 .dex-card[data-rarity="SR"] {
-  border-left-color: var(--rarity-sr);
+  border-left-color: var(--pk-rarity-sr);
 }
 
 .dex-card[data-rarity="SSR"] {
-  border-left-color: var(--rarity-ssr);
+  border-left-color: var(--pk-rarity-ssr);
 }
 
 .dex-id {
-  font-family: var(--font-mono);
+  font-family: var(--pk-font-mono);
   font-size: 11px;
-  color: var(--text-faint);
+  color: var(--pk-text-faint);
 }
 
 .dex-name {
@@ -156,7 +156,7 @@
 
 .dex-sub {
   font-size: 11.5px;
-  color: var(--text-faint);
+  color: var(--pk-text-faint);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -173,32 +173,32 @@
   display: inline-flex;
   align-items: center;
   padding: 1px 7px;
-  border-radius: var(--radius-pill);
+  border-radius: var(--pk-radius-pill);
   font-size: 11px;
   font-weight: 600;
   color: #fff;
-  background: var(--rarity-c);
+  background: var(--pk-rarity-c);
 }
 
 .chip.ghost {
-  background: var(--bg-sunken);
-  color: var(--text-muted);
+  background: var(--pk-bg-sunken);
+  color: var(--pk-text-muted);
 }
 
 .chip.rarity-C {
-  background: var(--rarity-c);
+  background: var(--pk-rarity-c);
 }
 
 .chip.rarity-R {
-  background: var(--rarity-r);
+  background: var(--pk-rarity-r);
 }
 
 .chip.rarity-SR {
-  background: var(--rarity-sr);
+  background: var(--pk-rarity-sr);
 }
 
 .chip.rarity-SSR {
-  background: var(--rarity-ssr);
+  background: var(--pk-rarity-ssr);
 }
 
 /* 悬浮详情抽屉 */
@@ -226,9 +226,9 @@ body.drawer-open {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-strong);
-  border-radius: var(--radius-lg);
+  background: var(--pk-bg-panel);
+  border: 1px solid var(--pk-border-strong);
+  border-radius: var(--pk-radius-lg);
   box-shadow: 0 22px 70px rgba(15, 23, 42, 0.28);
   animation: drawer-in 180ms ease-out;
 }
@@ -241,10 +241,10 @@ body.drawer-open {
 .drawer-content {
   min-height: 0;
   overflow-y: auto;
-  padding: var(--space-5);
+  padding: var(--pk-space-5);
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
+  gap: var(--pk-space-3);
 }
 
 .drawer-close {
@@ -252,15 +252,15 @@ body.drawer-open {
   top: 14px;
   right: 14px;
   z-index: 2;
-  background: color-mix(in srgb, var(--bg-panel) 92%, transparent);
-  box-shadow: var(--shadow-sm);
+  background: color-mix(in srgb, var(--pk-bg-panel) 92%, transparent);
+  box-shadow: var(--pk-shadow-sm);
 }
 
 .detail-head {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: var(--space-3);
+  gap: var(--pk-space-3);
   padding-right: 48px;
 }
 
@@ -272,8 +272,8 @@ body.drawer-open {
 
 .detail-en {
   font-size: 12px;
-  color: var(--text-faint);
-  font-family: var(--font-mono);
+  color: var(--pk-text-faint);
+  font-family: var(--pk-font-mono);
 }
 
 .detail-art {
@@ -282,9 +282,9 @@ body.drawer-open {
   place-items: center;
   min-height: 180px;
   padding: 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--bg-sunken);
+  border: 1px solid var(--pk-border);
+  border-radius: var(--pk-radius-sm);
+  background: var(--pk-bg-sunken);
 }
 
 .detail-art img {
@@ -300,7 +300,7 @@ body.drawer-open {
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--pk-text-faint);
   margin-bottom: 6px;
 }
 
@@ -320,15 +320,15 @@ body.drawer-open {
 
 .stat-bar .track {
   height: 7px;
-  background: var(--bg-sunken);
-  border-radius: var(--radius-pill);
+  background: var(--pk-bg-sunken);
+  border-radius: var(--pk-radius-pill);
   overflow: hidden;
 }
 
 .stat-bar .fill {
   height: 100%;
-  border-radius: var(--radius-pill);
-  background: var(--accent);
+  border-radius: var(--pk-radius-pill);
+  background: var(--pk-accent);
 }
 
 @keyframes drawer-in {
@@ -354,13 +354,13 @@ body.drawer-open {
 .stat-bar .value {
   text-align: right;
   font-variant-numeric: tabular-nums;
-  color: var(--text-muted);
+  color: var(--pk-text-muted);
 }
 
 .text-block {
   font-size: 12.5px;
   line-height: 1.6;
-  color: var(--text-muted);
+  color: var(--pk-text-muted);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
@@ -376,14 +376,14 @@ body.drawer-open {
   position: absolute;
   inset: auto 0 0 0;
   height: 40px;
-  background: linear-gradient(transparent, var(--bg-panel));
+  background: linear-gradient(transparent, var(--pk-bg-panel));
 }
 
 .expand-button {
   margin-top: 4px;
   border: 0;
   background: none;
-  color: var(--accent);
+  color: var(--pk-accent);
   font: inherit;
   font-size: 12px;
   cursor: pointer;
@@ -398,10 +398,10 @@ body.drawer-open {
 
 .move {
   padding: 1px 7px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-sunken);
+  border-radius: var(--pk-radius-sm);
+  background: var(--pk-bg-sunken);
   font-size: 11.5px;
-  color: var(--text-muted);
+  color: var(--pk-text-muted);
 }
 
 /* ---------- 宝可梦管理 ---------- */
@@ -416,18 +416,18 @@ body.drawer-open {
 }
 
 .member-name small {
-  font-family: var(--font-mono);
+  font-family: var(--pk-font-mono);
   font-size: 11px;
-  color: var(--text-faint);
+  color: var(--pk-text-faint);
 }
 
 .scope-tag {
-  font-family: var(--font-mono);
+  font-family: var(--pk-font-mono);
   font-size: 11.5px;
-  color: var(--text-muted);
+  color: var(--pk-text-muted);
   padding: 1px 6px;
-  border-radius: var(--radius-sm);
-  background: var(--bg-sunken);
+  border-radius: var(--pk-radius-sm);
+  background: var(--pk-bg-sunken);
 }
 
 .cell-actions {
@@ -445,7 +445,7 @@ body.drawer-open {
 .form-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: var(--space-4);
+  gap: var(--pk-space-4);
 }
 
 .form-field {
@@ -457,12 +457,12 @@ body.drawer-open {
 .form-field label {
   font-size: 12px;
   font-weight: 600;
-  color: var(--text-muted);
+  color: var(--pk-text-muted);
 }
 
 .form-field .hint {
   font-size: 11.5px;
-  color: var(--text-faint);
+  color: var(--pk-text-faint);
   line-height: 1.5;
 }
 
@@ -473,36 +473,36 @@ body.drawer-open {
 .form-actions {
   display: flex;
   align-items: center;
-  gap: var(--space-3);
-  margin-top: var(--space-4);
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--border);
+  gap: var(--pk-space-3);
+  margin-top: var(--pk-space-4);
+  padding-top: var(--pk-space-4);
+  border-top: 1px solid var(--pk-border);
   flex-wrap: wrap;
 }
 
 .form-status {
   font-size: 12.5px;
-  color: var(--text-muted);
+  color: var(--pk-text-muted);
 }
 
 .form-status.error {
-  color: var(--negative);
+  color: var(--pk-negative);
 }
 
 .form-status.success {
-  color: var(--positive);
+  color: var(--pk-positive);
 }
 
 .group-title {
   grid-column: 1 / -1;
-  margin-top: var(--space-2);
+  margin-top: var(--pk-space-2);
   padding-bottom: 6px;
-  border-bottom: 1px solid var(--border);
+  border-bottom: 1px solid var(--pk-border);
   font-size: 12px;
   font-weight: 650;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--text-faint);
+  color: var(--pk-text-faint);
 }
 
 .group-title:first-child {
@@ -510,9 +510,9 @@ body.drawer-open {
 }
 
 .empty-state {
-  padding: var(--space-6);
+  padding: var(--pk-space-6);
   text-align: center;
-  color: var(--text-faint);
+  color: var(--pk-text-faint);
   font-size: 13px;
 }
 
@@ -538,11 +538,11 @@ body.drawer-open {
   .dex-drawer {
     inset: 8px;
     width: auto;
-    border-radius: var(--radius-sm);
+    border-radius: var(--pk-radius-sm);
   }
 
   .drawer-content {
-    padding: var(--space-4);
-    padding-top: var(--space-5);
+    padding: var(--pk-space-4);
+    padding-top: var(--pk-space-5);
   }
 }

@@ -141,10 +141,10 @@ export function bytes(value) {
 export const RARITY_LABEL = { C: "普通", R: "稀有", SR: "史诗", SSR: "传说" };
 
 export const RARITY_COLOR = {
-  C: "var(--rarity-c)",
-  R: "var(--rarity-r)",
-  SR: "var(--rarity-sr)",
-  SSR: "var(--rarity-ssr)",
+  C: "var(--pk-rarity-c)",
+  R: "var(--pk-rarity-r)",
+  SR: "var(--pk-rarity-sr)",
+  SSR: "var(--pk-rarity-ssr)",
 };
 
 const TYPE_COLOR = {
@@ -204,6 +204,9 @@ export function currentTheme() {
 export function applyTheme(theme) {
   const value = ["auto", "light", "dark"].includes(theme) ? theme : "auto";
   document.documentElement.dataset.partnerTheme = value;
+  if (document.body) document.body.dataset.partnerTheme = value;
+  document.documentElement.style.colorScheme =
+    value === "auto" ? "light dark" : value;
   for (const button of document.querySelectorAll("[data-theme]")) {
     button.setAttribute("aria-pressed", String(button.dataset.theme === value));
   }

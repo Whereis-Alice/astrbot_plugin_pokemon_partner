@@ -1830,6 +1830,35 @@ def test_webui_bridge_protocol():
     )
 
 
+def test_webui_theme_namespace():
+    section("WebUI / 主题变量隔离")
+    core_js = (
+        ROOT / "pages" / "partner-console" / "js" / "core.js"
+    ).read_text(encoding="utf-8")
+    tokens_css = (
+        ROOT / "pages" / "partner-console" / "styles" / "tokens.css"
+    ).read_text(encoding="utf-8")
+    check(
+        "主题变量使用 pk 命名空间",
+        "--pk-bg:" in tokens_css
+        and "--pk-bg-panel:" in tokens_css
+        and "--pk-text:" in tokens_css
+        and "--pk-accent:" in tokens_css,
+    )
+    check(
+        "页面不再定义通用宿主变量",
+        all(
+            f"\n  --{name}:" not in tokens_css
+            for name in ("bg", "bg-panel", "text", "accent")
+        ),
+    )
+    check(
+        "主题同步 html/body 与 color-scheme",
+        "document.body.dataset.partnerTheme = value" in core_js
+        and "document.documentElement.style.colorScheme" in core_js,
+    )
+
+
 def test_session_isolation_and_my_pokemon():
     section("会话隔离 / 我的宝可梦")
     import random
@@ -2036,6 +2065,7 @@ if __name__ == "__main__":
     test_draw_card_includes_artwork()
     test_webui_settings_rollback_and_artwork()
     test_webui_bridge_protocol()
+    test_webui_theme_namespace()
     test_session_isolation_and_my_pokemon()
     print(f"\n结果：{PASS} 通过 / {FAIL} 失败")
     sys.exit(1 if FAIL else 0)
