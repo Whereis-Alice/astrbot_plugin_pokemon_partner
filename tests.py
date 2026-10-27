@@ -232,7 +232,7 @@ def test_main_imports():
 
     expected_cmds = {
         "伙伴帮助",
-        "伙伴召唤",
+        "今日宝可梦",
         "伙伴概率",
         "伙伴图鉴",
         "伙伴资料",
@@ -264,6 +264,11 @@ def test_main_imports():
         "不带旧插件别名",
         not (legacy_aliases & set(registered["aliases"])),
         str(legacy_aliases & set(registered["aliases"])),
+    )
+    check(
+        "今日宝可梦保留旧抽卡别名",
+        {"伙伴召唤", "召唤伙伴", "抽伙伴"} <= set(registered["aliases"]),
+        str(registered["aliases"]),
     )
 
     expected_tools = {

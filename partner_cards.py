@@ -289,7 +289,7 @@ def render_draw_card(
     _round_panel(draw, [PAD, PAD, W - PAD, PAD + 108], fill=PANEL, radius=22)
 
     title_font = _font(46)
-    draw.text((PAD + 28, PAD + 18), "伙伴召唤", font=title_font, fill=TEXT)
+    draw.text((PAD + 28, PAD + 18), "今日宝可梦", font=title_font, fill=TEXT)
     sub_font = _font(23)
     draw.text(
         (PAD + 30, PAD + 74),
@@ -469,7 +469,7 @@ def render_profile_card(
         hint = f"下一收集里程碑：{summary.next_milestone} 位伙伴"
     else:
         hint = "全部伙伴已收集，图鉴完成！"
-    day_hint = "发送「伙伴召唤」开始今天的邂逅。"
+    day_hint = "发送「今日宝可梦」开始今天的邂逅。"
     draw.text((PAD + 4, height - 76), hint, font=_font(22), fill=SUBTEXT)
     draw.text((PAD + 4, height - 42), day_hint, font=_font(22), fill=SUBTEXT)
     return _encode(base)

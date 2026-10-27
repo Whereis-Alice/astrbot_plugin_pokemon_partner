@@ -662,7 +662,7 @@ class GachaStore:
                         "当前没有可用的召唤次数。请联系管理员开放每日次数，"
                         "或等待收集里程碑发放额外次数。"
                     )
-                raise GachaError(f"今天的 {limit} 次伙伴召唤已经用完了，明天再来吧。")
+                raise GachaError(f"今天的 {limit} 次今日宝可梦已经抽完了，明天再来吧。")
             actual = min(requested, remaining)
             items: list[DrawItem] = []
             milestones: list[MilestoneReward] = []

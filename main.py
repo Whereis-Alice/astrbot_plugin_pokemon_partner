@@ -10,7 +10,7 @@
 
 指令：
   伙伴帮助               总帮助
-  伙伴召唤               每日抽取（数量、概率、保底均可配置）
+ 今日宝可梦             每日抽取（数量、概率、保底均可配置）
   伙伴图鉴 [页码]        我的收藏
   伙伴资料               次数/星尘/保底进度
   伙伴兑换 <名称> [闪光] 星尘定向兑换
@@ -275,7 +275,7 @@ class PokemonPartnerPlugin(Star):
 
     @staticmethod
     def _draw_text(outcome, nickname: str) -> str:
-        lines = [f"【伙伴召唤】{nickname}"]
+        lines = [f"【今日宝可梦】{nickname}"]
         for index, item in enumerate(outcome.items, 1):
             tags = []
             if item.shiny:
@@ -353,9 +353,9 @@ class PokemonPartnerPlugin(Star):
         """伙伴系统帮助：抽卡、图鉴、兑换与查询指令总览。"""
         yield event.plain_result(self._partner_help_text())
 
-    @filter.command("伙伴召唤", alias={"召唤伙伴", "抽伙伴"})
+    @filter.command("今日宝可梦", alias={"伙伴召唤", "召唤伙伴", "抽伙伴"})
     async def cmd_partner_draw(self, event: AstrMessageEvent):
-        """召唤伙伴。每次数量与稀有度概率由插件配置决定。"""
+        """今日宝可梦：抽取伙伴。每次数量与稀有度概率由插件配置决定。"""
         try:
             service = self._partner_or_error()
             scope, user_id, nickname = self._scope(event)
@@ -366,8 +366,8 @@ class PokemonPartnerPlugin(Star):
             yield event.plain_result(str(exc))
             return
         except Exception as exc:
-            logger.error(f"[{PLUGIN_ID}] 伙伴召唤失败: {exc}")
-            yield event.plain_result("伙伴召唤失败，请稍后再试。")
+            logger.error(f"[{PLUGIN_ID}] 今日宝可梦抽取失败: {exc}")
+            yield event.plain_result("抽取失败，请稍后再试。")
             return
         # 立绘下载不阻塞抽卡结果；本次没有缓存时先显示占位图，下次自然命中。
         if self.artwork is not None and self._card_enabled():
@@ -423,7 +423,7 @@ class PokemonPartnerPlugin(Star):
             return
         if not owned:
             yield event.plain_result(
-                "你还没有收集到伙伴。发送「伙伴召唤」开始今天的邂逅吧。"
+                "你还没有收集到伙伴。发送「今日宝可梦」开始今天的邂逅吧。"
             )
             return
         page_size = 24
@@ -590,7 +590,7 @@ class PokemonPartnerPlugin(Star):
             yield event.plain_result(str(exc))
             return
         if not rows:
-            yield event.plain_result("还没有人收集伙伴，发送「伙伴召唤」抢下第一名吧。")
+            yield event.plain_result("还没有人收集伙伴，发送「今日宝可梦」抢下第一名吧。")
             return
         lines = ["【伙伴收集排行】"]
         medals = {1: "🥇", 2: "🥈", 3: "🥉"}
@@ -657,7 +657,7 @@ class PokemonPartnerPlugin(Star):
     def _partner_help_text(self) -> str:
         base = (
             "🎒 宝可梦伙伴图鉴\n"
-            "伙伴召唤 — 每日固定次数抽取（数量与概率由配置决定）\n"
+            "今日宝可梦 — 每日固定次数抽取（数量与概率由配置决定）\n"
             "伙伴图鉴 [页码] — 我的伙伴收藏\n"
             "伙伴资料 — 收集进度、星尘、保底与排名\n"
             "伙伴兑换 <名称> [闪光] — 用星尘定向获得\n"
@@ -689,7 +689,7 @@ class PokemonPartnerPlugin(Star):
     # ---------- 伙伴 LLM 工具 ----------
     @filter.llm_tool(name="pokemon_partner_draw")
     async def tool_partner_draw(self, event: AstrMessageEvent):
-        """为当前用户召唤伙伴（消耗今日次数），返回本次结果。
+        """为当前用户抽取今日宝可梦（消耗今日次数），返回本次结果。
         用户明确要求抽卡、召唤伙伴时使用。不要替用户编造未返回的伙伴。
         """
         try:
@@ -701,8 +701,8 @@ class PokemonPartnerPlugin(Star):
         except GachaError as exc:
             return str(exc)
         except Exception as exc:
-            logger.error(f"[{PLUGIN_ID}] LLM 伙伴召唤失败: {exc}")
-            return f"伙伴召唤失败：{exc}"
+            logger.error(f"[{PLUGIN_ID}] LLM 今日宝可梦抽取失败: {exc}")
+            return f"抽取失败：{exc}"
         return self._draw_text(outcome, nickname or "训练家")
 
     @filter.llm_tool(name="pokemon_partner_profile")
@@ -800,7 +800,7 @@ class PokemonPartnerPlugin(Star):
         rules = service.store.rules
         weights = service.effective_weights()
         total = sum(weights.values()) or 1
-        lines = ["【伙伴召唤规则】"]
+        lines = ["【今日宝可梦规则】"]
         for rarity in ("SSR", "SR", "R", "C"):
             pct = weights.get(rarity, 0) / total * 100
             lines.append(
@@ -1968,7 +1968,7 @@ class PokemonPartnerPlugin(Star):
     def _help_text(self) -> str:
         return (
             "🎒 宝可梦伙伴图鉴\n"
-            "伙伴召唤 / 伙伴图鉴 [页码] / 伙伴资料 / 伙伴兑换 <名称> [闪光]\n"
+            "今日宝可梦 / 伙伴图鉴 [页码] / 伙伴资料 / 伙伴兑换 <名称> [闪光]\n"
             "伙伴排行 / 伙伴概率 / 伙伴帮助 — 抽卡与收藏\n"
             "宝可梦 <编号/名称> — 图鉴卡片（头部带冠军赛名次）\n"
             "宝可梦 <名称> 招式表 [等级] — 可学招式与推荐配招\n"
