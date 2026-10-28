@@ -1,7 +1,7 @@
 """宝可梦系统的 Pillow 卡片渲染。
 
 与 ``card_renderer.py`` 共用字体查找逻辑，但版式独立：抽卡结果、收藏图鉴、
-训练家资料三张卡片都使用深色收藏册风格，避免和图鉴卡混淆。
+训练家资料使用精灵球红、纸白与墨色的图鉴手册风格。
 
 渲染函数只接收普通数据，不读配置、不访问数据库，便于单测与替换。
 """
@@ -36,21 +36,22 @@ except ImportError:  # 兼容以普通模块方式加载插件
 W = 1080
 PAD = 44
 
-BG_TOP = (12, 18, 34)
-BG_BOTTOM = (24, 31, 54)
-PANEL = (28, 37, 61)
-PANEL_ALT = (34, 44, 71)
-TEXT = (238, 242, 255)
-SUBTEXT = (148, 163, 184)
-LINE = (51, 65, 95)
-GOLD = (250, 204, 21)
-NEW_GREEN = (52, 211, 153)
+BG_TOP = (247, 245, 239)
+BG_BOTTOM = (235, 233, 225)
+PANEL = (255, 255, 252)
+PANEL_ALT = (246, 246, 241)
+TEXT = (30, 40, 47)
+SUBTEXT = (87, 101, 108)
+LINE = (219, 224, 218)
+RED = (199, 53, 53)
+GOLD = (155, 102, 12)
+NEW_GREEN = (22, 124, 94)
 
 RARITY_COLORS: dict[str, tuple[int, int, int]] = {
-    "C": (100, 116, 139),
-    "R": (56, 132, 255),
-    "SR": (168, 85, 247),
-    "SSR": (245, 158, 11),
+    "C": (87, 105, 114),
+    "R": (34, 105, 177),
+    "SR": (111, 72, 151),
+    "SSR": (155, 102, 12),
 }
 RARITY_GLOW: dict[str, tuple[int, int, int]] = {
     "C": (71, 85, 105),
@@ -59,7 +60,7 @@ RARITY_GLOW: dict[str, tuple[int, int, int]] = {
     "SSR": (146, 64, 14),
 }
 
-# 属性配色（与官方属性色接近，保证不同属性在深色背景上可区分）
+# 属性配色（文字依据底色选择明暗，保证标签可读）
 TYPE_COLORS: dict[str, tuple[int, int, int]] = {
     "一般": (154, 161, 159),
     "火": (230, 40, 40),
@@ -180,16 +181,34 @@ def _gradient(size: tuple[int, int]) -> Image.Image:
 
 
 def _starfield(draw: ImageDraw.ImageDraw, width: int, height: int) -> None:
-    """确定性星点，避免每次渲染都变化。"""
-    seed = 20261027
-    for index in range(70):
-        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
-        x = seed % width
-        seed = (seed * 1103515245 + 12345) & 0x7FFFFFFF
-        y = seed % height
-        radius = 1 + (index % 3 == 0)
-        color = (58, 74, 110) if index % 4 else (76, 96, 140)
-        draw.ellipse([x, y, x + radius, y + radius], fill=color)
+    """确定性的笔记纸点阵。"""
+    for y in range(24, height, 24):
+        for x in range(24, width, 24):
+            draw.point((x, y), fill=(218, 220, 213))
+
+
+def _frame(draw: ImageDraw.ImageDraw, height: int) -> None:
+    _round_panel(draw, [16, 16, W - 16, height - 16], fill=PANEL, outline=LINE, radius=28)
+    draw.rounded_rectangle([36, 32, W - 36, 40], radius=4, fill=RED)
+
+
+def _pokeball(
+    draw: ImageDraw.ImageDraw,
+    cx: float,
+    cy: float,
+    radius: float,
+    *,
+    muted: bool = False,
+) -> None:
+    """用矢量几何绘制精灵球；不依赖额外图片资源。"""
+    outline = LINE if muted else TEXT
+    top_color = (231, 220, 211) if muted else RED
+    draw.ellipse([cx - radius, cy - radius, cx + radius, cy + radius], fill=PANEL, outline=outline, width=2)
+    draw.pieslice([cx - radius, cy - radius, cx + radius, cy + radius], 180, 360, fill=top_color)
+    draw.line([cx - radius, cy, cx + radius, cy], fill=outline, width=max(2, int(radius * .07)))
+    center = radius * .23
+    draw.ellipse([cx - center, cy - center, cx + center, cy + center], fill=PANEL, outline=outline, width=max(2, int(radius * .04)))
+    draw.ellipse([cx - center * .45, cy - center * .45, cx + center * .45, cy + center * .45], outline=outline, width=2)
 
 
 def _round_panel(
@@ -237,23 +256,25 @@ def _pill(
     w, h = int(tw) + 22, 32
     draw.rounded_rectangle([x, y + 5, x + w, y + 5 + h], radius=16, fill=color)
     draw.text(
-        (x + 11, y + 10), label, font=font, fill=(15, 23, 42) if color == GOLD else (255, 255, 255)
+        (x + 11, y + 10), label, font=font, fill=(255, 255, 255)
     )
     return x + w
 
 
 def _type_pill(
-    draw: ImageDraw.ImageDraw, xy: tuple[int, int], type_name: str
+    draw: ImageDraw.ImageDraw, xy: tuple[int, int], type_name: str, *, small: bool = False
 ) -> int:
     """属性胶囊，颜色取自官方属性配色，返回右边界。"""
     color = TYPE_COLORS.get(type_name, (100, 116, 139))
-    font = _font(24)
+    font = _font(19 if small else 24)
     tw = draw.textlength(type_name, font=font)
     x, y = xy
-    w, h = int(tw) + 26, 36
+    w, h = int(tw) + 26, 30 if small else 36
     draw.rounded_rectangle([x, y, x + w, y + h], radius=18, fill=color)
-    luminance = 0.299 * color[0] + 0.587 * color[1] + 0.114 * color[2]
-    text_color = (15, 23, 42) if luminance > 170 else (255, 255, 255)
+    channels = [c / 255 for c in color]
+    linear = [c / 12.92 if c <= .04045 else ((c + .055) / 1.055) ** 2.4 for c in channels]
+    luminance = .2126 * linear[0] + .7152 * linear[1] + .0722 * linear[2]
+    text_color = TEXT if luminance > .22 else (255, 255, 255)
     draw.text((x + 13, y + 5), type_name, font=font, fill=text_color)
     return x + w + 8
 
@@ -347,7 +368,7 @@ def _stat_bars(
         top = y + index * row_h
         draw.text((x, top + 2), key, font=label_font, fill=SUBTEXT)
         draw.rounded_rectangle(
-            [bar_x, top + 8, bar_x + bar_w, top + 24], radius=8, fill=(15, 23, 42)
+            [bar_x, top + 8, bar_x + bar_w, top + 24], radius=8, fill=(226, 231, 225)
         )
         ratio = max(0.0, min(1.0, value / 180))
         if ratio > 0:
@@ -375,12 +396,16 @@ def _paste_art(
 ) -> None:
     if art is None:
         return
-    x, y, size, _ = box
+    x, y, size, box_h = box
+    box_h = box_h or size
     image = art.convert("RGBA")
-    image.thumbnail((size, size), Image.Resampling.LANCZOS)
+    bounds = image.getchannel("A").getbbox()
+    if bounds:
+        image = image.crop(bounds)
+    image.thumbnail((size, box_h), Image.Resampling.LANCZOS)
     base.paste(
         image,
-        (x + (size - image.width) // 2, y + (size - image.height) // 2),
+        (x + (size - image.width) // 2, y + (box_h - image.height) // 2),
         image,
     )
 
@@ -389,27 +414,14 @@ def _placeholder_art(
     draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], rarity: str
 ) -> None:
     x, y, size, _ = box
-    color = RARITY_GLOW.get(rarity, RARITY_GLOW["C"])
-    draw.rounded_rectangle(
-        [x, y, x + size, y + size], radius=18, fill=(21, 29, 49), outline=color, width=2
-    )
+    draw.rounded_rectangle([x, y, x + size, y + size], radius=18, fill=PANEL_ALT, outline=LINE, width=1)
     cx, cy = x + size / 2, y + size / 2
-    for angle in range(0, 360, 60):
-        rad = math.radians(angle)
-        draw.ellipse(
-            [
-                cx + math.cos(rad) * size * 0.26 - 3,
-                cy + math.sin(rad) * size * 0.26 - 3,
-                cx + math.cos(rad) * size * 0.26 + 3,
-                cy + math.sin(rad) * size * 0.26 + 3,
-            ],
-            fill=color,
-        )
-    draw.ellipse(
-        [cx - size * 0.12, cy - size * 0.12, cx + size * 0.12, cy + size * 0.12],
-        outline=color,
-        width=3,
-    )
+    _pokeball(draw, cx, cy - size * .03, size * .22, muted=True)
+    if size >= 160:
+        label = "立绘暂未缓存"
+        font = _font(18)
+        tw = draw.textlength(label, font=font)
+        draw.text((cx - tw / 2, cy + size * .29), label, font=font, fill=SUBTEXT)
 
 
 def _draw_result_rows(
@@ -505,16 +517,18 @@ def render_draw_card(
     单个结果用大图展示（立绘 + 名字 + 属性 + 稀有度），多个结果用网格。
     图片缺失时用同尺寸占位，版式不会塌。
     """
-    count = max(1, len(items))
+    if not items:
+        raise ValueError("抽卡卡片至少需要一个结果")
+    count = len(items)
     if count == 1:
-        height = 1180
+        height = 1360
     else:
         columns, rows, card_h = _grid_layout(count)
         height = 214 + rows * card_h + (rows - 1) * 18 + 96
     base = _gradient((W, height)).convert("RGBA")
     draw = ImageDraw.Draw(base)
     _starfield(draw, W, height)
-    _round_panel(draw, [16, 16, W - 16, height - 16], fill=(17, 24, 43), radius=28)
+    _frame(draw, height)
     _draw_draw_header(draw, nickname, remaining, daily_limit, dust, pity_ssr, ssr_pity_after)
 
     if count == 1:
@@ -542,53 +556,43 @@ def _draw_draw_header(
     pity_ssr: int,
     ssr_pity_after: int,
 ) -> None:
-    """顶部信息条：标题、玩家、剩余次数、星尘与保底。"""
-    _round_panel(draw, [PAD, PAD, W - PAD, PAD + 132], fill=PANEL, radius=24)
-    draw.text((PAD + 30, PAD + 16), "今日宝可梦", font=_font(46), fill=TEXT)
+    """顶部信息条：标题、玩家与三个互不重叠的状态区。"""
+    _pokeball(draw, PAD + 28, PAD + 38, 24)
+    draw.text((PAD + 68, PAD + 5), "今日宝可梦", font=_font(46), fill=TEXT)
     draw.text(
-        (PAD + 32, PAD + 78),
-        _ellipsize(draw, nickname, _font(24), 420),
-        font=_font(24),
+        (PAD + 68, PAD + 67),
+        _ellipsize(draw, f"训练家 · {nickname}", _font(22), 390),
+        font=_font(22),
         fill=SUBTEXT,
     )
+    status_x, status_w = 562, 226
+    for i, (label, value, color) in enumerate((
+        ("今日剩余次数", f"{remaining} / {daily_limit}", TEXT),
+        ("星尘余额", str(dust), GOLD),
+    )):
+        x = status_x + i * (status_w + 18)
+        _round_panel(draw, [x, PAD + 6, x + status_w, PAD + 86], fill=PANEL_ALT, outline=LINE, radius=16, width=1)
+        draw.text((x + 18, PAD + 15), label, font=_font(18), fill=SUBTEXT)
+        value_font = _fit_text_font(draw, value, status_w - 36, 30, 20)
+        draw.text((x + 18, PAD + 41), _ellipsize(draw, value, value_font, status_w - 36), font=value_font, fill=color)
 
-    # 右上：星尘（金色高亮）
-    dust_text = f"星尘 {dust}"
-    font_dust = _font(30)
-    tw = draw.textlength(dust_text, font=font_dust)
-    draw.text((W - PAD - 30 - tw, PAD + 22), dust_text, font=font_dust, fill=GOLD)
-
-    # 右下：剩余次数胶囊
-    cap_text = f"今日剩余 {remaining}/{daily_limit}"
-    font_cap = _font(22)
-    tw = draw.textlength(cap_text, font=font_cap)
-    cap_w, cap_h = int(tw) + 30, 38
-    cap_x, cap_y = W - PAD - 30 - cap_w, PAD + 70
-    draw.rounded_rectangle(
-        [cap_x, cap_y, cap_x + cap_w, cap_y + cap_h],
-        radius=19,
-        fill=(30, 41, 59),
-        outline=LINE,
-    )
-    draw.text((cap_x + 15, cap_y + 7), cap_text, font=font_cap, fill=TEXT)
-
+    draw.line([PAD, 192, W - PAD, 192], fill=LINE, width=2)
     if ssr_pity_after > 0:
-        # 保底进度条：接近保底时变金色
         ratio = max(0.0, min(1.0, pity_ssr / max(1, ssr_pity_after)))
-        bar_x, bar_w = PAD + 32, 300
-        bar_y = PAD + 108
+        bar_x, bar_w = 562, 224
+        bar_y = PAD + 109
         draw.rounded_rectangle(
-            [bar_x, bar_y, bar_x + bar_w, bar_y + 8], radius=4, fill=(15, 23, 42)
+            [bar_x, bar_y, bar_x + bar_w, bar_y + 8], radius=4, fill=LINE
         )
         if ratio > 0:
-            color = GOLD if ratio >= 0.8 else (99, 102, 241)
+            color = GOLD if ratio >= 0.8 else RED
             draw.rounded_rectangle(
                 [bar_x, bar_y, bar_x + max(8, int(bar_w * ratio)), bar_y + 8],
                 radius=4,
                 fill=color,
             )
         draw.text(
-            (bar_x + bar_w + 14, PAD + 96),
+            (bar_x + bar_w + 18, PAD + 97),
             f"SSR 保底 {pity_ssr}/{ssr_pity_after}",
             font=_font(19),
             fill=SUBTEXT,
@@ -602,23 +606,16 @@ def _draw_hero_result(
     image_loader: ImageLoader | None,
     height: int,
 ) -> None:
-    """单个结果：左侧大立绘，右侧信息；稀有度光环 + 闪光光晕。"""
-    top = 190
+    """单抽图鉴页：大立绘、独立能力区、分栏资料与结果条。"""
+    top = 214
     art_size = 420
-    glow = RARITY_GLOW.get(item.rarity, RARITY_GLOW["C"])
-
-    # 背景光环
+    color = RARITY_COLORS.get(item.rarity, RARITY_COLORS["C"])
     cx, cy = PAD + 40 + art_size // 2, top + 40 + art_size // 2
-    for radius, alpha in ((300, 34), (240, 52), (180, 74)):
-        draw.ellipse(
-            [cx - radius, cy - radius, cx + radius, cy + radius],
-            outline=(*glow, alpha),
-            width=3,
-        )
-    draw.ellipse(
-        [cx - 200, cy - 200, cx + 200, cy + 200], fill=(*glow, 26)
-    )
-
+    stage = (248, 241, 217) if item.shiny else PANEL_ALT
+    draw.ellipse([cx - 219, cy - 219, cx + 219, cy + 219], fill=stage)
+    _pokeball(draw, cx, cy, 183, muted=True)
+    draw.arc([cx - 214, cy - 214, cx + 214, cy + 214], 220, 305, fill=color, width=6)
+    draw.arc([cx - 214, cy - 214, cx + 214, cy + 214], 40, 90, fill=color, width=6)
     art = image_loader(item.row) if image_loader else None
     if art is not None:
         _paste_art(base, art, (PAD + 40, top + 40, art_size, 0))
@@ -629,7 +626,7 @@ def _draw_hero_result(
     width = W - PAD - 40 - x
 
     # 稀有度徽章 + 新增/闪光标记
-    badge_y = top + 40
+    badge_y = top + 22
     badge_end = _rarity_badge(draw, (x, badge_y), item.rarity)
     if item.is_new:
         _pill(draw, (badge_end, badge_y), "NEW", NEW_GREEN)
@@ -637,14 +634,17 @@ def _draw_hero_result(
         _pill(draw, (badge_end + (76 if item.is_new else 0), badge_y), "闪光", GOLD)
 
     # 名字
-    name_font = _fit_text_font(draw, item.name, width, 58, 34)
-    name = _ellipsize(draw, item.name, name_font, width)
-    draw.text((x, badge_y + 62), name, font=name_font, fill=GOLD if item.shiny else TEXT)
+    name_font = _fit_text_font(draw, item.name, width, 54, 30)
+    name_lines = _limited_wrapped_lines(draw, item.name, name_font, width, 2)
+    for index, name in enumerate(name_lines):
+        draw.text((x, badge_y + 64 + index * 38), name, font=name_font, fill=TEXT)
 
     # 编号 + 属性
     meta_font = _font(26)
-    draw.text((x, badge_y + 140), f"#{item.dex_raw}", font=meta_font, fill=SUBTEXT)
-    tx = x + 110
+    dex_label = f"#{item.dex_raw}"
+    dex_font = _fit_text_font(draw, dex_label, 160, 24, 18)
+    draw.text((PAD + 40, top + 466), dex_label, font=dex_font, fill=SUBTEXT)
+    tx = x
     for type_name in [t.strip() for t in item.types.split("/") if t.strip()]:
         tx = _type_pill(draw, (tx, badge_y + 136), type_name)
 
@@ -652,6 +652,7 @@ def _draw_hero_result(
     stats = _stat_dict(item)
     if stats:
         sy = badge_y + 200
+        draw.text((x, sy - 32), "种族值", font=_font(20), fill=SUBTEXT)
         _stat_bars(draw, x, sy, width - 20, stats, item.bst)
     else:
         draw.text(
@@ -662,13 +663,15 @@ def _draw_hero_result(
         )
 
     # 立绘下方严格分成左右两栏：左侧基础资料与完整进化链，右侧图鉴摘要。
-    info_top = top + art_size + 18
+    info_top = top + 562
     left_x = PAD + 40
     left_width = x - left_x - 28
-    line_font = _font(19)
-    line_h = 24
+    line_font = _font(20)
+    line_h = 27
     cursor = info_top
-    max_bottom = height - 132
+    max_bottom = height - 154
+    draw.line([PAD + 30, info_top - 61, W - PAD - 30, info_top - 61], fill=LINE, width=2)
+    draw.text((left_x, info_top - 40), "宝可梦资料", font=_font(24), fill=TEXT)
 
     def draw_block(lines: Sequence[str], max_lines: int, gap: int = 0) -> None:
         nonlocal cursor
@@ -711,19 +714,19 @@ def _draw_hero_result(
 
     evolution = str(item.row.get("evolution") or "").strip()
     if evolution:
-        draw_block([f"进化：{evolution}"], 6)
+        draw_block([f"进化：{evolution}"], 5)
 
     # 右侧摘要使用完整半栏宽度，并显著增加可读行数。
     profile = str(item.row.get("profile") or "").strip()
     if profile:
-        profile_font = _font(20)
+        profile_font = _font(23)
         profile_lines = _limited_wrapped_lines(
-            draw, profile, profile_font, width, 11
+            draw, profile, profile_font, width, 12
         )
-        draw.text((x, top + 508), "图鉴摘要", font=_font(23), fill=SUBTEXT)
+        draw.text((x, info_top - 40), "图鉴摘要", font=_font(24), fill=TEXT)
         for index, line in enumerate(profile_lines):
             draw.text(
-                (x, top + 544 + index * 28),
+                (x, info_top + index * 32),
                 line,
                 font=profile_font,
                 fill=SUBTEXT,
@@ -735,11 +738,14 @@ def _draw_hero_result(
         if not item.is_new
         else "新宝可梦已加入图鉴"
     )
+    note_color = GOLD if not item.is_new else NEW_GREEN
+    note_bg = (249, 243, 224) if not item.is_new else (230, 244, 235)
+    _round_panel(draw, [PAD + 30, height - 128, W - PAD - 30, height - 80], fill=note_bg, radius=12)
     draw.text(
-        (PAD + 40, height - 108),
+        (PAD + 48, height - 119),
         note,
         font=_font(24),
-        fill=GOLD if not item.is_new else NEW_GREEN,
+        fill=note_color,
     )
 
 
@@ -756,7 +762,7 @@ def _draw_result_grid(
     gap = 18
     card_w = (W - PAD * 2 - gap * (columns - 1)) // columns
     card_h = 330 if columns == 3 else 460
-    art_size = min(card_w - 36, 160) if columns == 3 else min(card_w - 48, 228)
+    art_size = 138 if columns == 3 else 204
 
     for index, item in enumerate(items):
         row, col = divmod(index, columns)
@@ -766,16 +772,23 @@ def _draw_result_grid(
         _round_panel(
             draw,
             [x, y, x + card_w, y + card_h],
-            fill=PANEL_ALT,
+            fill=(250, 246, 230) if item.shiny else PANEL_ALT,
             outline=GOLD if item.shiny else LINE,
             width=3 if item.shiny else 1,
             radius=20,
         )
         draw.rounded_rectangle([x, y, x + card_w, y + 7], radius=4, fill=color)
 
+        dex_font = _font(18)
+        draw.text((x + 18, y + 17), _ellipsize(draw, f"#{item.dex_raw}", dex_font, card_w - 112), font=dex_font, fill=SUBTEXT)
+        rarity_font = _font(19)
+        tw = draw.textlength(item.rarity, font=rarity_font)
+        draw.text((x + card_w - 18 - tw, y + 17), item.rarity, font=rarity_font, fill=color)
         art = image_loader(item.row) if image_loader else None
         art_x = x + (card_w - art_size) // 2
-        art_y = y + 20
+        art_y = y + 40
+        cx, cy = x + card_w / 2, art_y + art_size / 2
+        draw.ellipse([cx - art_size / 2 - 6, cy - art_size / 2 - 6, cx + art_size / 2 + 6, cy + art_size / 2 + 6], fill=PANEL)
         if art is not None:
             _paste_art(base, art, (art_x, art_y, art_size, 0))
         else:
@@ -795,25 +808,16 @@ def _draw_result_grid(
             (x + (card_w - tw) / 2, name_y),
             name,
             font=name_font,
-            fill=GOLD if item.shiny else TEXT,
+            fill=TEXT,
         )
 
         pill_y = name_y + (36 if columns == 3 else 40)
+        types = [t.strip() for t in item.types.split("/") if t.strip()] or ["未知"]
         pill_font = _font(19)
-        chip_text = f"{item.rarity} · {item.types or '—'}"
-        tw = draw.textlength(chip_text, font=pill_font)
-        chip_w = int(tw) + 22
-        draw.rounded_rectangle(
-            [x + (card_w - chip_w) / 2, pill_y, x + (card_w + chip_w) / 2, pill_y + 30],
-            radius=15,
-            fill=color,
-        )
-        draw.text(
-            (x + (card_w - tw) / 2, pill_y + 4),
-            chip_text,
-            font=pill_font,
-            fill=(255, 255, 255),
-        )
+        chips_width = sum(int(draw.textlength(t, font=pill_font)) + 26 for t in types) + (len(types) - 1) * 8
+        tx = int(x + (card_w - chips_width) / 2)
+        for type_name in types:
+            tx = _type_pill(draw, (tx, pill_y), type_name, small=True)
 
         # 两列卡片补特性；三列保持单行种族值，避免越出卡片。
         detail_font = _font(19)
@@ -871,20 +875,20 @@ def render_collection_card(
     base = _gradient((W, height)).convert("RGBA")
     draw = ImageDraw.Draw(base)
     _starfield(draw, W, height)
-    _round_panel(draw, [16, 16, W - 16, height - 16], fill=(17, 24, 43), radius=28)
+    _frame(draw, height)
     _round_panel(draw, [PAD, PAD, W - PAD, PAD + 104], fill=PANEL, radius=22)
 
     draw.text((PAD + 28, PAD + 16), "我的宝可梦", font=_font(44), fill=TEXT)
     sub = _font(23)
     draw.text(
         (PAD + 30, PAD + 68),
-        f"{nickname} · 已收集 {collected}/{total} · 第 {page} 页",
+        _ellipsize(draw, f"{nickname} · 已收集 {collected}/{total} · 第 {page} 页", sub, W - PAD * 2 - 60),
         font=sub,
         fill=SUBTEXT,
     )
 
     gap = (W - PAD * 2 - cols * cell_w) // (cols - 1)
-    name_font, small = _font(23), _font(19)
+    name_font, small = _font(21), _font(17)
     for index, owned_item in enumerate(owned):
         row, col = divmod(index, cols)
         x = PAD + col * (cell_w + gap)
@@ -909,11 +913,11 @@ def render_collection_card(
             _placeholder_art(draw, art_box, partner.rarity)
         else:
             _paste_art(base, art, art_box)
-        lines = _wrap(draw, partner.name, name_font, cell_w - 20)[:2]
+        lines = _limited_wrapped_lines(draw, partner.name, name_font, cell_w - 20, 2)
         for line_index, line in enumerate(lines):
             tw = draw.textlength(line, font=name_font)
             draw.text(
-                (x + (cell_w - tw) / 2, y + 112 + line_index * 28),
+                (x + (cell_w - tw) / 2, y + 108 + line_index * 25),
                 line,
                 font=name_font,
                 fill=TEXT,
@@ -921,6 +925,7 @@ def render_collection_card(
         footer = f"#{partner.dex_raw}"
         if shiny:
             footer += f"  闪光×{owned_item.shiny_count}"
+        footer = _ellipsize(draw, footer, small, cell_w - 12)
         tw = draw.textlength(footer, font=small)
         draw.text(
             (x + (cell_w - tw) / 2, y + cell_h - 34),
@@ -930,7 +935,7 @@ def render_collection_card(
         )
 
     # 分页按"已收集"计算；total 是卡池规模，只用于展示进度。
-    pages = max(1, math.ceil(len(owned) / max(1, page_size))) if owned else 1
+    pages = max(1, math.ceil(collected / max(1, page_size)))
     foot = f"第 {page}/{pages} 页 · 我的宝可梦 <页码> 翻页 · 兑换宝可梦 <名称> 定向获取"
     tw = draw.textlength(foot, font=small)
     draw.text(((W - tw) / 2, height - 66), foot, font=small, fill=SUBTEXT)
@@ -948,10 +953,12 @@ def render_profile_card(
     base = _gradient((W, height)).convert("RGBA")
     draw = ImageDraw.Draw(base)
     _starfield(draw, W, height)
-    _round_panel(draw, [16, 16, W - 16, height - 16], fill=(17, 24, 43), radius=28)
+    _frame(draw, height)
     _round_panel(draw, [PAD, PAD, W - PAD, PAD + 160], fill=PANEL, radius=24)
 
-    draw.text((PAD + 30, PAD + 20), summary.nickname, font=_font(46), fill=TEXT)
+    nickname_font = _fit_text_font(draw, summary.nickname, W - PAD * 2 - (260 if rank else 60), 46, 28)
+    nickname = _ellipsize(draw, summary.nickname, nickname_font, W - PAD * 2 - (260 if rank else 60))
+    draw.text((PAD + 30, PAD + 20), nickname, font=nickname_font, fill=TEXT)
     draw.text(
         (PAD + 32, PAD + 84),
         f"训练家档案 · 已召唤 {summary.total_draws} 次",
@@ -966,14 +973,14 @@ def render_profile_card(
     # 进度条
     bar_x, bar_y, bar_w, bar_h = PAD + 32, PAD + 124, W - PAD * 2 - 64, 18
     draw.rounded_rectangle(
-        [bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=9, fill=(15, 23, 42)
+        [bar_x, bar_y, bar_x + bar_w, bar_y + bar_h], radius=9, fill=LINE
     )
     ratio = min(1.0, summary.percent / 100.0)
     if ratio > 0:
         draw.rounded_rectangle(
             [bar_x, bar_y, bar_x + max(18, int(bar_w * ratio)), bar_y + bar_h],
             radius=9,
-            fill=(99, 102, 241),
+            fill=RED,
         )
 
     stats = [
@@ -993,7 +1000,8 @@ def render_profile_card(
         y = top + row * (card_h + 18)
         _round_panel(draw, [x, y, x + card_w, y + card_h], fill=PANEL_ALT, radius=20)
         draw.text((x + 26, y + 20), label, font=_font(23), fill=SUBTEXT)
-        draw.text((x + 26, y + 54), value, font=_font(42), fill=TEXT)
+        value_font = _fit_text_font(draw, value, card_w - 52, 42, 24)
+        draw.text((x + 26, y + 54), _ellipsize(draw, value, value_font, card_w - 52), font=value_font, fill=TEXT)
         if note:
             tw = draw.textlength(note, font=_font(24))
             draw.text(
@@ -1005,8 +1013,8 @@ def render_profile_card(
     else:
         hint = "全部宝可梦已收集，图鉴完成！"
     day_hint = "发送「今日宝可梦」开始今天的邂逅。"
-    draw.text((PAD + 4, height - 76), hint, font=_font(22), fill=SUBTEXT)
-    draw.text((PAD + 4, height - 42), day_hint, font=_font(22), fill=SUBTEXT)
+    draw.text((PAD + 4, height - 90), hint, font=_font(22), fill=SUBTEXT)
+    draw.text((PAD + 4, height - 56), day_hint, font=_font(22), fill=SUBTEXT)
     return _encode(base)
 
 
@@ -1026,7 +1034,7 @@ def render_rarity_legend(
     base = _gradient((W, height)).convert("RGBA")
     draw = ImageDraw.Draw(base)
     _starfield(draw, W, height)
-    _round_panel(draw, [16, 16, W - 16, height - 16], fill=(17, 24, 43), radius=28)
+    _frame(draw, height)
     draw.text((PAD, PAD), "稀有度与概率", font=_font(44), fill=TEXT)
     weights = effective_weights or dict(
         zip(("C", "R", "SR", "SSR"), rules.weight_list())

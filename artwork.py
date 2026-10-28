@@ -14,6 +14,9 @@ from __future__ import annotations
 
 import asyncio
 import io
+import os
+import threading
+import uuid
 from collections import OrderedDict
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -65,6 +68,8 @@ class ArtworkCache:
         self.timeout = timeout
         self._images: OrderedDict[str, Image.Image] = OrderedDict()
         self._failed: set[str] = set()
+        self._lock = threading.RLock()
+        self._verified: dict[str, tuple[int, int, bool]] = {}
         self.max_images = MAX_CACHED_IMAGES
 
     # ---------- 同步读取（渲染线程） ----------
@@ -87,57 +92,105 @@ class ArtworkCache:
 
     def path_for(self, row: Mapping[str, Any]) -> Path | None:
         local = self._local_path(row)
-        if local is not None:
+        if local is not None and self._valid_cache_file(local):
             return local
         name = self._cache_name(row.get("id"))
         if not name:
             return None
         cached = self.cache_dir / name
-        return cached if cached.is_file() else None
+        return cached if self._valid_cache_file(cached) else None
+
+    def _valid_cache_file(self, path: Path) -> bool:
+        """仅在文件变化时验证 PNG，损坏缓存视为缺图并允许重新下载。"""
+        try:
+            stat = path.stat()
+            signature = (stat.st_mtime_ns, stat.st_size)
+            key = str(path)
+            with self._lock:
+                previous = self._verified.get(key)
+                if previous and previous[:2] == signature:
+                    return previous[2]
+            try:
+                with Image.open(path) as image:
+                    image.verify()
+                valid = True
+            except Exception:
+                valid = False
+            with self._lock:
+                if previous and previous[:2] != signature:
+                    self._images.pop(key, None)
+                    self._failed.discard(key)
+                self._verified[key] = (*signature, valid)
+            return valid
+        except OSError:
+            return False
 
     def load(self, row: Mapping[str, Any]) -> Image.Image | None:
         """同步加载，供 Pillow 渲染回调使用。失败返回 ``None``。"""
         path = self.path_for(row)
         key = str(path or "")
-        if not path or key in self._failed:
+        if not path:
             return None
-        cached = self._images.get(key)
-        if cached is not None:
-            self._images.move_to_end(key)
-            return cached
+        with self._lock:
+            cached = self._images.get(key)
+            if cached is not None:
+                self._images.move_to_end(key)
+                return cached
         try:
             image = Image.open(path).convert("RGBA")
             image.load()
         except Exception:
-            self._failed.add(key)
+            with self._lock:
+                self._failed.add(key)
             return None
-        self._images[key] = image
-        # 有界 LRU：长期运行时不会把上千张立绘常驻内存。
-        while len(self._images) > self.max_images:
-            self._images.popitem(last=False)
+        with self._lock:
+            self._images[key] = image
+            # 有界 LRU：长期运行时不会把上千张立绘常驻内存。
+            while len(self._images) > self.max_images:
+                self._images.popitem(last=False)
         return image
 
     def clear_cache(self) -> None:
-        self._images.clear()
-        self._failed.clear()
+        with self._lock:
+            self._images.clear()
+            self._failed.clear()
+            self._verified.clear()
 
     def cache_size(self) -> int:
         """当前常驻内存的立绘数量（调试与测试用）。"""
-        return len(self._images)
+        with self._lock:
+            return len(self._images)
 
     # ---------- 异步预取 ----------
     def missing(self, rows: Iterable[Mapping[str, Any]]) -> list[tuple[int, Path]]:
         out: list[tuple[int, Path]] = []
+        seen = set()
         for row in rows:
-            if self._local_path(row) is not None:
+            local = self._local_path(row)
+            if local is not None and self._valid_cache_file(local):
                 continue
             name = self._cache_name(row.get("id"))
             if not name:
                 continue
             target = self.cache_dir / name
-            if not target.is_file():
+            if name not in seen and not self._valid_cache_file(target):
                 out.append((int(row["id"]), target))
+                seen.add(name)
         return out
+
+    def _save_download(self, target: Path, data: bytes) -> None:
+        """同目录原子提交，防止并行读取或取消任务留下半张图。"""
+        temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
+        try:
+            temporary.write_bytes(data)
+            os.replace(temporary, target)
+            with self._lock:
+                key = str(target)
+                self._images.pop(key, None)
+                self._failed.discard(key)
+                self._verified.pop(key, None)
+        finally:
+            temporary.unlink(missing_ok=True)
 
     async def prefetch(
         self,
@@ -156,7 +209,7 @@ class ArtworkCache:
         """
         if not self.allow_download:
             return 0
-        todo = self.missing(rows)[:limit]
+        todo = await asyncio.to_thread(lambda: self.missing(rows)[:max(0, limit)])
         if not todo:
             return 0
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -175,7 +228,7 @@ class ArtworkCache:
             if isinstance(data, Exception) or data is None:
                 continue
             try:
-                target.write_bytes(data)
+                await asyncio.to_thread(self._save_download, target, data)
                 saved += 1
             except OSError:
                 continue
@@ -259,7 +312,7 @@ class ArtworkCache:
         if not self.allow_download:
             return {"total": total, "saved": 0, "skipped": 0, "failed": 0}
 
-        todo = self.missing(unique.values())
+        todo = await asyncio.to_thread(self.missing, unique.values())
         skipped = total - len(todo)
         if not todo:
             return {"total": total, "saved": 0, "skipped": skipped, "failed": 0}
@@ -277,6 +330,7 @@ class ArtworkCache:
 
         timeout = aiohttp.ClientTimeout(total=self.timeout)
         semaphore = asyncio.Semaphore(DOWNLOAD_CONCURRENCY)
+        chunk_size = max(1, int(chunk_size))
         saved = failed = 0
 
         async def run_one(session, dex: int) -> tuple[int, bytes | None]:
@@ -294,7 +348,7 @@ class ArtworkCache:
                         failed += 1
                         continue
                     try:
-                        target.write_bytes(data)
+                        await asyncio.to_thread(self._save_download, target, data)
                         saved += 1
                     except OSError:
                         failed += 1

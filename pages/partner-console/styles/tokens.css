@@ -1,83 +1,37 @@
-/* 设计令牌：颜色、间距、阴影。跟随 AstrBot Dashboard 的明暗外观。 */
+/* 精灵球红、纸白与墨色；不加载远程字体或图标。 */
 :root {
-  color-scheme: light dark;
-
-  --pk-font-sans: "Inter", "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system,
-    "Segoe UI", sans-serif;
-  --pk-font-mono: "JetBrains Mono", "SFMono-Regular", Consolas, "Liberation Mono", monospace;
-
-  --pk-radius-sm: 6px;
-  --pk-radius-md: 8px;
-  --pk-radius-lg: 8px;
-  --pk-radius-pill: 999px;
-
-  --pk-space-1: 4px;
-  --pk-space-2: 8px;
-  --pk-space-3: 12px;
-  --pk-space-4: 16px;
-  --pk-space-5: 24px;
-  --pk-space-6: 32px;
-
-  --pk-dur-fast: 120ms;
-  --pk-dur-mid: 220ms;
-
-  --pk-rarity-c: #64748b;
-  --pk-rarity-r: #3b82f6;
-  --pk-rarity-sr: #a855f7;
-  --pk-rarity-ssr: #f59e0b;
-  --pk-positive: #10b981;
-  --pk-negative: #ef4444;
-  --pk-accent: #6366f1;
-  --pk-accent-soft: rgba(99, 102, 241, 0.12);
+  color-scheme: light;
+  --pk-font-sans: "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --pk-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --pk-radius-sm: 10px; --pk-radius-md: 16px; --pk-radius-lg: 22px; --pk-radius-pill: 999px;
+  --pk-space-1: 4px; --pk-space-2: 8px; --pk-space-3: 12px; --pk-space-4: 20px; --pk-space-5: 28px; --pk-space-6: 40px;
+  --pk-dur-fast: 150ms; --pk-dur-mid: 240ms;
+  --pk-rarity-c: #65746e; --pk-rarity-r: #306daa; --pk-rarity-sr: #8653aa; --pk-rarity-ssr: #b67c16;
+  --pk-positive: #258568; --pk-negative: #cd3e39;
+  --pk-accent: #d9443f; --pk-accent-soft: #d9443f13;
+  --pk-bg: #f4f2ed; --pk-bg-panel: #fffefa; --pk-bg-sunken: #efeee7; --pk-bg-hover: #f3f0e9;
+  --pk-border: #e4e1d8; --pk-border-strong: #cdcac0;
+  --pk-text: #242e2c; --pk-text-muted: #64716b; --pk-text-faint: #79837c;
+  --pk-shadow-sm: 0 2px 3px #24352c03; --pk-shadow-md: 0 10px 26px #24352c0d;
+  --pk-hero: #f2edcf; --pk-hero-ink: #343b28; --pk-type-chip-text: #fff;
 }
-
-/* 浅色 */
-:root,
-[data-partner-theme="light"] {
-  --pk-bg: #f6f7fb;
-  --pk-bg-panel: #ffffff;
-  --pk-bg-sunken: #eef1f7;
-  --pk-bg-hover: #f1f4fa;
-  --pk-border: #e3e8f0;
-  --pk-border-strong: #cfd7e5;
-  --pk-text: #0f172a;
-  --pk-text-muted: #5b6577;
-  --pk-text-faint: #8a94a6;
-  --pk-shadow-sm: 0 1px 2px rgba(15, 23, 42, 0.06);
-  --pk-shadow-md: 0 6px 20px rgba(15, 23, 42, 0.08);
-  --pk-type-chip-text: #ffffff;
-}
-
-/* 深色 */
 [data-partner-theme="dark"] {
-  --pk-bg: #0b1120;
-  --pk-bg-panel: #131c2f;
-  --pk-bg-sunken: #0f1728;
-  --pk-bg-hover: #1a2540;
-  --pk-border: #24314c;
-  --pk-border-strong: #33415f;
-  --pk-text: #e8eefb;
-  --pk-text-muted: #9aa7bf;
-  --pk-text-faint: #6b7a94;
-  --pk-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --pk-shadow-md: 0 8px 28px rgba(0, 0, 0, 0.45);
-  --pk-accent-soft: rgba(129, 140, 248, 0.16);
+  color-scheme: dark;
+  --pk-bg: #171e1d; --pk-bg-panel: #202a27; --pk-bg-sunken: #18201e; --pk-bg-hover: #2b3530;
+  --pk-border: #35403a; --pk-border-strong: #4e5c53;
+  --pk-text: #f4f2e8; --pk-text-muted: #acb7ad; --pk-text-faint: #99a69a;
+  --pk-accent: #f1776a; --pk-accent-soft: #f1776a1a;
+  --pk-hero: #383c29; --pk-hero-ink: #f4efcf;
+  --pk-shadow-sm: 0 2px 3px #00000012; --pk-shadow-md: 0 10px 26px #00000030;
 }
-
-/* 跟随系统：用媒体查询实现，JS 只负责写 data-partner-theme="auto" */
 @media (prefers-color-scheme: dark) {
   [data-partner-theme="auto"] {
-    --pk-bg: #0b1120;
-    --pk-bg-panel: #131c2f;
-    --pk-bg-sunken: #0f1728;
-    --pk-bg-hover: #1a2540;
-    --pk-border: #24314c;
-    --pk-border-strong: #33415f;
-    --pk-text: #e8eefb;
-    --pk-text-muted: #9aa7bf;
-    --pk-text-faint: #6b7a94;
-    --pk-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-    --pk-shadow-md: 0 8px 28px rgba(0, 0, 0, 0.45);
-    --pk-accent-soft: rgba(129, 140, 248, 0.16);
+    color-scheme: dark;
+    --pk-bg: #171e1d; --pk-bg-panel: #202a27; --pk-bg-sunken: #18201e; --pk-bg-hover: #2b3530;
+    --pk-border: #35403a; --pk-border-strong: #4e5c53;
+    --pk-text: #f4f2e8; --pk-text-muted: #acb7ad; --pk-text-faint: #99a69a;
+    --pk-accent: #f1776a; --pk-accent-soft: #f1776a1a;
+    --pk-hero: #383c29; --pk-hero-ink: #f4efcf;
+    --pk-shadow-sm: 0 2px 3px #00000012; --pk-shadow-md: 0 10px 26px #00000030;
   }
 }

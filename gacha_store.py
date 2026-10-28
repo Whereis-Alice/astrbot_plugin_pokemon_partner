@@ -13,6 +13,8 @@ import random
 import shutil
 import threading
 import time
+from contextlib import contextmanager
+from copy import deepcopy
 from datetime import date, datetime, timedelta
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -81,13 +83,6 @@ def _as_int(value: Any, default: int, lo: int | None = None, hi: int | None = No
     return result
 
 
-def _as_float(value: Any, default: float = 0.0) -> float:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return default
-
-
 def today_key() -> str:
     """按服务器本地日期跨天重置。"""
     return datetime.now().astimezone().date().isoformat()
@@ -109,6 +104,7 @@ class GachaStore:
         self.rules = rules
         self.rng = rng or random.Random()
         self._lock = threading.RLock()
+        self._transaction_depth = 0
         self.partners = tuple(partners)
         if not self.partners:
             raise GachaError("抽卡池为空，请检查图鉴数据。")
@@ -139,6 +135,7 @@ class GachaStore:
 
     # ---------- 持久化 ----------
     def _load(self) -> dict[str, Any]:
+        self._load_failed = False
         for path in (self.state_path, self.state_path.with_suffix(".json.bak")):
             if not path.is_file():
                 continue
@@ -147,7 +144,11 @@ class GachaStore:
             except (OSError, ValueError, TypeError) as exc:
                 logger.warning("宝可梦数据文件无法读取，尝试下一份备份: %s (%s)", path, exc)
                 continue
-            if isinstance(raw, dict) and raw.get("version") == STATE_VERSION:
+            if (
+                isinstance(raw, dict)
+                and raw.get("version") == STATE_VERSION
+                and isinstance(raw.get("scopes"), dict)
+            ):
                 if path is not self.state_path:
                     self._restored_from_backup = True
                     logger.warning(
@@ -156,7 +157,7 @@ class GachaStore:
                     self._snapshot_corrupt_state()
                 return raw
             logger.warning("宝可梦数据文件版本不匹配，已跳过: %s", path)
-        if self.state_path.exists():
+        if self.state_path.exists() or self.state_path.with_suffix(".json.bak").exists():
             logger.error(
                 "宝可梦数据无法恢复，将以空数据启动。原文件保留在 %s，"
                 "请人工检查后再继续使用，避免覆盖。",
@@ -178,6 +179,13 @@ class GachaStore:
             logger.warning("保留损坏数据快照失败: %s", exc)
 
     def _save(self) -> None:
+        if self._transaction_depth:
+            self._write_snapshot()
+        else:
+            with self._lock, self._file_lock():
+                self._write_snapshot()
+
+    def _write_snapshot(self) -> None:
         self.state_dir.mkdir(parents=True, exist_ok=True)
         if getattr(self, "_load_failed", False):
             # 主文件与备份都不可读时拒绝写入，避免用空数据覆盖掉仅存的现场。
@@ -185,86 +193,49 @@ class GachaStore:
                 "宝可梦数据文件已损坏，为避免覆盖原数据已停止写入。"
                 f"请备份并检查 {self.state_path} 后重启插件。"
             )
-        with self._file_lock():
-            # 另一个实例（例如插件重载期间新旧并存）可能已经写入过，先合并磁盘数据。
-            self._merge_from_disk()
-            now = time.time()
-            for scope_data in self.state.get("scopes", {}).values():
-                users = (
-                    scope_data.get("users")
-                    if isinstance(scope_data, Mapping)
-                    else None
-                )
-                if not isinstance(users, Mapping):
-                    continue
-                for profile in users.values():
-                    if isinstance(profile, dict):
-                        profile["updated_at"] = now
-            payload = json.dumps(
-                self.state, ensure_ascii=False, indent=2, sort_keys=True
-            )
-            tmp = self.state_path.with_suffix(".json.tmp")
-            tmp.write_text(payload, encoding="utf-8")
-            if self.state_path.is_file() and self._is_readable_state(self.state_path):
+        payload = json.dumps(self.state, ensure_ascii=False, indent=2, sort_keys=True)
+        tmp = self.state_path.with_suffix(".json.tmp")
+        with tmp.open("w", encoding="utf-8") as handle:
+            handle.write(payload)
+            handle.flush()
+            os.fsync(handle.fileno())
+        if self.state_path.is_file() and self._is_readable_state(self.state_path):
+            # 保留主文件直到新快照提交成功；避免 replace 失败后主文件消失。
+            backup_tmp = self.state_path.with_suffix(".json.bak.tmp")
+            shutil.copy2(self.state_path, backup_tmp)
+            os.replace(backup_tmp, self.state_path.with_suffix(".json.bak"))
+        os.replace(tmp, self.state_path)
+
+    @contextmanager
+    def _transaction(self):
+        """整段读改写共用文件锁；重载期间多个实例也不会丢抽卡或复活删除数据。"""
+        with self._lock:
+            if self._transaction_depth:
+                yield
+                return
+            with self._file_lock():
+                self.state = self._load()
+                before = deepcopy(self.state)
+                rng_state = self.rng.getstate()
+                self._transaction_depth += 1
                 try:
-                    os.replace(
-                        self.state_path, self.state_path.with_suffix(".json.bak")
-                    )
-                except OSError:
-                    pass
-            os.replace(tmp, self.state_path)
+                    yield
+                except Exception:
+                    self.state = before
+                    self.rng.setstate(rng_state)
+                    raise
+                finally:
+                    self._transaction_depth -= 1
+
+    def snapshot(self) -> dict[str, Any]:
+        """返回一致的只读快照，WebUI 不遍历工作线程正在修改的字典。"""
+        with self._lock, self._file_lock():
+            self.state = self._load()
+            return deepcopy(self.state)
 
     def _file_lock(self):
-        """跨进程/跨实例互斥锁。拿不到锁时退化为仅进程内锁，不影响可用性。"""
+        """跨进程/跨实例互斥锁。拿不到锁时拒绝写入以保护资料。"""
         return _CrossProcessLock(self.lock_path)
-
-    def _merge_from_disk(self) -> None:
-        """把磁盘上更新后的用户资料合并进内存，避免覆盖别人的写入。"""
-        if not self.state_path.is_file():
-            return
-        try:
-            raw = json.loads(self.state_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError, TypeError):
-            return
-        if not isinstance(raw, dict) or raw.get("version") != STATE_VERSION:
-            return
-        disk_scopes = raw.get("scopes")
-        if not isinstance(disk_scopes, Mapping):
-            return
-        local_scopes = self.state.setdefault("scopes", {})
-        if not isinstance(local_scopes, dict):
-            return
-        for scope, disk_scope in disk_scopes.items():
-            disk_users = (
-                disk_scope.get("users") if isinstance(disk_scope, Mapping) else None
-            )
-            if not isinstance(disk_users, Mapping):
-                continue
-            local_scope = local_scopes.setdefault(str(scope), {})
-            if not isinstance(local_scope, dict):
-                local_scope = {}
-                local_scopes[str(scope)] = local_scope
-            local_users = local_scope.setdefault("users", {})
-            if not isinstance(local_users, dict):
-                local_users = {}
-                local_scope["users"] = local_users
-            for user_id, disk_profile in disk_users.items():
-                if not isinstance(disk_profile, Mapping):
-                    continue
-                key = str(user_id)
-                local_profile = local_users.get(key)
-                if not isinstance(local_profile, Mapping):
-                    local_users[str(user_id)] = json.loads(
-                        json.dumps(disk_profile, ensure_ascii=False)
-                    )
-                    continue
-                # 同一用户被两个实例同时改过时，取 `updated_at` 较新的那份。
-                if _as_float(disk_profile.get("updated_at"), 0.0) > _as_float(
-                    local_profile.get("updated_at"), 0.0
-                ):
-                    local_users[key] = json.loads(
-                        json.dumps(disk_profile, ensure_ascii=False)
-                    )
 
     @staticmethod
     def _is_readable_state(path: Path) -> bool:
@@ -273,10 +244,14 @@ class GachaStore:
             raw = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError, TypeError):
             return False
-        return isinstance(raw, dict) and raw.get("version") == STATE_VERSION
+        return (
+            isinstance(raw, dict)
+            and raw.get("version") == STATE_VERSION
+            and isinstance(raw.get("scopes"), dict)
+        )
 
     def reload(self) -> None:
-        with self._lock:
+        with self._lock, self._file_lock():
             self.state = self._load()
 
     # ---------- 资料读写 ----------
@@ -387,10 +362,9 @@ class GachaStore:
         *,
         today: str | None = None,
     ) -> ProfileSummary:
-        with self._lock:
+        with self._lock, self._file_lock():
+            self.state = self._load()
             profile = self._profile(scope, user_id, nickname)
-            if nickname and profile.get("nickname") != str(nickname)[:48]:
-                self._save()
             today = today or today_key()
             used = self._used(profile, today)
             limit = self.rules.daily_limit + self._bonus(profile, today)
@@ -413,7 +387,8 @@ class GachaStore:
             )
 
     def owned_partners(self, scope: str, user_id: str) -> list[OwnedPartner]:
-        with self._lock:
+        with self._lock, self._file_lock():
+            self.state = self._load()
             profile = self._profile(scope, user_id)
             owned = profile.get("owned", {})
             out: list[OwnedPartner] = []
@@ -466,52 +441,42 @@ class GachaStore:
         }
         return sorted(hits)[:limit]
 
-    def leaderboard(
-        self, scope: str, limit: int = 10
-    ) -> list[tuple[int, str, int, int]]:
+    def _ranking_rows(self, scope: str) -> list[tuple[str, str, int, int, int]]:
+        scope_data = self.state.get("scopes", {}).get(str(scope), {})
+        users = scope_data.get("users", {}) if isinstance(scope_data, Mapping) else {}
+        rows = []
+        for user_id, profile in users.items():
+            if not isinstance(profile, Mapping):
+                continue
+            owned = self._owned(profile)
+            if not owned:
+                continue
+            rows.append((
+                str(user_id), str(profile.get("nickname") or user_id), len(owned),
+                sum(1 for count in owned.values() if count[1] > 0),
+                max(0, _as_int(profile.get("total_draws"), 0)),
+            ))
+        return sorted(rows, key=lambda item: (-item[2], -item[3], -item[4], item[1], item[0]))
+
+    def leaderboard(self, scope: str, limit: int = 10) -> list[tuple[int, str, int, int]]:
         """``[(名次, 昵称, 宝可梦数, 闪光数)]``。"""
-        with self._lock:
-            scope_data = self.state.get("scopes", {}).get(str(scope), {})
-            users = scope_data.get("users", {}) if isinstance(scope_data, Mapping) else {}
-            rows: list[tuple[int, str, int, int]] = []
-            for user_id, profile in users.items():
-                if not isinstance(profile, Mapping):
-                    continue
-                owned = self._owned(profile)
-                if not owned:
-                    continue
-                rows.append(
-                    (
-                        len(owned),
-                        str(profile.get("nickname") or user_id),
-                        sum(1 for value in owned.values() if value[1] > 0),
-                        max(0, _as_int(profile.get("total_draws"), 0)),
-                    )
-                )
-            rows.sort(key=lambda item: (-item[0], -item[2], -item[3], item[1]))
+        with self._lock, self._file_lock():
+            self.state = self._load()
+            rows = self._ranking_rows(scope)
             return [
                 (index + 1, nickname, collected, shiny)
-                for index, (collected, nickname, shiny, _total) in enumerate(
-                    rows[: max(1, min(50, int(limit)))]
+                for index, (_user_id, nickname, collected, shiny, _draws) in enumerate(
+                    rows[:max(1, min(50, int(limit)))]
                 )
             ]
 
     def user_rank(self, scope: str, user_id: str) -> int | None:
-        with self._lock:
-            profile = self._profile(scope, user_id)
-            me = str(profile.get("nickname") or user_id)
-            mine = len(self._owned(profile))
-            better = 0
-            scope_data = self.state.get("scopes", {}).get(str(scope), {})
-            users = scope_data.get("users", {}) if isinstance(scope_data, Mapping) else {}
-            for other_id, other in users.items():
-                if not isinstance(other, Mapping):
-                    continue
-                count = len(self._owned(other))
-                name = str(other.get("nickname") or other_id)
-                if count > mine or (count == mine and name < me):
-                    better += 1
-            return better + 1
+        with self._lock, self._file_lock():
+            self.state = self._load()
+            return next((
+                index + 1 for index, row in enumerate(self._ranking_rows(scope))
+                if row[0] == str(user_id)
+            ), None)
 
     # ---------- 抽卡 ----------
     def effective_weights(self) -> dict[str, int]:
@@ -646,7 +611,7 @@ class GachaStore:
         )
         now = time.time() if now is None else float(now)
         today = today or today_key()
-        with self._lock:
+        with self._transaction():
             profile = self._profile(scope, user_id, nickname)
             last = float(profile.get("last_draw_ts") or 0.0)
             if self.rules.cooldown_seconds > 0 and last > 0:
@@ -678,6 +643,7 @@ class GachaStore:
             )
             profile["last_draw_ts"] = now
             self._prune(profile)
+            limit = self.rules.daily_limit + self._bonus(profile, today)
             self._save()
             return DrawOutcome(
                 items=tuple(items),
@@ -709,7 +675,7 @@ class GachaStore:
             extra = f"你要找的是：{'、'.join(hint)}" if hint else ""
             raise GachaError(f"没有找到可兑换的宝可梦「{keyword}」。{extra}".strip())
         today = today or today_key()
-        with self._lock:
+        with self._transaction():
             profile = self._profile(scope, user_id, nickname)
             owned = profile.setdefault("owned", {})
             if not isinstance(owned, dict):
@@ -746,7 +712,7 @@ class GachaStore:
     ) -> int:
         amount = _as_int(amount, 1, 1, MAX_DAILY_LIMIT)
         today = today or today_key()
-        with self._lock:
+        with self._transaction():
             profile = self._profile(scope, user_id)
             bonus = profile.setdefault("bonus", {})
             if not isinstance(bonus, dict):
@@ -758,7 +724,7 @@ class GachaStore:
 
     def reset_today(self, scope: str, user_id: str, *, today: str | None = None) -> None:
         today = today or today_key()
-        with self._lock:
+        with self._transaction():
             profile = self._profile(scope, user_id)
             counts = profile.setdefault("counts", {})
             if isinstance(counts, dict):
@@ -767,7 +733,7 @@ class GachaStore:
 
     def reset_scope_today(self, scope: str, *, today: str | None = None) -> int:
         today = today or today_key()
-        with self._lock:
+        with self._transaction():
             scope_data = self.state.get("scopes", {}).get(str(scope), {})
             users = scope_data.get("users", {}) if isinstance(scope_data, Mapping) else {}
             changed = 0
@@ -783,11 +749,41 @@ class GachaStore:
             return changed
 
     def set_dust(self, scope: str, user_id: str, amount: int) -> int:
-        with self._lock:
+        with self._transaction():
             profile = self._profile(scope, user_id)
             profile["dust"] = max(0, _as_int(amount, 0))
             self._save()
             return profile["dust"]
+
+    def update_member(self, scope: str, user_id: str, field: str, value: Any) -> Any:
+        """管理字段也通过与抽卡相同的文件事务提交。"""
+        if field not in {"nickname", "pity_ssr", "pity_new", "total_draws"}:
+            raise ValueError(f"不支持的字段: {field}")
+        normalised = str(value or "")[:48] if field == "nickname" else max(0, int(value or 0))
+        with self._transaction():
+            profile = self._profile(scope, user_id)
+            profile[field] = normalised
+            self._save()
+        return normalised
+
+    def delete_scope(self, scope: str, user_id: str = "") -> int:
+        """删除指定成员或整个会话，不把磁盘旧资料重新合并回来。"""
+        with self._transaction():
+            scopes = self.state.get("scopes", {})
+            data = scopes.get(str(scope))
+            users = data.get("users", {}) if isinstance(data, dict) else {}
+            if not isinstance(users, dict):
+                return 0
+            if user_id:
+                removed = int(users.pop(str(user_id), None) is not None)
+            else:
+                removed = len(users)
+                users.clear()
+            if not users:
+                scopes.pop(str(scope), None)
+            if removed:
+                self._save()
+            return removed
 
 
 def _normalise(value: Any) -> str:
@@ -819,13 +815,14 @@ class _CrossProcessLock:
                 self._handle.seek(0)
                 msvcrt.locking(self._handle.fileno(), msvcrt.LK_LOCK, 1)
         except OSError as exc:
-            logger.warning("宝可梦数据文件锁不可用，仅使用进程内锁: %s", exc)
+            logger.error("宝可梦数据文件锁不可用，已停止读写: %s", exc)
             if self._handle is not None:
                 try:
                     self._handle.close()
                 except OSError:
                     pass
                 self._handle = None
+            raise GachaError("宝可梦资料暂时无法加锁，请稍后重试，数据尚未写入。") from exc
         return self
 
     def __exit__(self, *_exc: object) -> None:

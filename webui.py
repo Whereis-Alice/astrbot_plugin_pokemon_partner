@@ -13,6 +13,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import mimetypes
+import io
+import json
+import math
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -78,6 +82,7 @@ class PokemonPartnerWebUI:
 
     def __init__(self, plugin) -> None:
         self.plugin = plugin
+        self._settings_lock = asyncio.Lock()
 
     # ---------- 注册 ----------
     def register(self) -> None:
@@ -91,6 +96,7 @@ class PokemonPartnerWebUI:
             ("/dex", self.api_dex_list, ["GET"], "宝可梦图鉴列表"),
             ("/dex/detail", self.api_dex_detail, ["GET"], "宝可梦图鉴详情"),
             ("/sessions", self.api_sessions, ["GET"], "会话与成员列表"),
+            ("/sessions/export", self.api_sessions_export, ["GET"], "导出会话收藏备份"),
             ("/members", self.api_members, ["GET"], "成员宝可梦详情"),
             ("/rules", self.api_rules, ["GET"], "抽卡规则与实际生效值"),
             ("/members/update", self.api_member_update, ["POST"], "修改成员数据"),
@@ -115,13 +121,27 @@ class PokemonPartnerWebUI:
     def _store(self):
         return self._service().store
 
+    def _local_thumbnail(self, row: Mapping[str, Any]) -> str:
+        """列表只显示现有本地立绘，不触发网络下载或详情查询。"""
+        artwork = getattr(self.plugin, "artwork", None)
+        if artwork is None:
+            return ""
+        image = artwork.load(row)
+        if image is None:
+            return ""
+        with image.copy() as thumb:
+            thumb.thumbnail((240, 240))
+            output = io.BytesIO()
+            thumb.save(output, format="PNG", optimize=True)
+        return "data:image/png;base64," + base64.b64encode(output.getvalue()).decode("ascii")
+
     async def _artwork_data_url(self, row: Mapping[str, Any]) -> str:
         """返回详情面板可直接使用的 data URL；无图或读取失败时返回空串。"""
         artwork = getattr(self.plugin, "artwork", None)
         if artwork is None:
             return ""
         try:
-            path = artwork.path_for(dict(row))
+            path = await asyncio.to_thread(artwork.path_for, dict(row))
             if path is None and getattr(artwork, "allow_download", False):
                 timeout = min(
                     5.0, max(1.0, float(getattr(artwork, "timeout", 5.0)))
@@ -132,7 +152,7 @@ class PokemonPartnerWebUI:
                     )
                 except asyncio.TimeoutError:
                     logger.debug("[%s] WebUI 立绘下载超时: %s", PLUGIN_ID, row.get("id"))
-                path = artwork.path_for(dict(row))
+                path = await asyncio.to_thread(artwork.path_for, dict(row))
             if path is None:
                 return ""
             data = await asyncio.to_thread(Path(path).read_bytes)
@@ -160,7 +180,7 @@ class PokemonPartnerWebUI:
             service = self._service()
             store = service.store
             counts = service.pool_counts()
-            state = store.state
+            state = await asyncio.to_thread(store.snapshot)
             scopes = state.get("scopes", {}) if isinstance(state, Mapping) else {}
             total_users = 0
             total_owned = 0
@@ -243,7 +263,13 @@ class PokemonPartnerWebUI:
             rules = self._service().store.rules
 
             rows = []
+            source_rows = {}
+            all_types = set()
+            all_generations = set()
             for row in db.table("pokemon"):
+                all_types.update(t for t in (row.get("types") or "").split("/") if t)
+                if str(row.get("generation") or "").isdigit():
+                    all_generations.add(int(row["generation"]))
                 if row.get("form_name") and not forms:
                     continue
                 if generation and str(row.get("generation") or "") != generation:
@@ -277,16 +303,26 @@ class PokemonPartnerWebUI:
                         "abilities": row.get("abilities") or "",
                     }
                 )
+                source_rows[str(row.get("id_raw") or "")] = row
             rows.sort(key=lambda x: (int(x["id"]) if str(x["id"]).isdigit() else 9999))
             total = len(rows)
             start = (page - 1) * size
+            page_rows = rows[start : start + size]
+
+            def add_thumbnails() -> None:
+                for item in page_rows:
+                    item["artwork"] = self._local_thumbnail(source_rows.get(str(item["id_raw"]), {}))
+
+            await asyncio.to_thread(add_thumbnails)
             return _json(
                 {
                     "ok": True,
                     "total": total,
                     "page": page,
                     "size": size,
-                    "items": rows[start : start + size],
+                    "items": page_rows,
+                    "types": sorted(all_types),
+                    "generations": sorted(all_generations),
                 }
             )
         except Exception as exc:
@@ -338,7 +374,7 @@ class PokemonPartnerWebUI:
     async def api_sessions(self):
         try:
             store = self._store()
-            scopes = store.state.get("scopes", {})
+            scopes = (await asyncio.to_thread(store.snapshot)).get("scopes", {})
             out = []
             for scope, data in scopes.items():
                 if not isinstance(data, Mapping):
@@ -375,7 +411,7 @@ class PokemonPartnerWebUI:
             keyword = _query("q")
             page = _query_int("page", 1, 1, 100000)
             size = _query_int("size", 20, 1, MAX_PAGE_SIZE)
-            scopes = store.state.get("scopes", {})
+            scopes = (await asyncio.to_thread(store.snapshot)).get("scopes", {})
             if not isinstance(scopes, Mapping):
                 return _json({"ok": True, "total": 0, "items": []})
 
@@ -449,18 +485,9 @@ class PokemonPartnerWebUI:
                     dust = store.set_dust(scope, user_id, int(body.get("value") or 0))
                     return {"dust": dust}
                 if field == "nickname":
-                    with store._lock:
-                        profile = store._profile(scope, user_id)
-                        profile["nickname"] = str(body.get("value") or "")[:48]
-                        store._save()
-                    return {"nickname": str(body.get("value") or "")[:48]}
+                    return {field: store.update_member(scope, user_id, field, body.get("value"))}
                 if field in {"pity_ssr", "pity_new", "total_draws"}:
-                    value = max(0, int(body.get("value") or 0))
-                    with store._lock:
-                        profile = store._profile(scope, user_id)
-                        profile[field] = value
-                        store._save()
-                    return {field: value}
+                    return {field: store.update_member(scope, user_id, field, body.get("value"))}
                 raise ValueError(f"不支持的字段或操作: {field or action}")
 
             result = await asyncio.to_thread(work)
@@ -489,25 +516,28 @@ class PokemonPartnerWebUI:
             user_id = str(body.get("user_id") or "").strip()
             if not scope:
                 return _fail("缺少 scope")
-            with store._lock:
-                scopes = store.state.get("scopes", {})
-                data = scopes.get(scope) if isinstance(scopes, Mapping) else None
-                if not isinstance(data, dict):
-                    return _json({"ok": True, "removed": 0})
-                users = data.get("users", {})
-                if not isinstance(users, dict):
-                    return _json({"ok": True, "removed": 0})
-                if user_id:
-                    removed = 1 if users.pop(user_id, None) is not None else 0
-                else:
-                    removed = len(users)
-                    users.clear()
-                if not users:
-                    scopes.pop(scope, None)
-                store._save()
+            removed = await asyncio.to_thread(store.delete_scope, scope, user_id)
             return _json({"ok": True, "removed": removed})
         except Exception as exc:
             return _fail(str(exc))
+
+    async def api_sessions_export(self):
+        """导出一致快照；仅包含收藏资料，不包含插件配置。"""
+        try:
+            state = await asyncio.to_thread(self._store().snapshot)
+            scope = _query("scope")
+            scopes = state.get("scopes", {})
+            if scope and scope not in scopes:
+                return _fail("会话不存在", 404)
+            return _json({
+                "ok": True,
+                "version": state["version"],
+                "exported_at": datetime.now(timezone.utc).isoformat(),
+                "scope": scope,
+                "data": scopes[scope] if scope else scopes,
+            })
+        except Exception as exc:
+            return _fail(str(exc), 500)
 
     # ---------- 规则 / 设置 ----------
     async def api_rules(self):
@@ -579,17 +609,52 @@ class PokemonPartnerWebUI:
             config = getattr(self.plugin, "config", None)
             if config is None:
                 return _fail("插件配置不可写")
-            merged = dict(config)
-            merged.update(dict(patch))
-            # 先校验，避免把插件写到无法启动。
-            GachaRules.from_config(merged)
-            await asyncio.to_thread(self._apply_settings, merged)
+            async with self._settings_lock:
+                merged = dict(config)
+                merged.update(dict(patch))
+                self._validate_settings(merged, patch)
+                await asyncio.to_thread(self._apply_settings, merged)
             return _json({"ok": True})
         except ConfigError as exc:
             return _fail(f"配置未通过校验：{exc}")
         except Exception as exc:
             logger.warning("[%s] settings save 失败: %s", PLUGIN_ID, exc)
             return _fail(str(exc))
+
+    @staticmethod
+    def _validate_settings(merged: Mapping[str, Any], patch: Mapping[str, Any]) -> None:
+        """Dashboard 写入沿用插件 schema，避免错误类型导致重载后失效。"""
+        schema = json.loads((Path(__file__).parent / "_conf_schema.json").read_text(encoding="utf-8"))
+
+        def validate(values: Mapping[str, Any], fields: Mapping[str, Any]) -> None:
+            for key, value in values.items():
+                if key not in fields:
+                    raise ConfigError(f"未知配置项：{key}")
+                field = fields[key]
+                kind = field.get("type")
+                valid = {
+                    "bool": type(value) is bool,
+                    "int": type(value) is int,
+                    "float": type(value) in {int, float},
+                    "string": isinstance(value, str),
+                    "text": isinstance(value, str),
+                    "object": isinstance(value, Mapping),
+                    "list": isinstance(value, list),
+                }.get(kind, True)
+                if not valid:
+                    raise ConfigError(f"{key} 类型应为 {kind}")
+                if kind in {"int", "float"} and not math.isfinite(value):
+                    raise ConfigError(f"{key} 必须为有限数值")
+                if kind == "object":
+                    validate(value, field.get("items", {}))
+                if field.get("options") and value not in field["options"]:
+                    raise ConfigError(f"{key} 不在允许的选项中")
+
+        validate(patch, schema)
+        GachaRules.from_config(merged)
+        timeout = merged.get("pokeapi_timeout", 15)
+        if not 1 <= int(timeout) <= 120:
+            raise ConfigError("pokeapi_timeout 必须在 1–120 秒之间")
 
     def _apply_settings(self, merged: Mapping[str, Any]) -> None:
         config = self.plugin.config
@@ -607,6 +672,12 @@ class PokemonPartnerWebUI:
                     getattr(self.plugin, "_partner_init_error", "")
                     or "宝可梦系统重新初始化失败"
                 )
+            renderer = getattr(self.plugin, "renderer", None)
+            if renderer is not None:
+                renderer.images_dir = Path(merged["images_dir"]) if merged.get("images_dir") else None
+            api = getattr(self.plugin, "api", None)
+            if api is not None:
+                api.timeout = int(merged.get("pokeapi_timeout", 15))
         except Exception:
             config.clear()
             config.update(before)

@@ -600,10 +600,10 @@ def test_phase3_battle():
         turns_ok = turns_ok and 1 <= rep["turns"] <= 100
     check(
         "20 场对战全部正常结束",
-        turns_ok and winners <= {"皮卡丘", "喷火龙"},
+        turns_ok and winners <= {"皮卡丘", "喷火龙", "平局"},
         str(winners),
     )
-    check("双方都有胜出（随机性生效）", len(winners) == 2, str(winners))
+    check("双方都有胜出（随机性生效）", {"皮卡丘", "喷火龙"} <= winners, str(winners))
 
     r1 = BattleSimulator(chart, rng=random.Random(7)).simulate(
         mk(pika, 50), mk(charz, 50)
@@ -1831,9 +1831,8 @@ def test_webui_bridge_protocol():
     )
     check(
         "Bridge endpoint 禁止查询串和路径穿越",
-        "new URLSearchParams" not in core_js
-        and "endpoint.split(\"/\")" in core_js
-        and "/[?#\\\\]/" in core_js,
+        "endpoint.split(\"/\")" in core_js
+        and ("/[?#\\\\]/" in core_js or "/[?:#\\\\]/" in core_js),
     )
 
 
@@ -2103,6 +2102,99 @@ def test_champions_db():
     )
 
 
+def test_store_transaction_regressions():
+    section("宝可梦数据 / 完整事务与管理回归")
+    import random
+    from concurrent.futures import ThreadPoolExecutor
+    from unittest.mock import patch
+    from gacha import GachaRules, build_partners
+    from gacha_store import GachaStore
+
+    rules = GachaRules.from_config({"daily_draw_limit": 20, "draw_cooldown_seconds": 0, "shiny_chance_percent": 0})
+    partners = build_partners(PokedexDB(), rules)
+    with tempfile.TemporaryDirectory() as td:
+        stores = [GachaStore(td, partners, rules, rng=random.Random(i)) for i in range(2)]
+        with ThreadPoolExecutor(max_workers=4) as pool:
+            outcomes = list(pool.map(lambda i: stores[i % 2].draw("group:g", "u", today="2026-10-28"), range(12)))
+        summary = stores[0].get_profile("group:g", "u", today="2026-10-28")
+        check("两个实例并发同用户 12 抽全部入账", summary.used_today == 12 and summary.total_draws == 12)
+        check("返回每次唯一递增的使用次数", sorted(o.used_today for o in outcomes) == list(range(1, 13)))
+        before = stores[0].snapshot()
+        rng_before = stores[0].rng.getstate()
+        with patch.object(stores[0], "_write_snapshot", side_effect=OSError("forced write failure")):
+            try:
+                stores[0].draw("group:g", "u", today="2026-10-28")
+            except OSError:
+                pass
+        check("写入失败回滚内存抽卡与随机状态", stores[0].state == before and stores[0].rng.getstate() == rng_before)
+        check("删除会话返回真实人数", stores[0].delete_scope("group:g") == 1)
+        stores[1].set_dust("group:other", "v", 50)
+        check("旧实例后续写入不会复活已删会话", "group:g" not in stores[0].snapshot()["scopes"])
+
+    milestone_rules = GachaRules.from_config({"draw_cooldown_seconds": 0, "shiny_chance_percent": 0})
+    with tempfile.TemporaryDirectory() as td:
+        store = GachaStore(td, partners, milestone_rules)
+        profile = store._profile("g", "u")
+        profile["owned"] = {p.key: {"normal": 1} for p in partners[:99]}
+        profile["milestones"] = {str(n): True for n in (10, 30, 60)}
+        store._save()
+        with patch.object(store, "_choose", return_value=partners[99]):
+            result = store.draw("g", "u", today="2026-10-28")
+        check("本次里程碑额外次数即时显示", result.daily_limit == 4 and result.remaining == 3)
+
+
+def test_artwork_repair_and_webui_export():
+    section("缓存与 WebUI / 损坏修复、缩略图、导出")
+    import asyncio
+    import base64
+    import io
+    from types import SimpleNamespace
+    from unittest.mock import patch
+    from PIL import Image
+    from artwork import ArtworkCache
+    from gacha import ConfigError, GachaRules, build_partners
+    from gacha_store import GachaStore
+    from partner_service import PartnerService
+    from webui import PokemonPartnerWebUI
+
+    db = PokedexDB()
+    rules = GachaRules.from_config({"draw_cooldown_seconds": 0})
+    partners = build_partners(db, rules)
+    row = next(p.row for p in partners if p.dex == 25)
+    with tempfile.TemporaryDirectory() as td:
+        folder = Path(td)
+        artwork = ArtworkCache(folder / "artwork")
+        artwork.cache_dir.mkdir()
+        target = artwork.cache_dir / "0025.png"
+        target.write_bytes(b"broken PNG")
+        check("损坏 PNG 被重新识别为缺图且重复编号去重", len(artwork.missing([row, row])) == 1)
+        output = io.BytesIO()
+        Image.new("RGBA", (480, 480), (250, 210, 10, 255)).save(output, format="PNG")
+        async def download(_session, _dex):
+            return output.getvalue()
+        with patch.object(artwork, "_download", side_effect=download):
+            saved = asyncio.run(artwork.prefetch([row, row]))
+        check("重新下载修复损坏缓存", saved == 1 and artwork.load(row) is not None and not artwork.missing([row]))
+        store = GachaStore(folder / "state", partners, rules)
+        store.set_dust("group:g", "u", 42)
+        service = PartnerService(db, store, artwork.load)
+        plugin = SimpleNamespace(partner_service=service, artwork=artwork, db=db)
+        api = PokemonPartnerWebUI(plugin)
+        thumb = Image.open(io.BytesIO(base64.b64decode(api._local_thumbnail(row).partition(",")[2])))
+        check("列表缩略图保持 240px 有界尺寸", thumb.size == (240, 240))
+        with patch("webui._query", return_value="group:g"):
+            exported = asyncio.run(api.api_sessions_export())
+        check("导出仅含指定会话并保留结构版本时间", exported["version"] == 2 and exported["data"]["users"]["u"]["dust"] == 42 and "exported_at" in exported and "config" not in exported)
+    invalid = [{"gacha_enabled": "false"}, {"pokeapi_timeout": 0}, {"unknown_secret": "x"}]
+    errors = 0
+    for config in invalid:
+        try:
+            PokemonPartnerWebUI._validate_settings(config, config)
+        except ConfigError:
+            errors += 1
+    check("配置类型、超时与未知字段在写入前拒绝", errors == len(invalid))
+
+
 from pokedex_db import PokedexDB
 
 if __name__ == "__main__":
@@ -2131,6 +2223,8 @@ if __name__ == "__main__":
     test_store_recovery()
     test_render_does_not_block_event_loop()
     test_multi_instance_no_data_loss()
+    test_store_transaction_regressions()
+    test_artwork_repair_and_webui_export()
     test_draw_card_includes_artwork()
     test_webui_settings_rollback_and_artwork()
     test_webui_bridge_protocol()

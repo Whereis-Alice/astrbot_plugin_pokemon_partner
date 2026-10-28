@@ -8,6 +8,7 @@
 import {
   api,
   apiPost,
+  bridge,
   applyTheme,
   bytes,
   clear,
@@ -21,6 +22,7 @@ import {
   text,
   toast,
   typeColor,
+  typeStyle,
 } from "./js/core.js";
 
 const state = {
@@ -33,7 +35,7 @@ const state = {
 
 /* ================================================================= 路由 */
 
-function showView(name) {
+async function showView(name) {
   if (!state.views[name]) return;
   state.view = name;
   for (const panel of document.querySelectorAll("[data-panel]")) {
@@ -41,24 +43,50 @@ function showView(name) {
   }
   for (const button of document.querySelectorAll(".nav-item")) {
     button.classList.toggle("active", button.dataset.view === name);
+    if (button.dataset.view === name) button.setAttribute("aria-current", "page");
+    else button.removeAttribute("aria-current");
   }
   if (location.hash.slice(1) !== name) {
     history.replaceState(null, "", `#${name}`);
   }
+  const labels = { overview: "总览", dex: "宝可梦图鉴", members: "训练家管理", rules: "概率与规则", settings: "研究站设置" };
+  document.getElementById("viewBreadcrumb").textContent = labels[name];
+  const notice = document.getElementById("pageNotice");
+  notice.hidden = true;
   const view = state.views[name];
   if (!state.loaded.has(name)) {
-    state.loaded.add(name);
-    view.load();
+    try {
+      await view.load();
+      state.loaded.add(name);
+    } catch (error) {
+      if (state.view === name) {
+        notice.hidden = false;
+        clear(notice);
+        notice.append(el("span", { text: error.message || "页面加载失败" }), el("button", {
+          type: "button", class: "button ghost small", text: "重新加载", onclick: () => showView(name),
+        }));
+      }
+    }
   }
 }
 
 async function refreshView() {
   const view = state.views[state.view];
   if (!view) return;
+  const button = document.getElementById("refreshButton");
+  if (button.disabled) return;
+  button.disabled = true;
+  button.classList.add("loading");
   try {
     await (view.refresh ?? view.load)();
+    state.loaded.add(state.view);
+    document.getElementById("pageNotice").hidden = true;
+    toast("已更新当前页面", "success");
   } catch (error) {
     toast(error.message || "刷新失败", "error");
+  } finally {
+    button.disabled = false;
+    button.classList.remove("loading");
   }
 }
 
@@ -115,8 +143,20 @@ function setupOverview() {
       healthBox.append(el("dt", { text: label }));
       healthBox.append(el("dd", { text: value }));
     }
+    const station = document.querySelector(".station-status");
+    station.lastChild.textContent = health.load_failed ? "数据异常，已保护写入" : "本地图鉴已就绪";
+    station.classList.toggle("unhealthy", Boolean(health.load_failed));
     if (health.load_failed) {
       toast("数据文件损坏且备份不可用，插件已停止写入，请检查服务器文件。", "error", 8000);
+    }
+    if (!document.querySelector("#heroArt > img")) {
+      api("/dex/detail", { key: "25" }).then((featured) => {
+        if (!featured.artwork || document.querySelector("#heroArt > img")) return;
+        const art = el("img", { src: featured.artwork, alt: "皮卡丘官方立绘", decoding: "async" });
+        art.addEventListener("error", () => { art.remove(); document.querySelector(".hero-placeholder").hidden = false; });
+        document.querySelector(".hero-placeholder").hidden = true;
+        document.getElementById("heroArt").append(art);
+      }).catch(() => { /* 焦点立绘缺失时保留精灵球，不影响管理功能。 */ });
     }
   };
 
@@ -124,7 +164,7 @@ function setupOverview() {
 }
 
 function rarityRow(rarity, percent, meta) {
-  const width = Math.max(1.5, Math.min(100, percent));
+  const width = Math.max(0, Math.min(100, Number(percent) || 0));
   return el("div", { class: "rarity-row" }, [
     el("span", { class: "rarity-name" }, [
       el("span", {
@@ -162,20 +202,26 @@ function setupDex() {
   let lastTrigger = null;
   let optionsReady = false;
 
-  const collectOptions = (items) => {
+  const collectOptions = (data) => {
     if (optionsReady) return;
     optionsReady = true;
-    for (const item of items) {
-      for (const type of item.types ?? []) state.dexTypes.add(type);
-      if (item.generation) state.dexGens.add(item.generation);
-    }
-    for (const type of [...state.dexTypes].sort()) {
-      typeSel.append(el("option", { value: type, text: type }));
-    }
-    for (const gen of [...state.dexGens].sort((a, b) => Number(a) - Number(b))) {
-      genSel.append(el("option", { value: gen, text: `第 ${gen} 世代` }));
-    }
+    const types = data.types ?? ["一般", "火", "水", "草", "电", "冰", "格斗", "毒", "地面", "飞行", "超能力", "虫", "岩石", "幽灵", "龙", "恶", "钢", "妖精"];
+    const generations = data.generations ?? [1, 2, 3, 4, 5, 6, 7, 8, 9];
+    for (const type of types) typeSel.append(el("option", { value: type, text: type }));
+    for (const gen of generations) genSel.append(el("option", { value: gen, text: `第 ${gen} 世代` }));
   };
+  let loadVersion = 0;
+  let detailVersion = 0;
+  let layout = "gallery";
+  try { layout = localStorage.getItem("partner-console-dex-layout") || "gallery"; } catch { /* 存储可选 */ }
+  const setLayout = (value) => {
+    layout = value === "compact" ? "compact" : "gallery";
+    grid.classList.toggle("compact", layout === "compact");
+    for (const button of document.querySelectorAll("[data-dex-layout]")) button.setAttribute("aria-pressed", String(button.dataset.dexLayout === layout));
+    try { localStorage.setItem("partner-console-dex-layout", layout); } catch { /* 存储可选 */ }
+  };
+  setLayout(layout);
+  for (const button of document.querySelectorAll("[data-dex-layout]")) button.addEventListener("click", () => setLayout(button.dataset.dexLayout));
 
   const renderPager = () => {
     clear(pager);
@@ -183,7 +229,7 @@ function setupDex() {
     if (pages <= 1) return;
     const go = (index) => {
       page.index = index;
-      load();
+      load().catch((error) => toast(error.message, "error"));
     };
     pager.append(
       el("button", {
@@ -216,7 +262,11 @@ function setupDex() {
   };
 
   const load = async () => {
-    const data = await api("/dex", {
+    const version = ++loadVersion;
+    grid.setAttribute("aria-busy", "true");
+    meta.textContent = "正在查阅图鉴…";
+    let data;
+    try { data = await api("/dex", {
       q: search.value.trim(),
       type: typeSel.value,
       gen: genSel.value,
@@ -224,9 +274,16 @@ function setupDex() {
       forms: formsBox.checked ? 1 : 0,
       page: page.index,
       size: page.size,
-    });
+    }); } catch (error) {
+      if (version !== loadVersion) return;
+      grid.setAttribute("aria-busy", "false");
+      meta.textContent = "图鉴加载失败，请重试";
+      throw error;
+    }
+    if (version !== loadVersion) return;
+    grid.setAttribute("aria-busy", "false");
     page.total = data.total ?? 0;
-    collectOptions(data.items ?? []);
+    collectOptions(data);
     clear(grid);
     if (!data.items?.length) {
       grid.append(el("div", { class: "empty-state", text: "没有符合条件的宝可梦。" }));
@@ -238,12 +295,15 @@ function setupDex() {
           type: "button",
           class: `dex-card${selected === item.id_raw ? " selected" : ""}`,
           dataset: { rarity: item.rarity || "C" },
+          style: `--dex-type:${typeColor(item.types?.[0])}`,
+          "aria-label": `${item.name_zh}${item.form_name ? `（${item.form_name}）` : ""}，打开图鉴详情`,
           onclick: () => {
             lastTrigger = card;
             selected = item.id_raw;
             for (const node of grid.children) node.classList?.remove("selected");
             card.classList.add("selected");
             loadDetail(item).catch((error) => {
+              if (selected !== item.id_raw || detail.hidden) return;
               const content = mountDrawer();
               content.append(
                 el("div", { class: "empty-state", text: error.message }),
@@ -253,23 +313,16 @@ function setupDex() {
           },
         },
         [
-          el("span", { class: "dex-id", text: `#${item.id_raw}` }),
+          el("div", { class: "dex-card-top" }, [
+            el("span", { class: "dex-id", text: `NO. ${String(item.id_raw).padStart(3, "0")}` }),
+            item.rarity ? el("span", { class: `chip rarity-${item.rarity}`, text: item.rarity }) : null,
+          ]),
+          artworkFigure(item.artwork, item.name_zh),
           el("span", { class: "dex-name", text: item.name_zh + (item.form_name ? `（${item.form_name}）` : "") }),
           el("span", { class: "dex-sub", text: item.name_en || item.category }),
-          el("div", { class: "chips" }, [
-            ...(item.types ?? []).map((type) =>
-              el("span", {
-                class: "chip",
-                style: `background:${typeColor(type)}`,
-                text: type,
-              }),
-            ),
-            item.rarity
-              ? el("span", {
-                  class: `chip rarity-${item.rarity}`,
-                  text: item.rarity,
-                })
-              : null,
+          el("div", { class: "dex-bottom" }, [
+            el("div", { class: "chips" }, (item.types ?? []).map((type) => el("span", { class: "chip", style: typeStyle(type), text: type }))),
+            el("span", { class: "dex-bst" }, ["BST ", el("b", { text: item.bst || "—" })]),
           ]),
         ],
       );
@@ -280,9 +333,12 @@ function setupDex() {
   };
 
   const closeDetail = () => {
+    ++detailVersion;
     detail.hidden = true;
     backdrop.hidden = true;
     document.body.classList.remove("drawer-open");
+    document.getElementById("nav").inert = false;
+    document.getElementById("refreshButton").disabled = false;
     selected = null;
     for (const node of grid.children) node.classList?.remove("selected");
     lastTrigger?.focus?.({ preventScroll: true });
@@ -308,14 +364,18 @@ function setupDex() {
     const content = el("div", { class: "drawer-content" });
     detail.append(close, content);
     paintIcons(detail);
+    document.getElementById("nav").inert = true;
+    document.getElementById("refreshButton").disabled = true;
     detail.focus({ preventScroll: true });
     return content;
   };
 
   const loadDetail = async (item) => {
+    const version = ++detailVersion;
     const content = mountDrawer();
     content.append(el("p", { class: "placeholder", text: "加载中…" }));
     const data = await api("/dex/detail", { key: item.id_raw });
+    if (version !== detailVersion || detail.hidden) return;
     const row = data.row ?? {};
     clear(content);
     detail.setAttribute("aria-label", `${row.name_zh || item.name_zh} 图鉴详情`);
@@ -335,18 +395,9 @@ function setupDex() {
       ]),
     );
 
-    if (data.artwork) {
-      content.append(
-        el("figure", { class: "detail-art" }, [
-          el("img", {
-            src: data.artwork,
-            alt: `${row.name_zh || item.name_zh} 官方立绘`,
-            loading: "eager",
-            decoding: "async",
-          }),
-        ]),
-      );
-    }
+    const art = artworkFigure(data.artwork, row.name_zh || item.name_zh, true);
+    art.style.setProperty("--dex-type", typeColor((row.types || "").split("/")[0]));
+    content.append(art);
 
     content.append(
       el("div", { class: "chips" }, [
@@ -354,7 +405,7 @@ function setupDex() {
           .split("/")
           .filter(Boolean)
           .map((type) =>
-            el("span", { class: "chip", style: `background:${typeColor(type)}`, text: type }),
+            el("span", { class: "chip", style: typeStyle(type), text: type }),
           ),
         el("span", { class: "chip ghost", text: `#${row.id_raw}` }),
         el("span", { class: "chip ghost", text: `第 ${row.generation} 世代` }),
@@ -363,7 +414,7 @@ function setupDex() {
     );
 
     const stats = data.stats ?? {};
-    const maxStat = Math.max(180, ...Object.values(stats).map(Number));
+    const maxStat = 255; // 官方单项种族值统一尺度，避免跨宝可梦视觉误导。
     const bars = el("div", { class: "stat-bars" });
     for (const [label, value] of Object.entries(stats)) {
       bars.append(
@@ -372,7 +423,7 @@ function setupDex() {
           el("div", { class: "track" }, [
             el("div", {
               class: "fill",
-              style: `width:${Math.min(100, (Number(value) / maxStat) * 100)}%`,
+              style: `width:${Math.max(0, Math.min(100, (Number(value) / maxStat) * 100))}%;background:${({ HP: "#638b56", 攻击: "#d6764c", 防御: "#beaa54", 特攻: "#4d8fad", 特防: "#9975a8", 速度: "#d06575" })[label] || "var(--pk-accent)"}`,
             }),
           ]),
           el("span", { class: "value", text: String(value) }),
@@ -402,8 +453,11 @@ function setupDex() {
       );
     }
 
+    content.append(section("个体档案", [el("div", { class: "detail-data-grid" }, [
+      ["身高", row.height], ["体重", row.weight], ["捕获度", row.catch_rate], ["蛋群", row.egg_groups], ["性别比例", row.gender_ratio], ["世代", row.generation ? `第 ${row.generation} 世代` : ""],
+    ].map(([label, value]) => el("div", { class: "detail-data" }, [el("span", { text: label }), value ?? "—"]))) ]));
     content.append(
-      section("基础信息", [
+      section("进化与基础信息", [
         el("div", {
           class: "text-block",
           text: [
@@ -477,19 +531,43 @@ function setupDex() {
     page.index = 1;
     load().catch((error) => toast(error.message, "error"));
   });
+  document.getElementById("dexClear").addEventListener("click", () => {
+    search.value = typeSel.value = genSel.value = raritySel.value = "";
+    formsBox.checked = false;
+    page.index = 1;
+    load().catch((error) => toast(error.message, "error"));
+  });
   backdrop.addEventListener("click", closeDetail);
   document.addEventListener("keydown", (event) => {
-    if (event.key === "Escape" && !detail.hidden) closeDetail();
+    if (detail.hidden) return;
+    if (event.key === "Escape") closeDetail();
+    if (event.key === "Tab") {
+      const focusable = [...detail.querySelectorAll("button:not(:disabled), a[href], input:not(:disabled), [tabindex='0']")];
+      const first = focusable[0]; const last = focusable.at(-1);
+      if (!first) { event.preventDefault(); detail.focus(); return; }
+      if (event.shiftKey && (document.activeElement === first || document.activeElement === detail)) { event.preventDefault(); last.focus(); }
+      else if (!event.shiftKey && (document.activeElement === last || document.activeElement === detail)) { event.preventDefault(); first.focus(); }
+    }
   });
 
-  return {
-    load: () =>
-      load().catch((error) => {
-        toast(error.message, "error");
-        clear(grid);
-        grid.append(el("div", { class: "empty-state", text: error.message }));
-      }),
+  return { load };
+}
+
+function artworkFigure(src, name, large = false) {
+  const figure = el(large ? "figure" : "div", { class: large ? "detail-art" : "dex-art" });
+  const fallback = () => {
+    clear(figure);
+    figure.append(el("span", { class: "pokeball", "aria-hidden": "true" }), el("span", {
+      class: large ? "detail-art-note" : "art-note", text: "暂无本地立绘",
+    }));
   };
+  if (!src) fallback();
+  else {
+    const img = el("img", { src, alt: `${name} 官方立绘`, loading: large ? "eager" : "lazy", decoding: "async" });
+    img.addEventListener("error", fallback, { once: true });
+    figure.append(img);
+  }
+  return figure;
 }
 
 function section(label, children) {
@@ -501,10 +579,12 @@ function clampedText(value) {
   const button = el("button", {
     type: "button",
     class: "expand-button",
-    text: "展开",
+    text: "展开阅读",
+    "aria-expanded": "false",
     onclick: () => {
       const open = box.classList.toggle("clamped");
-      button.textContent = open ? "展开" : "收起";
+      button.textContent = open ? "展开阅读" : "收起";
+      button.setAttribute("aria-expanded", String(!open));
     },
   });
   return el("div", {}, [box, button]);
@@ -519,6 +599,20 @@ function setupMembers() {
   const meta = document.getElementById("memberMeta");
   const pager = document.getElementById("memberPager");
   const resetScope = document.getElementById("resetScopeButton");
+  const exportScope = document.getElementById("exportScopeButton");
+  let memberVersion = 0;
+  let updating = false;
+  exportScope.addEventListener("click", async () => {
+    if (exportScope.disabled) return;
+    exportScope.disabled = true;
+    try {
+      const scope = scopeSel.value;
+      const stamp = new Date().toISOString().slice(0, 10);
+      await bridge.download("sessions/export", { scope }, `pokemon-partner-${scope ? "session" : "all"}-${stamp}.json`);
+      toast("收藏数据已导出", "success");
+    } catch (error) { toast(`导出失败：${error.message}`, "error"); }
+    finally { exportScope.disabled = false; }
+  });
   const page = { index: 1, size: 20, total: 0 };
   let sessionsLoaded = false;
 
@@ -548,7 +642,7 @@ function setupMembers() {
     if (pages <= 1) return;
     const go = (index) => {
       page.index = index;
-      load();
+      load().catch((error) => toast(error.message, "error"));
     };
     pager.append(
       el("button", {
@@ -568,6 +662,11 @@ function setupMembers() {
   };
 
   const patch = async (body, okMessage) => {
+    if (updating) return;
+    if (body.field === "dust" && (!Number.isSafeInteger(body.value) || body.value < 0)) {
+      toast("星尘需要填写非负整数", "error"); return;
+    }
+    updating = true;
     try {
       await apiPost("/members/update", body);
       toast(okMessage, "success");
@@ -575,7 +674,7 @@ function setupMembers() {
       await loadSessions(true);
     } catch (error) {
       toast(error.message, "error");
-    }
+    } finally { updating = false; }
   };
 
   const removeMember = async (scope, userId, name) => {
@@ -591,12 +690,15 @@ function setupMembers() {
   };
 
   const load = async () => {
+    const version = ++memberVersion;
+    meta.textContent = "正在读取训练家数据…";
     const data = await api("/members", {
       scope: scopeSel.value,
       q: search.value.trim(),
       page: page.index,
       size: page.size,
     });
+    if (version !== memberVersion) return;
     page.total = data.total ?? 0;
     clear(tableBody);
     if (!data.items?.length) {
@@ -683,6 +785,7 @@ function setupMembers() {
                 type: "button",
                 class: "button ghost small",
                 text: "删除",
+                "aria-label": `删除 ${item.nickname} 的收藏数据`,
                 onclick: () => removeMember(item.scope, item.user_id, item.nickname),
               }),
             ]),
@@ -872,6 +975,14 @@ function setupSettings() {
   const status = document.getElementById("settingsStatus");
   const reload = document.getElementById("settingsReload");
   const inputs = new Map();
+  let saving = false;
+  let dirty = false;
+  const saveButton = form.querySelector('[type="submit"]');
+  form.addEventListener("input", () => {
+    dirty = true;
+    status.textContent = "有尚未保存的修改";
+    status.className = "form-status";
+  });
 
   const build = (config) => {
     clear(grid);
@@ -893,10 +1004,11 @@ function setupSettings() {
             value: value === undefined || value === null ? "" : String(value),
           });
         }
+        input.id = `setting-${field.key.replaceAll(".", "-")}`;
         inputs.set(field.key, { field, input });
         grid.append(
           el("div", { class: `form-field${field.wide ? " wide" : ""}` }, [
-            el("label", { text: field.label }),
+            el("label", { text: field.label, for: input.id }),
             input,
             field.hint ? el("span", { class: "hint", text: field.hint }) : null,
           ]),
@@ -910,10 +1022,15 @@ function setupSettings() {
     status.className = "form-status";
     const data = await api("/settings");
     build(data.config ?? {});
+    dirty = false;
   };
 
   form.addEventListener("submit", async (event) => {
     event.preventDefault();
+    if (saving || !form.reportValidity()) return;
+    saving = true;
+    saveButton.disabled = true;
+    reload.disabled = true;
     const patch = {};
     for (const [key, { field, input }] of inputs) {
       let value;
@@ -926,6 +1043,9 @@ function setupSettings() {
     status.className = "form-status";
     try {
       await apiPost("/settings/save", { config: patch });
+      dirty = false;
+      state.loaded.delete("overview");
+      state.loaded.delete("rules");
       status.textContent = "已保存并重新加载抽卡规则。";
       status.className = "form-status success";
       toast("配置已保存", "success");
@@ -933,10 +1053,15 @@ function setupSettings() {
       status.textContent = error.message;
       status.className = "form-status error";
       toast(error.message, "error", 6000);
+    } finally {
+      saving = false;
+      saveButton.disabled = false;
+      reload.disabled = false;
     }
   });
 
   reload.addEventListener("click", () => {
+    if (dirty && !confirm("放弃尚未保存的设置修改？")) return;
     load().catch((error) => toast(error.message, "error"));
   });
 
@@ -966,13 +1091,25 @@ async function boot() {
     button.addEventListener("click", () => showView(button.dataset.view));
   }
   document.getElementById("refreshButton").addEventListener("click", refreshView);
+  for (const button of document.querySelectorAll("[data-go]")) button.addEventListener("click", () => showView(button.dataset.go));
+  window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
+  document.addEventListener("keydown", (event) => {
+    if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || document.body.classList.contains("drawer-open")) return;
+    if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
+    event.preventDefault();
+    showView("dex");
+    document.getElementById("dexSearch").focus();
+  });
 
   const initial = location.hash.slice(1);
-  showView(state.views[initial] ? initial : "overview");
+  await showView(state.views[initial] ? initial : "overview");
   document.getElementById("shell").setAttribute("aria-busy", "false");
 }
 
 boot().catch((error) => {
   document.getElementById("shell")?.setAttribute("aria-busy", "false");
+  const notice = document.getElementById("pageNotice");
+  notice.hidden = false;
+  notice.textContent = `页面初始化失败：${error.message}`;
   toast(`页面初始化失败：${error.message}`, "error", 8000);
 });

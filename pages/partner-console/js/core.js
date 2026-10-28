@@ -13,18 +13,17 @@ let context = null;
 
 export async function ready() {
   if (context) return context;
-  try {
-    context = (await bridge?.ready?.()) ?? {};
-  } catch {
-    context = {};
+  if (!bridge?.ready || !bridge?.apiGet || !bridge?.apiPost) {
+    throw new Error("请从 AstrBot Dashboard 的插件页面打开此管理台。");
   }
+  context = (await bridge.ready()) ?? {};
   return context;
 }
 
 function bridgeEndpoint(path) {
   const endpoint = String(path ?? "").replace(/^\/+/, "");
   if (!endpoint) throw new Error("Bridge endpoint 不能为空");
-  if (/[?#\\]/.test(endpoint) || endpoint.split("/").some((part) => part === "." || part === "..")) {
+  if (/[?:#\\]/.test(endpoint) || endpoint.split("/").some((part) => part === "." || part === "..")) {
     throw new Error(`Bridge endpoint 格式无效：${endpoint}`);
   }
   return endpoint;
@@ -170,6 +169,14 @@ const TYPE_COLOR = {
 
 export function typeColor(type) {
   return TYPE_COLOR[type] ?? "#64748b";
+}
+
+/** 属性色有浅有深，按亮度选择文字色，保证电、冰、飞行等徽章可读。 */
+export function typeStyle(type) {
+  const color = typeColor(type);
+  const rgb = [1, 3, 5].map((at) => parseInt(color.slice(at, at + 2), 16));
+  const luminance = rgb[0] * 0.299 + rgb[1] * 0.587 + rgb[2] * 0.114;
+  return `background:${color};color:${luminance > 155 ? "#202a27" : "#fff"}`;
 }
 
 /* --------------------------------------------------------------- Toast */

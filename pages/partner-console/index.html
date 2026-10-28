@@ -9,6 +9,7 @@
     <link rel="stylesheet" href="./styles/views.css" />
   </head>
   <body>
+    <a class="skip-link" href="#workspace">跳到主内容</a>
     <div class="shell" id="shell" aria-busy="true">
       <header class="topbar">
         <div class="brand">
@@ -35,11 +36,12 @@
           </span>
           <span class="brand-copy">
             <strong>宝可梦图鉴</strong>
-            <small>Pokémon Console</small>
+            <small>Pokédex / Research station</small>
           </span>
         </div>
 
         <nav class="nav" id="nav" aria-label="管理台导航">
+          <span class="nav-label">研究终端</span>
           <button class="nav-item" type="button" data-view="overview">
             <i data-icon="gauge"></i><span>概览</span>
           </button>
@@ -58,6 +60,7 @@
         </nav>
 
         <div class="topbar-actions">
+          <div class="station-status"><span class="status-dot"></span>本地图鉴已就绪</div>
           <div class="segmented" id="themeSwitch" role="group" aria-label="界面主题">
             <button type="button" data-theme="auto" aria-pressed="true">跟随</button>
             <button type="button" data-theme="light" aria-pressed="false">浅色</button>
@@ -69,15 +72,16 @@
         </div>
       </header>
 
-      <main class="workspace">
+      <main class="workspace" id="workspace" tabindex="-1">
+        <div class="workspace-bar"><span>TRAINER RESEARCH / <strong id="viewBreadcrumb">总览</strong></span><span class="edition">POKÉDEX TERMINAL <b>01</b></span></div>
+        <div class="page-notice" id="pageNotice" role="alert" hidden></div>
         <!-- ============================ 概览 ============================ -->
         <section class="view" data-panel="overview" hidden>
-          <div class="view-head">
-            <div>
-              <h1>数据概览</h1>
-              <p class="muted">卡池构成、玩家活跃与数据健康状态。</p>
-            </div>
-          </div>
+          <section class="welcome-hero">
+            <div class="hero-copy"><span class="eyebrow"><span class="status-dot"></span> 每一次相遇，都是新的冒险</span><h1>今天也要遇见<br />新的宝可梦<span>。</span></h1><p>从一只宝可梦开始，记录训练家的每一段旅程。<br />你的图鉴、伙伴与收藏，都在这里。</p><div class="hero-actions"><button type="button" class="button primary" data-go="dex">探索宝可梦图鉴 <span aria-hidden="true">↗</span></button><button type="button" class="button ghost" data-go="members">查看训练家</button></div><span class="hero-footnote">LOCAL POKÉDEX <b>1025</b> SPECIES · <b>18</b> TYPES</span></div>
+            <div class="hero-art" id="heroArt" aria-label="焦点宝可梦"><span class="hero-number" aria-hidden="true">025</span><div class="hero-orbit" aria-hidden="true"></div><div class="hero-placeholder" aria-hidden="true"><span class="pokeball"></span></div><div class="hero-caption"><span>FEATURED PARTNER</span><strong>皮卡丘 <small>PIKACHU</small></strong><span class="hero-type">电 / ELECTRIC</span></div></div>
+          </section>
+          <div class="section-heading"><div><span class="eyebrow">TRAINER ACTIVITY</span><h2>训练家与收藏</h2></div><span class="muted">每段旅程都值得记录</span></div>
 
           <div class="stat-grid" id="overviewStats"></div>
 
@@ -103,8 +107,9 @@
           <div class="view-head">
             <div>
               <h1>宝可梦图鉴</h1>
-              <p class="muted">本地中文数据，1025 只默认形态与 295 个地区/特殊形态。</p>
+              <p class="muted">发现熟悉的伙伴，也认识下一位旅途同伴。</p>
             </div>
+            <div class="segmented" role="group" aria-label="图鉴展示方式"><button type="button" data-dex-layout="gallery" aria-pressed="true">立绘展柜</button><button type="button" data-dex-layout="compact" aria-pressed="false">紧凑列表</button></div>
           </div>
 
           <div class="filters">
@@ -134,11 +139,12 @@
               <input id="dexForms" type="checkbox" />
               <span>含形态</span>
             </label>
+            <button class="button ghost" id="dexClear" type="button">清除筛选</button>
           </div>
 
           <div class="dex-layout">
             <div class="dex-main">
-              <div class="list-meta" id="dexMeta"></div>
+              <div class="list-meta" id="dexMeta" aria-live="polite"></div>
               <div class="dex-grid" id="dexGrid"></div>
               <div class="pager" id="dexPager"></div>
             </div>
@@ -159,7 +165,7 @@
         <section class="view" data-panel="members" hidden>
           <div class="view-head">
             <div>
-              <h1>宝可梦管理</h1>
+              <h1>训练家管理</h1>
               <p class="muted">按会话查看成员，调整星尘、次数与保底。写操作与群聊共用同一份数据。</p>
             </div>
           </div>
@@ -174,9 +180,10 @@
               <input id="memberSearch" type="search" placeholder="昵称或用户 ID" autocomplete="off" />
             </label>
             <button class="button ghost" id="resetScopeButton" type="button">重置该会话今日次数</button>
+            <button class="button ghost" id="exportScopeButton" type="button">导出收藏数据</button>
           </div>
 
-          <div class="list-meta" id="memberMeta"></div>
+          <div class="list-meta" id="memberMeta" aria-live="polite"></div>
           <div class="table-wrap">
             <table class="data-table" id="memberTable">
               <thead>
@@ -232,14 +239,14 @@
         <section class="view" data-panel="settings" hidden>
           <div class="view-head">
             <div>
-              <h1>设置</h1>
+              <h1>研究站设置</h1>
               <p class="muted">保存前会在服务端校验；非法配置会被拒绝，不会写坏插件。</p>
             </div>
           </div>
           <form class="card form" id="settingsForm">
             <div class="form-grid" id="settingsGrid"></div>
             <footer class="form-actions">
-              <button class="button primary" type="submit">保存并重载抽卡</button>
+              <button class="button primary" type="submit">保存设置</button>
               <button class="button ghost" type="button" id="settingsReload">放弃修改</button>
               <span class="form-status" id="settingsStatus" role="status"></span>
             </footer>

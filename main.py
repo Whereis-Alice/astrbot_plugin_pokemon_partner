@@ -36,6 +36,7 @@ from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, register
 
 try:
+    from .battle_report import build_battle_pokemon, format_battle_report, parse_battle_options, split_battle_text
     from .battle_engine import (
         NATURES,
         STAT_KEYS,
@@ -65,6 +66,7 @@ try:
     from .webui import PokemonPartnerWebUI
     from .wishmaker_card import build_wishmaker_markdown
 except ImportError:  # 兼容以普通模块方式加载插件
+    from battle_report import build_battle_pokemon, format_battle_report, parse_battle_options, split_battle_text
     from battle_engine import (
         NATURES,
         STAT_KEYS,
@@ -191,12 +193,12 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.1.3",
+    "v1.2.0",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
         super().__init__(context)
-        self.config = config or {}
+        self.config = config if config is not None else {}
         images_dir = self.config.get("images_dir") or ""
         self.db = PokedexDB(Path(__file__).resolve().parent / "data")
         self.renderer = CardRenderer(images_dir or None)
@@ -471,8 +473,8 @@ class PokemonPartnerPlugin(Star):
         try:
             service = self._partner_or_error()
             scope, user_id, nickname = self._scope(event)
-            owned = service.owned(scope, user_id)
-            summary = service.profile(scope, user_id, nickname)
+            owned = await asyncio.to_thread(service.owned, scope, user_id)
+            summary = await asyncio.to_thread(service.profile, scope, user_id, nickname)
         except GachaError as exc:
             yield event.plain_result(str(exc))
             return
@@ -818,7 +820,7 @@ class PokemonPartnerPlugin(Star):
             "特性 / 招式 / 道具 / 性格 — 数据查询\n"
             "相性 <属性1> [属性2]｜相性 打 <属性> — 属性相性\n"
             "克制 <宝可梦>｜克制 <A> <B> — 克制推荐与对比\n"
-            "对战 <A> <B> [等级] — 回合制模拟\n"
+            "对战 <A> <B> [等级] [详细] [种子=123] — 招式效果与逐回合复盘\n"
             "队伍分析 <名称...> — 队伍弱点分析\n"
             "筛选 <条件> — 按种族值筛选\n"
             "宝冠军 <关键词> — 冠军赛数据\n"
@@ -888,7 +890,7 @@ class PokemonPartnerPlugin(Star):
         try:
             service = self._partner_or_error()
             scope, user_id, nickname = self._scope(event)
-            owned = service.owned(scope, user_id)
+            owned = await asyncio.to_thread(service.owned, scope, user_id)
         except GachaError as exc:
             return str(exc)
         if not owned:
@@ -1428,21 +1430,7 @@ class PokemonPartnerPlugin(Star):
 
     # ---------- Phase 3：对战模拟 ----------
     def _battle_pokemon(self, row: dict, level: int) -> BattlePokemon:
-        base = self._stats_base(row)
-        stats = calc_stats(base or {}, level)
-        moves, _from_learnset = self.db.recommended_moveset(row)
-        battle_moves = [
-            make_move(self.db.move_index()[n], self.db.STATUS_MOVES.get(n))
-            for n in moves
-            if n in self.db.move_index()
-        ]
-        return BattlePokemon(
-            name=row.get("name_zh", ""),
-            types=[t for t in (row.get("types") or "").split("/") if t],
-            stats=stats,
-            moves=battle_moves,
-            level=level,
-        )
+        return build_battle_pokemon(self.db, row, level)
 
     def _champ_ranks_line(self, rows: list[dict]) -> str:
         """ "冠军赛排名（M-7）：A 单#1/双#1｜B 单#7/双#5"，无数据返回空串。"""
@@ -1467,34 +1455,9 @@ class PokemonPartnerPlugin(Star):
             return ""
         return f"冠军赛排名（{season}）：" + "｜".join(parts)
 
-    def _battle_text(self, row1: dict, row2: dict, level: int) -> str:
-        sim = BattleSimulator(self.db.type_chart())
-        report = sim.simulate(
-            self._battle_pokemon(row1, level), self._battle_pokemon(row2, level)
-        )
-        lines = [
-            f"【{row1.get('name_zh', '')} vs {row2.get('name_zh', '')}】Lv.{level} 对战",
-            "规则：简化规则（无特性/道具/天气/招式附加效果），配招为自动推荐",
-        ]
-        champ_line = self._champ_ranks_line([row1, row2])
-        if champ_line:
-            lines.append(champ_line)
-        if report["winner"] == "平局":
-            lines.append(f"结果：平局（{report['turns']} 回合）")
-        else:
-            lines.append(f"胜者：{report['winner']}（{report['turns']} 回合）")
-        if report["key_moments"]:
-            lines.append("关键事件：")
-            lines += [f"{i}. {m}" for i, m in enumerate(report["key_moments"], 1)]
-        finals = []
-        for name, st in report["final"].items():
-            if st["fainted"]:
-                finals.append(f"{name} 倒下")
-            else:
-                tail = f"（{st['status']}）" if st["status"] else ""
-                finals.append(f"{name} HP {st['hp']}/{st['max']}（{st['pct']}%）{tail}")
-        lines.append("最终：" + "｜".join(finals))
-        return "\n".join(lines)
+    def _battle_text(self, row1: dict, row2: dict, level: int, *, seed: int | None = None, detailed: bool = False) -> str:
+        return format_battle_report(self.db, row1, row2, level, seed=seed, detailed=detailed,
+                                    champion_line=self._champ_ranks_line([row1, row2]))
 
     @filter.command("对战")
     async def cmd_battle(
@@ -1504,10 +1467,10 @@ class PokemonPartnerPlugin(Star):
         name2: str = "",
         level: str = "50",
     ):
-        """模拟两只宝可梦对战，如：对战 皮卡丘 喷火龙 50"""
+        """模拟对战；可追加「详细 种子=123」复盘完整回合。"""
         if not name1 or not name2:
             yield event.plain_result(
-                "用法：对战 <名称1> <名称2> [等级]，如：对战 皮卡丘 喷火龙 50"
+                "用法：对战 <名称1> <名称2> [等级] [详细] [种子=123]，如：对战 皮卡丘 喷火龙 50 详细"
             )
             return
         row1, row2 = self.db.pokemon(name1), self.db.pokemon(name2)
@@ -1516,7 +1479,11 @@ class PokemonPartnerPlugin(Star):
             yield event.plain_result(f"没有查到「{miss}」的相关信息")
             return
         level_i = self._parse_clamped_int(level, 50, 1, 100)
-        yield event.plain_result(self._battle_text(row1, row2, level_i))
+        raw = str(getattr(event, "message_str", "") or "")
+        detailed, seed = parse_battle_options(raw)
+        report = await asyncio.to_thread(self._battle_text, row1, row2, level_i, seed=seed, detailed=detailed)
+        for part in split_battle_text(report):
+            yield event.plain_result(part)
 
     # ---------- Phase 4：队伍分析 / 种族值筛选 ----------
     def _champ_rank_short(self, name: str) -> str:
@@ -2124,7 +2091,7 @@ class PokemonPartnerPlugin(Star):
             "性格 [名称] — 性格能力修正速查（性格 固执 看单个）\n"
             "相性 <属性1> [属性2] / 相性 打 <属性> — 属性相性防守/进攻\n"
             "克制 <宝可梦> / 克制 <A> <B> — 克制推荐与多维度对比\n"
-            "对战 <名称1> <名称2> [等级] — 模拟对战（含双方冠军赛名次）\n"
+            "对战 <名称1> <名称2> [等级] [详细] [种子=123] — 招式效果与逐回合战报\n"
             "队伍分析 <名称...> — 队伍弱点配置分析\n"
             "筛选 <条件> — 按种族值筛选，如 速度>100 特攻>=120\n"
             "许愿星 <性格> [个体下限] [TID SID] — 许愿星基拉祈目标筛选\n"
@@ -2815,19 +2782,23 @@ class PokemonPartnerPlugin(Star):
     # ---------- Phase 3 LLM 工具：对战模拟 ----------
     @filter.llm_tool(name="simulate_battle")
     async def tool_battle(
-        self, event: AstrMessageEvent, name1: str, name2: str, level: int = 50
+        self, event: AstrMessageEvent, name1: str, name2: str, level: int = 50, seed: int = -1, detailed: bool = False
     ):
-        """模拟两只宝可梦的对战并返回战报（简化规则：无特性/道具/天气/招式附加效果，
-        双方使用自动推荐的合法配招）。适用于"皮卡丘和喷火龙谁会赢""模拟一场对战"。
+        """模拟两只宝可梦的对战，列出配招、实际模拟效果、伤害与逐回合战报。
+        支持优先度、能力等级、状态、回复/吸血/反伤、守住、蓄力和部分普通特性免疫。
+        未覆盖图鉴效果会明确标注；不含道具、天气、场地与换人。
         Args:
             name1(str): 第一只宝可梦的编号或名称
             name2(str): 第二只宝可梦的编号或名称
             level(int): 双方等级（1-100），默认 50
+            seed(int): 复盘种子，-1 为随机；战报显示实际种子
+            detailed(bool): 是否返回完整逐回合事件，默认预览长对局
         """
         row1, row2 = self.db.pokemon(name1), self.db.pokemon(name2)
         if not row1 or not row2:
             return f"没有查到「{name1 if not row1 else name2}」的相关信息"
-        return self._battle_text(row1, row2, max(1, min(100, int(level))))
+        return await asyncio.to_thread(self._battle_text, row1, row2, max(1, min(100, int(level))),
+                                       seed=None if seed < 0 else seed, detailed=detailed)
 
     # ---------- Phase 4 LLM 工具：队伍分析 / 种族值筛选 ----------
     @filter.llm_tool(name="analyze_team")

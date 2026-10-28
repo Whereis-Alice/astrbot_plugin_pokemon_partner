@@ -4,6 +4,7 @@ find_pokemon 等）整合为插件可直接调用的异步方法，作为本地�
 带内存缓存；属性/世代名支持中文输入，输出尽量本地化（中文名、中文图鉴说明）。
 """
 import time
+from collections import OrderedDict
 
 import aiohttp
 
@@ -24,6 +25,7 @@ GEN_ZH = {
 STAT_ZH = {"hp": "HP", "attack": "攻击", "defense": "防御",
            "special-attack": "特攻", "special-defense": "特防", "speed": "速度"}
 CACHE_TTL = 24 * 3600
+MAX_CACHE_ENTRIES = 256
 
 
 def _zh_name(names: list) -> str:
@@ -58,23 +60,30 @@ class PokeAPIClient:
     def __init__(self, timeout: int = 15):
         self.timeout = timeout
         self._session: aiohttp.ClientSession | None = None
-        self._cache: dict[str, tuple[float, object]] = {}
+        self._cache: OrderedDict[str, tuple[float, object]] = OrderedDict()
+
+    def _remember(self, key: str, value: object) -> None:
+        self._cache[key] = (time.time(), value)
+        self._cache.move_to_end(key)
+        while len(self._cache) > MAX_CACHE_ENTRIES:
+            self._cache.popitem(last=False)
 
     async def _get(self, path: str):
         key = path
         hit = self._cache.get(key)
         if hit and time.time() - hit[0] < CACHE_TTL:
+            self._cache.move_to_end(key)
             return hit[1]
         if self._session is None or self._session.closed:
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout))
-        async with self._session.get(f"{BASE}/{path}") as resp:
+        async with self._session.get(f"{BASE}/{path}", timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
             if resp.status == 404:
-                self._cache[key] = (time.time(), None)
+                self._remember(key, None)
                 return None
             resp.raise_for_status()
             data = await resp.json()
-        self._cache[key] = (time.time(), data)
+        self._remember(key, data)
         return data
 
     async def close(self):
@@ -87,21 +96,24 @@ class PokeAPIClient:
             self._session = aiohttp.ClientSession(
                 timeout=aiohttp.ClientTimeout(total=self.timeout)
             )
-        async with self._session.get(url) as resp:
+        async with self._session.get(url, timeout=aiohttp.ClientTimeout(total=self.timeout)) as resp:
             if resp.status != 200:
                 return None
             content_type = resp.headers.get("Content-Type", "")
             if content_type and "image" not in content_type.lower():
                 return None
+            if int(resp.headers.get("Content-Length") or 0) > 8 * 1024 * 1024:
+                return None
             data = await resp.read()
-        return data or None
+        return data if data and len(data) <= 8 * 1024 * 1024 else None
 
     # ---------- 对应 pokeapi_get_pokemon ----------
     async def get_pokemon(self, name_or_id: str) -> dict | None:
         pk = await self._get(f"pokemon/{name_or_id}")
         if not pk:
             return None
-        sp = await self._get(f"pokemon-species/{pk['id']}")
+        species = pk.get("species", {}).get("name") or pk["id"]
+        sp = await self._get(f"pokemon-species/{species}")
         types = [TYPE_ZH.get(t["type"]["name"], t["type"]["name"])
                  for t in pk.get("types", [])]
         abilities = []
