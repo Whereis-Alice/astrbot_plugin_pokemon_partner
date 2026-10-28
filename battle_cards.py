@@ -352,7 +352,7 @@ def _turn_pages(battle):
         if number is None:
             blocks.append(_Block("中间回合已折叠", (
                 _Line(f"省略中间 {len(turns)-8} 回合，当前展示前 6 回合及最后 2 回合。"),
-                _Line(f"完整复盘：对战 {battle['row1'].get('form_name') or battle['row1'].get('name_zh')} {battle['row2'].get('form_name') or battle['row2'].get('name_zh')} {battle['level']} 详细 种子={battle['seed']}", 24, MINT),
+                _Line(f"完整复盘：对战 {battle['row1'].get('form_name') or battle['row1'].get('name_zh')} {battle['row2'].get('form_name') or battle['row2'].get('name_zh')} {battle['level']} 详细 种子={battle['seed']} 回合={battle.get('max_turns', 100)}", 24, MINT),
             ), GOLD))
             continue
         lines = []

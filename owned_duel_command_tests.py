@@ -25,6 +25,18 @@ class At:
         self.qq, self.name = qq, name
 
 
+class Plain(str):
+    def __new__(cls, text):
+        value = super().__new__(cls, text)
+        value.text = text
+        return value
+
+
+class Reply:
+    def __init__(self, text):
+        self.text = text
+
+
 class Event:
     def __init__(self, user, raw, *, mentions=(), private=False):
         self.user, self.message_str, self.private = user, raw, private
@@ -56,7 +68,7 @@ class OwnedDuelCommandTests(unittest.TestCase):
                 profile["owned"] = {partners[dex].key: {"normal": 1, "shiny": 0} for dex in dexes}
             self.store._save()
         self.patch_at = patch.object(main.Comp, "At", At, create=True)
-        self.patch_plain = patch.object(main.Comp, "Plain", side_effect=lambda text: text)
+        self.patch_plain = patch.object(main.Comp, "Plain", Plain)
         self.patch_at.start(); self.patch_plain.start()
         self.addCleanup(self.patch_at.stop); self.addCleanup(self.patch_plain.stop)
 
@@ -90,9 +102,100 @@ class OwnedDuelCommandTests(unittest.TestCase):
         self.assertEqual(captured[0]["row1"]["name_zh"], "皮卡丘")
         self.assertEqual(captured[0]["row2"]["name_zh"], "火稚鸡")
         self.assertTrue(captured[0]["detailed"])
+        self.assertEqual(captured[0]["max_turns"], 50)
         self.assertIn("没有等待", repeated[0][1])
         for user in ("alice", "bob"):
             self.assertEqual(self.duels.profile("group:room", user)["total"], 1)
+
+    def test_canonical_name_challenge_accepts_directly_with_agreed_turns_and_mode(self):
+        invite = self.run_command("cmd_owned_challenge", Event(
+            "alice", "宝可梦挑战 皮卡丘 @小霞 20", mentions=[At("bob", "小霞")]))
+        self.assertIn("最多 20 回合", invite[0][1][1])
+        self.assertIn("接收挑战", invite[0][1][1])
+        captured = []
+        async def deliver(event, battle, **kwargs):
+            captured.append((battle, kwargs))
+            yield ("battle", "sent")
+        with patch.object(self.plugin, "_send_battle_report", deliver):
+            result = self.run_command("cmd_owned_accept", Event("bob", "接收挑战 火稚鸡 详细 合并转发"))
+        self.assertEqual(result, [("battle", "sent")])
+        battle, options = captured[0]
+        self.assertEqual((battle["row1"]["name_zh"], battle["row2"]["name_zh"], battle["max_turns"]),
+                         ("皮卡丘", "火稚鸡", 20))
+        self.assertEqual(options["mode"], "forward")
+        self.assertEqual(self.duels.history("group:room")[0]["max_turns"], 20)
+
+    def test_plain_components_preserve_name_and_round_without_spaces_around_at(self):
+        invite = self.run_command("cmd_owned_challenge", Event(
+            "alice", "宝可梦挑战 皮卡丘20", mentions=[
+                Plain("宝可梦挑战 皮卡丘"), At("bob"), Plain("20")]))
+        self.assertIn("序号 2 · 皮卡丘", invite[0][1][1])
+        self.assertIn("最多 20 回合", invite[0][1][1])
+        captured = []
+        async def deliver(event, battle, **kwargs):
+            captured.append(kwargs)
+            yield ("battle", "sent")
+        with patch.object(self.plugin, "_send_battle_report", deliver):
+            self.run_command("cmd_owned_accept", Event("bob", "接收挑战 火稚鸡详细合并转发", mentions=[
+                Plain("接收挑战 火稚鸡"), Plain("详细 合并转发")]))
+        self.assertEqual(captured, [{"mode": "forward"}])
+
+    def test_quoted_reply_text_does_not_override_current_selection_target_or_mode(self):
+        invite = self.run_command("cmd_owned_challenge", Event(
+            "alice", "宝可梦挑战 皮卡丘20", mentions=[
+                Reply("宝可梦挑战 1 @carol 30"), Plain("宝可梦挑战 皮卡丘"), At("bob"), Plain("20")]))
+        self.assertEqual(invite[0][0], "chain")
+        self.assertEqual(invite[0][1][0].qq, "bob")
+        self.assertIn("序号 2 · 皮卡丘", invite[0][1][1])
+        self.assertIn("最多 20 回合", invite[0][1][1])
+        captured = []
+        async def deliver(event, battle, **kwargs):
+            captured.append((battle, kwargs))
+            yield ("battle", "sent")
+        with patch.object(self.plugin, "_send_battle_report", deliver):
+            accepted = self.run_command("cmd_owned_accept", Event("bob", "接收挑战 火稚鸡 合并转发", mentions=[
+                Reply("接收挑战 皮卡丘 回合=50 卡片"), At("999"), Plain("接收挑战 火稚鸡 合并转发")]))
+        self.assertEqual(accepted, [("battle", "sent")])
+        battle, options = captured[0]
+        self.assertEqual(battle["row2"]["name_zh"], "火稚鸡")
+        self.assertEqual(battle["max_turns"], 20)
+        self.assertEqual(options["mode"], "forward")
+
+    def test_ordinal_then_numeric_round_selects_ordinal_and_round(self):
+        result = self.run_command("cmd_owned_challenge", Event(
+            "alice", "宝可梦挑战 2 @bob 1", mentions=[At("bob")]))
+        self.assertIn("序号 2 · 皮卡丘", result[0][1][1])
+        captured = []
+        async def deliver(event, battle, **kwargs):
+            captured.append(battle)
+            yield ("battle", "sent")
+        with patch.object(self.plugin, "_send_battle_report", deliver):
+            self.run_command("cmd_owned_accept", Event("bob", "接受挑战 1"))
+        self.assertEqual(captured[0]["max_turns"], 1)
+        self.assertLessEqual(captured[0]["result"]["turns"], 1)
+
+    def test_missing_target_and_bad_round_values_get_specific_errors(self):
+        result = self.run_command("cmd_owned_challenge", Event("alice", "宝可梦挑战 2 20"))
+        self.assertIn("@", result[0][1])
+        for option in ("回合=-1", "回合=abc", "101回合"):
+            with self.subTest(option=option):
+                result = self.run_command("cmd_owned_challenge", Event(
+                    "alice", f"宝可梦挑战 2 @bob {option}", mentions=[At("bob")]))
+                self.assertIn("回合", result[0][1])
+                self.assertNotIn("尚未拥有", result[0][1])
+        self.assertEqual(self.duels.history("group:room"), [])
+
+    def test_unowned_acceptance_leaves_challenge_available_for_correct_name(self):
+        self.invite()
+        wrong = self.run_command("cmd_owned_accept", Event("bob", "接收挑战 喷火龙"))
+        self.assertIn("尚未拥有", wrong[0][1])
+        self.assertEqual(self.duels.profile("group:room", "bob")["total"], 0)
+        async def deliver(event, battle, **kwargs):
+            yield ("battle", "sent")
+        with patch.object(self.plugin, "_send_battle_report", deliver):
+            correct = self.run_command("cmd_owned_accept", Event("bob", "接收挑战 火稚鸡"))
+        self.assertEqual(correct, [("battle", "sent")])
+        self.assertEqual(self.duels.profile("group:room", "bob")["total"], 1)
 
     def test_simulation_failure_aborts_reservation_without_score(self):
         self.invite()
@@ -127,7 +230,7 @@ class OwnedDuelCommandTests(unittest.TestCase):
         result = self.run_command("cmd_partner_collection", Event("alice", "我的宝可梦"))
         self.assertIn("1. #", result[0][1])
         self.assertIn("2. #", result[0][1])
-        self.assertIn("收藏序号", result[0][1])
+        self.assertIn("宝可梦挑战", result[0][1])
 
     def test_collection_card_numbers_continue_across_pages(self):
         owned = self.store.owned_partners("group:room", "alice")

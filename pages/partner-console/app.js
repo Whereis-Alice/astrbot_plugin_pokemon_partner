@@ -10,6 +10,7 @@ import {
   apiPost,
   bridge,
   applyTheme,
+  confirmAction,
   bytes,
   clear,
   currentTheme,
@@ -339,7 +340,7 @@ function setupDex() {
     detail.hidden = true;
     backdrop.hidden = true;
     document.body.classList.remove("drawer-open");
-    document.getElementById("nav").inert = false;
+    document.dispatchEvent(new Event("partner-drawer-change"));
     document.getElementById("refreshButton").disabled = false;
     selected = null;
     for (const node of grid.children) node.classList?.remove("selected");
@@ -351,6 +352,7 @@ function setupDex() {
     detail.hidden = false;
     backdrop.hidden = false;
     document.body.classList.add("drawer-open");
+    document.dispatchEvent(new Event("partner-drawer-change"));
     clear(detail);
     const close = el(
       "button",
@@ -601,7 +603,7 @@ function setupMembers() {
         }),
       );
     }
-    scopeSel.value = current;
+    scopeSel.value = [...scopeSel.options].some((option) => option.value === current) ? current : "";
     sessionsLoaded = true;
   };
 
@@ -647,15 +649,22 @@ function setupMembers() {
   };
 
   const removeMember = async (scope, userId, name) => {
-    if (!confirm(`确定删除 ${name} 在 ${scope} 的全部宝可梦数据？此操作不可撤销。`)) return;
+    if (updating) return;
+    updating = true;
+    const approved = await confirmAction({ title: `删除 ${name} 的收藏数据？`, message: `仅删除 ${scope} 中这位成员的收藏、星尘和抽取进度，其他成员保留。此操作不可撤销，建议先导出备份。`, confirmLabel: "删除该成员", danger: true });
+    if (!approved) { updating = false; return; }
+    const buttons = [...tableBody.querySelectorAll("button")];
+    buttons.forEach((button) => { button.disabled = true; });
+    scopeSel.disabled = true;
     try {
-      await apiPost("/sessions/delete", { scope, user_id: userId });
-      toast("已删除该成员数据", "success");
-      await load();
+      const result = await apiPost("/sessions/delete", { scope, user_id: userId });
+      toast(result.removed ? "已删除该成员数据，其他成员已保留" : "该成员已不存在，列表已刷新", "success");
       await loadSessions(true);
+      await load();
+      state.loaded.delete("overview");
     } catch (error) {
-      toast(error.message, "error");
-    }
+      toast(`删除失败：${error.message}`, "error");
+    } finally { updating = false; scopeSel.disabled = false; buttons.forEach((button) => { button.disabled = false; }); }
   };
 
   const load = async () => {
@@ -669,6 +678,8 @@ function setupMembers() {
     });
     if (version !== memberVersion) return;
     page.total = data.total ?? 0;
+    const pages = Math.max(1, Math.ceil(page.total / page.size));
+    if (page.index > pages) { page.index = pages; return load(); }
     clear(tableBody);
     if (!data.items?.length) {
       tableBody.append(
@@ -784,7 +795,7 @@ function setupMembers() {
       toast("请先选择一个会话", "error");
       return;
     }
-    if (!confirm(`重置 ${scope} 全部成员今天的抽取次数？`)) return;
+    if (!(await confirmAction({ title: "重置今日次数？", message: `重置 ${scope} 全部成员今天的抽取次数，收藏和星尘保留。`, confirmLabel: "重置今日次数" }))) return;
     try {
       const result = await apiPost("/sessions/reset", { scope });
       toast(`已重置 ${result.changed ?? 0} 位成员`, "success");
@@ -1038,8 +1049,8 @@ function setupSettings() {
     }
   });
 
-  reload.addEventListener("click", () => {
-    if (dirty && !confirm("放弃尚未保存的设置修改？")) return;
+  reload.addEventListener("click", async () => {
+    if (dirty && !(await confirmAction({ title: "放弃尚未保存的修改？", message: "重新读取已保存的设置，当前修改会被丢弃。", confirmLabel: "放弃修改" }))) return;
     load().catch((error) => toast(error.message, "error"));
   });
 
@@ -1048,12 +1059,97 @@ function setupSettings() {
 
 /* ================================================================= 启动 */
 
+function setupSidebar() {
+  const shell = document.getElementById("shell");
+  const nav = document.getElementById("nav");
+  const toggle = document.getElementById("sidebarToggle");
+  const close = document.getElementById("sidebarClose");
+  const backdrop = document.getElementById("sidebarBackdrop");
+  const workspace = document.getElementById("workspace");
+  const actions = document.querySelector(".topbar-actions");
+  const skip = document.querySelector(".skip-link");
+  const mobile = window.matchMedia("(max-width: 780px)");
+  let collapsed = false;
+  let mobileOpen = false;
+  try { collapsed = localStorage.getItem("partner-console-sidebar") === "collapsed"; } catch { /* sandbox storage may be unavailable */ }
+  for (const button of nav.querySelectorAll("button[data-view]")) {
+    const label = button.textContent.trim();
+    button.setAttribute("aria-label", label);
+    button.title = label;
+  }
+  const update = () => {
+    const open = mobile.matches && mobileOpen;
+    const detailOpen = document.body.classList.contains("drawer-open");
+    shell.classList.toggle("sidebar-collapsed", !mobile.matches && collapsed);
+    shell.classList.toggle("mobile-nav-open", mobile.matches && mobileOpen);
+    backdrop.hidden = !mobile.matches || !mobileOpen;
+    document.body.classList.toggle("navigation-open", mobile.matches && mobileOpen);
+    nav.inert = (mobile.matches && !mobileOpen) || detailOpen;
+    workspace.inert = open;
+    actions.inert = open;
+    skip.inert = open;
+    toggle.disabled = detailOpen;
+    if (open) { nav.setAttribute("role", "dialog"); nav.setAttribute("aria-modal", "true"); }
+    else { nav.removeAttribute("role"); nav.removeAttribute("aria-modal"); }
+    if (mobile.matches && !mobileOpen) nav.setAttribute("aria-hidden", "true");
+    else nav.removeAttribute("aria-hidden");
+    const expanded = mobile.matches ? mobileOpen : !collapsed;
+    toggle.setAttribute("aria-expanded", String(expanded));
+    toggle.title = expanded ? "收起导航" : "展开导航";
+    toggle.setAttribute("aria-label", toggle.title);
+  };
+  const closeMobile = (restore = false) => {
+    mobileOpen = false;
+    update();
+    if (restore) toggle.focus({ preventScroll: true });
+  };
+  const focusMobile = () => {
+    if (mobile.matches && mobileOpen) (nav.querySelector("button.active") || close).focus({ preventScroll: true });
+  };
+  nav.addEventListener("transitionend", (event) => {
+    if (event.target === nav && event.propertyName === "transform") focusMobile();
+  });
+  toggle.addEventListener("click", () => {
+    if (document.body.classList.contains("drawer-open")) return;
+    if (mobile.matches) mobileOpen = !mobileOpen;
+    else {
+      collapsed = !collapsed;
+      try { localStorage.setItem("partner-console-sidebar", collapsed ? "collapsed" : "expanded"); } catch { /* keep current state in memory */ }
+    }
+    update();
+    if (mobile.matches && mobileOpen) requestAnimationFrame(focusMobile);
+  });
+  backdrop.addEventListener("click", () => closeMobile(true));
+  close.addEventListener("click", () => closeMobile(true));
+  nav.addEventListener("click", (event) => {
+    if (mobile.matches && event.target.closest("button[data-view]")) {
+      closeMobile();
+      document.getElementById("workspace").focus({ preventScroll: true });
+    }
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && mobileOpen) { event.preventDefault(); closeMobile(true); }
+    if (event.key === "Tab" && mobile.matches && mobileOpen) {
+      const buttons = [...nav.querySelectorAll("button:not(:disabled)")];
+      const first = buttons[0];
+      const last = buttons.at(-1);
+      if (!nav.contains(document.activeElement) || (event.shiftKey ? document.activeElement === first : document.activeElement === last)) {
+        event.preventDefault(); (event.shiftKey ? last : first)?.focus();
+      }
+    }
+  });
+  document.addEventListener("partner-drawer-change", update);
+  mobile.addEventListener("change", () => { mobileOpen = false; update(); });
+  update();
+}
+
 async function boot() {
   paintIcons();
   applyTheme(currentTheme());
-  for (const button of document.querySelectorAll("[data-theme]")) {
+  for (const button of document.querySelectorAll("#themeSwitch button[data-theme]")) {
     button.addEventListener("click", () => applyTheme(button.dataset.theme));
   }
+  setupSidebar();
 
   await ready();
 

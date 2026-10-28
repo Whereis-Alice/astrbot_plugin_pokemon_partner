@@ -84,21 +84,24 @@ BATTLE_RULES = (
 )
 
 
-def build_battle_report(db, row1: dict, row2: dict, level: int, *, seed: int | None = None, detailed: bool = False, champion_line: str = "") -> dict:
+def build_battle_report(db, row1: dict, row2: dict, level: int, *, seed: int | None = None, detailed: bool = False, champion_line: str = "", max_turns: int = 100) -> dict:
     """只模拟一次；图片、合并转发和文本共用同一份结果与开场快照。"""
     seed = secrets.randbelow(2**32) if seed is None else int(seed) % (2**32)
+    if isinstance(max_turns, bool) or not isinstance(max_turns, int) or not 1 <= max_turns <= 100:
+        raise ValueError("回合上限必须是 1–100 的整数。")
     pokemon = [build_battle_pokemon(db, row, level) for row in (row1, row2)]
     snapshots = [
         {"stats": dict(p.stats), "types": list(p.types), "moves_source": p.moves_source}
         for p in pokemon
     ]
-    report = BattleSimulator(db.type_chart(), rng=random.Random(seed)).simulate(*pokemon)
+    report = BattleSimulator(db.type_chart(), rng=random.Random(seed), max_turns=max_turns).simulate(*pokemon)
     for setup, snapshot in zip(report["setup"], snapshots):
         setup.update(snapshot)
     return {
         "row1": dict(row1), "row2": dict(row2), "level": level, "seed": seed,
         "result": report, "champion_line": champion_line, "detailed": detailed,
-        "rules": list(BATTLE_RULES),
+        "max_turns": max_turns,
+        "rules": [*BATTLE_RULES, f"回合上限：{max_turns}回合，双方尚未倒下时判平局。"],
     }
 
 
@@ -139,14 +142,14 @@ def format_battle_report_data(battle: dict) -> str:
         lines.extend(line for turn in turns[:6] for line in turn)
         lines.append(f"……省略中间{len(turns) - 8}回合……")
         lines.extend(line for turn in turns[-2:] for line in turn)
-        lines.append(f"完整复盘：对战 {row1.get('name_zh', '')} {row2.get('name_zh', '')} {level} 详细 种子={seed}")
+        lines.append(f"完整复盘：对战 {row1.get('form_name') or row1.get('name_zh', '')} {row2.get('form_name') or row2.get('name_zh', '')} {level} 详细 种子={seed} 回合={battle.get('max_turns', 100)}")
     return "\n".join(lines)
 
 
-def format_battle_report(db, row1: dict, row2: dict, level: int, *, seed: int | None = None, detailed: bool = False, champion_line: str = "") -> str:
+def format_battle_report(db, row1: dict, row2: dict, level: int, *, seed: int | None = None, detailed: bool = False, champion_line: str = "", max_turns: int = 100) -> str:
     """兼容原文本调用；显示配招效果与默认预览或详细回合。"""
     return format_battle_report_data(build_battle_report(
-        db, row1, row2, level, seed=seed, detailed=detailed, champion_line=champion_line,
+        db, row1, row2, level, seed=seed, detailed=detailed, champion_line=champion_line, max_turns=max_turns,
     ))
 
 
@@ -155,6 +158,34 @@ def parse_battle_options(text: str) -> tuple[bool, int | None]:
     detailed = bool(re.search(r"(?:^|\s)(?:详细|完整)(?:\s|$)", text))
     match = re.search(r"(?:种子|seed)\s*[=:：]\s*(\d{1,10})(?!\d)", text, re.IGNORECASE)
     return detailed, int(match.group(1)) if match else None
+
+
+def parse_battle_max_turns(text: str) -> int:
+    """静态模拟的回合上限使用显式参数，避免与等级或收藏序号混淆。"""
+    tokens = str(text or "").split()
+    limits = []
+    cursor = 0
+    error = "回合上限请填写 1–100，例如：回合=20。"
+    while cursor < len(tokens):
+        token = tokens[cursor]
+        value = None
+        if token in {"回合", "回合=", "回合：", "回合:"}:
+            cursor += 1
+            if cursor >= len(tokens):
+                raise ValueError(error)
+            value = tokens[cursor]
+        elif token.startswith("回合"):
+            value = token[2:].lstrip("=：:")
+        elif token.endswith("回合"):
+            value = token[:-2]
+        if value is not None:
+            if not re.fullmatch(r"[+-]?[0-9]+", value) or not 1 <= int(value) <= 100:
+                raise ValueError(error)
+            limits.append(int(value))
+        cursor += 1
+    if len(limits) > 1:
+        raise ValueError("一次对战只能指定一个回合上限。")
+    return limits[0] if limits else 100
 
 
 def split_battle_text(text: str, limit: int = 1800) -> list[str]:

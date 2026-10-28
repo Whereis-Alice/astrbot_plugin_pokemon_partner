@@ -1,5 +1,5 @@
 /* 精灵球红、纸白与墨色；不加载远程字体或图标。 */
-:root {
+:root, [data-partner-theme="light"], [data-partner-resolved-theme="light"] {
   color-scheme: light;
   --pk-font-sans: "Noto Sans SC", "Microsoft YaHei", system-ui, -apple-system, "Segoe UI", sans-serif;
   --pk-font-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
@@ -15,7 +15,7 @@
   --pk-shadow-sm: 0 2px 3px #24352c03; --pk-shadow-md: 0 10px 26px #24352c0d;
   --pk-hero: #f2edcf; --pk-hero-ink: #343b28; --pk-type-chip-text: #fff;
 }
-[data-partner-theme="dark"] {
+[data-partner-theme="dark"], [data-partner-resolved-theme="dark"] {
   color-scheme: dark;
   --pk-bg: #171e1d; --pk-bg-panel: #202a27; --pk-bg-sunken: #18201e; --pk-bg-hover: #2b3530;
   --pk-border: #35403a; --pk-border-strong: #4e5c53;
@@ -25,7 +25,7 @@
   --pk-shadow-sm: 0 2px 3px #00000012; --pk-shadow-md: 0 10px 26px #00000030;
 }
 @media (prefers-color-scheme: dark) {
-  [data-partner-theme="auto"] {
+  [data-partner-theme="auto"]:not([data-partner-resolved-theme]) {
     color-scheme: dark;
     --pk-bg: #171e1d; --pk-bg-panel: #202a27; --pk-bg-sunken: #18201e; --pk-bg-hover: #2b3530;
     --pk-border: #35403a; --pk-border-strong: #4e5c53;

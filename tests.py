@@ -264,8 +264,8 @@ def test_main_imports():
         "相性",
         "克制",
         "对战",
-        "收藏挑战",
-        "接受对战",
+        "宝可梦挑战",
+        "接收挑战",
         "拒绝对战",
         "取消对战",
         "对战记录",
@@ -291,14 +291,19 @@ def test_main_imports():
         {"抽取宝可梦", "抽宝可梦"} <= set(registered["aliases"]),
         str(registered["aliases"]),
     )
+    check(
+        "宝可梦挑战保留旧指令并兼容自然接受拒绝取消说法",
+        {"收藏挑战", "挑战宝可梦", "接受对战", "接受挑战", "拒绝挑战", "取消挑战"} <= set(registered["aliases"]),
+        str(registered["aliases"]),
+    )
     command_surface = set(registered["commands"]) | set(registered["aliases"])
     collisions = sorted(
         name
         for name in command_surface
-        if name != "宝可梦" and name.startswith("宝可梦")
+        if name not in {"宝可梦", "宝可梦挑战"} and name.startswith("宝可梦")
     )
     check(
-        "除图鉴主指令外没有宝可梦前缀冲突",
+        "除明确挑战指令外没有意外宝可梦前缀",
         not collisions,
         str(collisions),
     )
@@ -1735,22 +1740,28 @@ def test_draw_card_includes_artwork():
 
         a = Image.open(io.BytesIO(with_art)).convert("RGB")
         b = Image.open(io.BytesIO(without_art)).convert("RGB")
-        two_image = Image.open(io.BytesIO(two))
-        five_image = Image.open(io.BytesIO(five))
-        check("单抽卡片尺寸", a.width == 1080 and a.height >= 1100, str(a.size))
-        # 立绘区域应为亮黄色而非背景深蓝
-        pixel = a.getpixel((260, 420))
+        two_image = Image.open(io.BytesIO(two)).convert("RGB")
+        five_image = Image.open(io.BytesIO(five)).convert("RGB")
+        check("单抽卡片尺寸", a.width == 1080 and 1100 <= a.height <= 3200, str(a.size))
+        # 五种卡片构图不同；检测真实贴图色块的面积，避免依赖旧版固定坐标。
+        def artwork_pixels(image):
+            return sum(red > 235 and green > 195 and blue < 55
+                       for red, green, blue in image.getdata())
+
+        artwork_area = artwork_pixels(a)
         check(
             "立绘已绘制到卡片上",
-            pixel[0] > 180 and pixel[1] > 150,
-            str(pixel),
+            artwork_area > 30000,
+            str(artwork_area),
         )
         check(
             "无立绘时使用占位（与有立绘明显不同）",
-            a.getpixel((260, 420)) != b.getpixel((260, 420)),
+            a.size == b.size and artwork_area - artwork_pixels(b) > 30000,
         )
-        check("两抽网格卡片无内容越界", two_image.size == (1080, 770), str(two_image.size))
-        check("五抽网格卡片无内容越界", five_image.size == (1080, 988), str(five_image.size))
+        check("两抽网格保留双方立绘", two_image.width == 1080 and artwork_pixels(two_image) > 30000, str(two_image.size))
+        check("五抽网格按行增加高度并保留立绘",
+              five_image.width == 1080 and two_image.height < five_image.height <= 3200
+              and artwork_pixels(five_image) > artwork_pixels(two_image), str(five_image.size))
 
 
 def test_webui_settings_rollback_and_artwork():

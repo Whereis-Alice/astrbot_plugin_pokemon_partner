@@ -56,7 +56,7 @@ def main():
     short = DrawItem("25", 25, "0025", "皮卡丘", "电", 320, "C", False, True, 0, 1, row)
     image, bounds = render_with_text_bounds(short)
     assert_text_is_separate(image, bounds)
-    assert image.height < 1200, ("短资料仍有大幅留白", image.height)
+    assert image.height < 1400, ("短资料仍有大幅留白", image.height)
 
     long_row = dict(row, category="鼠宝可梦" * 10, abilities="静电、避雷针、发光、同步" * 4,
                     weak_to="地面×2、火×2、冰×2、格斗×2" * 3,
@@ -69,7 +69,7 @@ def main():
     long_image, long_bounds = render_with_text_bounds(long)
     assert_text_is_separate(long_image, long_bounds)
     assert long_image.height > image.height, "长资料未扩展画布"
-    assert long_image.height < 1800, "摘要与进化链未按行数限制"
+    assert long_image.height < 3200, "摘要与进化链未按行数限制"
     assert any("进化：" in text for text, _ in long_bounds), "进化链未绘制"
     assert any(text == "闪光" for text, _ in long_bounds), "闪光标记未绘制"
 
@@ -77,7 +77,16 @@ def main():
     empty_image, empty_bounds = render_with_text_bounds(empty)
     assert_text_is_separate(empty_image, empty_bounds)
     assert any(text == "暂无图鉴摘要" for text, _ in empty_bounds), "缺少资料占位"
-    print(f"3 layouts passed: short={image.height}, long={long_image.height}, empty={empty_image.height}")
+    heights = {}
+    for rarity in ("C", "R", "SR", "SSR"):
+        for fixture in (short, long, empty):
+            candidate = replace(fixture, rarity=rarity, shiny=False)
+            candidate_image, candidate_bounds = render_with_text_bounds(candidate)
+            assert_text_is_separate(candidate_image, candidate_bounds)
+            assert candidate_image.width == 1080
+            assert candidate_image.height < 3200
+            heights[(rarity, fixture.name == short.name, bool(fixture.row))] = candidate_image.height
+    print(f"15 layouts passed: short={image.height}, long={long_image.height}, empty={empty_image.height}; editions={heights}")
 
 
 if __name__ == "__main__":

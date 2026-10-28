@@ -5,15 +5,18 @@ from __future__ import annotations
 import secrets
 import time
 import uuid
+import unicodedata
 from copy import deepcopy
 from typing import Any, Mapping
 
 try:
     from .gacha import GachaError, OwnedPartner
     from .gacha_store import GachaStore
+    from .duel_commands import round_limit
 except ImportError:
     from gacha import GachaError, OwnedPartner
     from gacha_store import GachaStore
+    from duel_commands import round_limit
 
 
 CHALLENGE_TTL = 300
@@ -45,7 +48,7 @@ class OwnedDuelService:
 
     @staticmethod
     def _index(index: int | str) -> int:
-        if isinstance(index, bool) or not str(index).strip().isdigit():
+        if isinstance(index, bool) or not str(index).strip().isdecimal():
             raise GachaError("请使用「我的宝可梦」中的正整数序号。")
         value = int(index)
         if value < 1:
@@ -106,16 +109,49 @@ class OwnedDuelService:
         entries.sort(key=lambda item: (item.partner.dex, item.partner.name))
         return entries
 
+    @staticmethod
+    def _normal_name(value: Any) -> str:
+        return "".join(unicodedata.normalize("NFKC", str(value or "")).casefold().split())
+
+    def _resolve_owned(self, owned: list[OwnedPartner], selection: int | str) -> tuple[int, OwnedPartner]:
+        if isinstance(selection, bool):
+            raise GachaError("请选择自己的宝可梦序号或名字。")
+        text = str(selection).strip()
+        if text.isdecimal():
+            ordinal = self._index(selection)
+            if ordinal > len(owned):
+                raise GachaError(f"没有收藏序号 {ordinal}；也可以直接填写已拥有的宝可梦名字。")
+            return ordinal, owned[ordinal - 1]
+        needle = self._normal_name(text)
+        if not needle:
+            raise GachaError("请填写自己的宝可梦序号或名字。")
+        indexed = []
+        for ordinal, item in enumerate(owned, 1):
+            row = item.partner.row
+            names = {self._normal_name(item.partner.name), *(self._normal_name(row.get(column)) for column in
+                     ("name_zh", "name_en", "name_ja", "name_jp", "form_name"))}
+            names.discard("")
+            indexed.append((ordinal, item, names))
+        # 完整收藏名称最明确，默认形态与特殊形态共用语言别名时优先它。
+        matches = [(ordinal, item) for ordinal, item, _ in indexed if needle == self._normal_name(item.partner.name)]
+        if not matches:
+            matches = [(ordinal, item) for ordinal, item, names in indexed if needle in names]
+        if not matches:
+            matches = [(ordinal, item) for ordinal, item, names in indexed if any(needle in name for name in names)]
+        if not matches:
+            raise GachaError(f"你尚未拥有「{text}」，只能选择自己已抽到的宝可梦。")
+        if len(matches) > 1:
+            choices = "；".join(f"序号 {ordinal} · {item.partner.name}" for ordinal, item in matches[:8])
+            raise GachaError(f"「{text}」对应多个已拥有的宝可梦，请用完整形态名或序号选择：{choices}")
+        return matches[0]
+
     def _selection(self, scope: str, user_id: str, index: int | str, shiny: bool, nickname: str = "") -> dict:
-        ordinal = self._index(index)
         if not isinstance(shiny, bool):
             raise GachaError("闪光选择必须为布尔值。")
         owned = self._owned(scope, user_id)
         if not owned:
             raise GachaError("这位训练家还没有收藏宝可梦，先发送「今日宝可梦」吧。")
-        if ordinal > len(owned):
-            raise GachaError(f"没有收藏序号 {ordinal}，请先查看「我的宝可梦」。")
-        selected = owned[ordinal - 1]
+        ordinal, selected = self._resolve_owned(owned, index)
         if shiny and selected.shiny_count < 1:
             raise GachaError("你还没有这只宝可梦的闪光个体，不能选择闪光。")
         use_shiny = shiny or selected.normal_count < 1
@@ -150,11 +186,12 @@ class OwnedDuelService:
 
     def challenge(self, scope: str, challenger_id: str, target_id: str, index: int | str, *,
                   challenger_name: str = "", target_name: str = "", shiny: bool = False,
-                  now: float | None = None) -> dict:
+                  max_turns: int = 50, now: float | None = None) -> dict:
         scope, challenger_id, target_id = self._scope(scope), self._user(challenger_id), self._user(target_id)
         if challenger_id == target_id:
             raise GachaError("不能向自己发起挑战，请 @ 一位群友。")
         timestamp = self._now(now)
+        max_turns = round_limit(max_turns)
         with self.store._transaction():
             # 所有验证通过才创建挑战，失败不会消耗收藏、星尘或战绩。
             challenger = self._selection(scope, challenger_id, index, shiny, challenger_name)
@@ -170,7 +207,8 @@ class OwnedDuelService:
             match_id = uuid.uuid4().hex
             match = {
                 "match_id": match_id, "status": "waiting", "challenger": challenger, "target": target,
-                "seed": secrets.randbits(32), "level": 50, "created_at": timestamp, "expires_at": timestamp + CHALLENGE_TTL,
+                "seed": secrets.randbits(32), "level": 50, "max_turns": max_turns,
+                "created_at": timestamp, "expires_at": timestamp + CHALLENGE_TTL,
             }
             data["pending"][match_id] = match
             self.store._save()
@@ -220,7 +258,7 @@ class OwnedDuelService:
             if winner != "平局" and winner not in labels:
                 raise GachaError("对战胜者与双方快照不一致，未记录战绩。")
             turns = result.get("turns")
-            if isinstance(turns, bool) or not isinstance(turns, int) or turns < 0:
+            if isinstance(turns, bool) or not isinstance(turns, int) or not 0 <= turns <= match.get("max_turns", 50):
                 raise GachaError("对战回合数无效，未记录战绩。")
             winner_id = "" if winner == "平局" else match[("challenger", "target")[labels.index(winner)]]["user_id"]
             for side in ("challenger", "target"):
@@ -234,6 +272,7 @@ class OwnedDuelService:
             record = {
                 "match_id": match["match_id"], "seed": match["seed"], "completed_at": timestamp,
                 "level": match.get("level", 50),
+                "max_turns": match.get("max_turns", 50),
                 "challenger": deepcopy(match["challenger"]), "target": deepcopy(match["target"]),
                 "winner_id": winner_id, "winner": winner, "turns": turns,
                 "reason": str(result.get("reason") or "")[:120],

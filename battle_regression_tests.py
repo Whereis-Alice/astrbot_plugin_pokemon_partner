@@ -5,7 +5,7 @@ import unittest
 from unittest.mock import patch
 
 from battle_engine import BattleMove, BattlePokemon, BattleSimulator, make_move, move_effect_text
-from battle_report import build_battle_pokemon, build_battle_report, format_battle_report, format_battle_report_data, parse_battle_options, split_battle_text
+from battle_report import build_battle_pokemon, build_battle_report, format_battle_report, format_battle_report_data, parse_battle_options, parse_battle_max_turns, split_battle_text
 from pokedex_db import PokedexDB
 
 
@@ -283,6 +283,26 @@ class BattleRulesTests(unittest.TestCase):
         expected = format_battle_report(self.db, row1, row2, 50, seed=7, detailed=True)
         with patch.object(BattleSimulator, "simulate", side_effect=AssertionError("must reuse snapshot")):
             self.assertEqual(format_battle_report_data(battle), expected)
+
+    def test_configured_turn_limit_is_enforced_and_disclosed(self):
+        row = self.db.pokemon("梦幻")
+        report = build_battle_report(self.db, row, row, 50, seed=7, max_turns=1)
+        self.assertEqual(report["result"]["turns"], 1)
+        self.assertEqual(report["result"]["winner"], "平局")
+        self.assertIn("回合上限：1回合", format_battle_report_data(report))
+        self.assertEqual(parse_battle_max_turns("对战 梦幻 梦幻 50 回合=20"), 20)
+        self.assertEqual(parse_battle_max_turns("对战 梦幻 梦幻 50 20回合"), 20)
+        self.assertEqual(parse_battle_max_turns("对战 梦幻 梦幻 80 回合 20"), 20)
+        self.assertEqual(parse_battle_max_turns("对战 梦幻 梦幻"), 100)
+        for invalid in (0, 101, True, "20"):
+            with self.assertRaises(ValueError):
+                build_battle_report(self.db, row, row, 50, max_turns=invalid)
+
+    def test_turn_limit_rejects_malformed_or_repeated_parameters(self):
+        for suffix in ("回合=abc", "回合=-1", "1.5回合", "回合", "回合=abc 20回合",
+                       "回合=20 回合=30", "20回合 30回合"):
+            with self.subTest(suffix=suffix), self.assertRaises(ValueError):
+                parse_battle_max_turns("对战 梦幻 梦幻 50 " + suffix)
 
 
 if __name__ == "__main__":

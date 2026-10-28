@@ -17,6 +17,11 @@ export async function ready() {
     throw new Error("请从 AstrBot Dashboard 的插件页面打开此管理台。");
   }
   context = (await bridge.ready()) ?? {};
+  applyTheme(currentTheme(), false);
+  bridge.onContext?.((next) => {
+    context = { ...context, ...next };
+    applyTheme(currentTheme(), false);
+  });
   return context;
 }
 
@@ -77,6 +82,8 @@ const ICONS = {
     '<path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7" fill="none" stroke="black" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/>',
   x:
     '<path d="M6 6l12 12M18 6 6 18" fill="none" stroke="black" stroke-width="2" stroke-linecap="round"/>',
+  panel:
+    '<rect x="3" y="4" width="18" height="16" rx="3" fill="none" stroke="black" stroke-width="1.8"/><path d="M9 4v16m5-11 3 3-3 3" fill="none" stroke="black" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>',
 };
 
 export function paintIcons(root = document) {
@@ -199,27 +206,78 @@ export function toast(message, kind = "info", timeout = 3200) {
 /* --------------------------------------------------------------- 主题 */
 
 const THEME_KEY = "partner-console-theme";
+let selectedTheme = null;
+const colorPreference = window.matchMedia?.("(prefers-color-scheme: dark)");
+colorPreference?.addEventListener("change", () => applyTheme(currentTheme(), false));
 
 export function currentTheme() {
+  if (selectedTheme !== null) return selectedTheme;
   try {
-    return localStorage.getItem(THEME_KEY) || "auto";
+    const saved = localStorage.getItem(THEME_KEY);
+    return ["auto", "light", "dark"].includes(saved) ? saved : "auto";
   } catch {
     return "auto";
   }
 }
 
-export function applyTheme(theme) {
+export function applyTheme(theme, persist = true) {
   const value = ["auto", "light", "dark"].includes(theme) ? theme : "auto";
+  selectedTheme = value;
+  const resolved = value === "auto" ? ((context?.isDark ?? colorPreference?.matches) ? "dark" : "light") : value;
   document.documentElement.dataset.partnerTheme = value;
   if (document.body) document.body.dataset.partnerTheme = value;
+  document.documentElement.dataset.partnerResolvedTheme = resolved;
+  if (document.body) document.body.dataset.partnerResolvedTheme = resolved;
   document.documentElement.style.colorScheme =
-    value === "auto" ? "light dark" : value;
-  for (const button of document.querySelectorAll("[data-theme]")) {
+    resolved;
+  for (const button of document.querySelectorAll("#themeSwitch button[data-theme]")) {
     button.setAttribute("aria-pressed", String(button.dataset.theme === value));
   }
   try {
-    localStorage.setItem(THEME_KEY, value);
+    if (persist) localStorage.setItem(THEME_KEY, value);
   } catch {
     /* localStorage 不可用时忽略 */
   }
+}
+
+/* HTML confirmation works in Dashboard's iframe without allow-modals. */
+let confirmationActive = false;
+export function confirmAction({ title = "确认操作", message, confirmLabel = "确认", danger = false }) {
+  if (confirmationActive) return Promise.resolve(false);
+  confirmationActive = true;
+  return new Promise((resolve) => {
+    const previous = document.activeElement;
+    const shell = document.getElementById("shell");
+    const wasInert = shell?.inert;
+    const cancel = el("button", { type: "button", class: "button ghost confirmation-cancel", text: "取消" });
+    const confirm = el("button", { type: "button", class: `button ${danger ? "danger" : "primary"} confirmation-confirm`, text: confirmLabel });
+    const panel = el("div", { class: "confirmation-panel", role: "dialog", "aria-modal": "true", "aria-labelledby": "confirmationTitle", "aria-describedby": "confirmationMessage" }, [
+      el("span", { class: "eyebrow", text: danger ? "TRAINER DATA / 数据管理" : "RESEARCH STATION / 研究终端" }),
+      el("h2", { id: "confirmationTitle", text: title }),
+      el("p", { id: "confirmationMessage", text: message }),
+      el("div", { class: "confirmation-actions" }, [cancel, confirm]),
+    ]);
+    const overlay = el("div", { class: "confirmation-overlay" }, [panel]);
+    const finish = (approved) => {
+      overlay.remove();
+      if (shell) shell.inert = Boolean(wasInert);
+      document.body.classList.remove("confirmation-open");
+      confirmationActive = false;
+      (previous?.isConnected ? previous : document.getElementById("workspace"))?.focus({ preventScroll: true });
+      resolve(approved);
+    };
+    cancel.addEventListener("click", () => finish(false));
+    confirm.addEventListener("click", () => finish(true));
+    overlay.addEventListener("click", (event) => { if (event.target === overlay) finish(false); });
+    panel.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") { event.preventDefault(); finish(false); }
+      if (event.key === "Tab" && (event.shiftKey ? document.activeElement === cancel : document.activeElement === confirm)) {
+        event.preventDefault(); (event.shiftKey ? confirm : cancel).focus();
+      }
+    });
+    document.body.append(overlay);
+    document.body.classList.add("confirmation-open");
+    if (shell) shell.inert = true;
+    cancel.focus();
+  });
 }

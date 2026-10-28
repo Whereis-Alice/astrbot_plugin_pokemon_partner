@@ -36,7 +36,7 @@ from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, register
 
 try:
-    from .battle_report import build_battle_pokemon, build_battle_report, format_battle_report, format_battle_report_data, parse_battle_options, split_battle_text
+    from .battle_report import build_battle_pokemon, build_battle_report, format_battle_report, format_battle_report_data, parse_battle_options, parse_battle_max_turns, split_battle_text
     from .battle_engine import (
         NATURES,
         STAT_KEYS,
@@ -67,7 +67,7 @@ try:
     from .webui import PokemonPartnerWebUI
     from .wishmaker_card import build_wishmaker_markdown
 except ImportError:  # 兼容以普通模块方式加载插件
-    from battle_report import build_battle_pokemon, build_battle_report, format_battle_report, format_battle_report_data, parse_battle_options, split_battle_text
+    from battle_report import build_battle_pokemon, build_battle_report, format_battle_report, format_battle_report_data, parse_battle_options, parse_battle_max_turns, split_battle_text
     from battle_engine import (
         NATURES,
         STAT_KEYS,
@@ -195,7 +195,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.2.2",
+    "v1.2.3",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -524,7 +524,7 @@ class PokemonPartnerPlugin(Star):
             + (f"｜闪光×{item.shiny_count}" if item.shiny_count else "")
             for index, item in enumerate(chunk, 1)
         ]
-        lines.append("按收藏序号选择：收藏挑战 @群友 <序号>；闪光需追加「闪光」。")
+        lines.append("直接选择序号或名字：宝可梦挑战 <序号/名字> @群友 [回合]；闪光可追加「闪光」。")
         yield event.plain_result("\n".join(lines))
 
     @filter.command("收集资料", alias={"图鉴资料", "我的资料"})
@@ -828,8 +828,8 @@ class PokemonPartnerPlugin(Star):
             "相性 <属性1> [属性2]｜相性 打 <属性> — 属性相性\n"
             "克制 <宝可梦>｜克制 <A> <B> — 克制推荐与对比\n"
             "对战 <A> <B> [等级] [详细] [种子=123] — 招式效果与逐回合复盘\n"
-            "收藏挑战 @群友 <收藏序号> [闪光] — 用自己的收藏邀请对战\n"
-            "接受对战 <自己的序号>｜拒绝对战｜取消对战 — 群内挑战\n"
+            "宝可梦挑战 <序号/名字> @群友 [回合] — 用已持有的宝可梦邀请对战\n"
+            "接收挑战 <自己的序号/名字>｜拒绝挑战｜取消挑战 — 群内挑战\n"
             "对战记录 [@群友]｜对战排行 — 收藏对战胜负与群榜\n"
             "队伍分析 <名称...> — 队伍弱点分析\n"
             "筛选 <条件> — 按种族值筛选\n"
@@ -1570,10 +1570,10 @@ class PokemonPartnerPlugin(Star):
         name2: str = "",
         level: str = "50",
     ):
-        """模拟对战；可追加「详细 种子=123」及「卡片/转发/文本」。"""
+        """模拟对战；可追加「详细 种子=123 回合=20」及「卡片/转发/文本」。"""
         if not name1 or not name2:
             yield event.plain_result(
-                "用法：对战 <名称1> <名称2> [等级] [详细] [种子=123] [卡片/转发/文本]，如：对战 皮卡丘 喷火龙 50 详细 卡片"
+                "用法：对战 <名称1> <名称2> [等级] [详细] [种子=123] [回合=20] [卡片/转发/文本]，如：对战 皮卡丘 喷火龙 50 详细 卡片"
             )
             return
         row1, row2 = self.db.pokemon(name1), self.db.pokemon(name2)
@@ -1584,9 +1584,14 @@ class PokemonPartnerPlugin(Star):
         level_i = self._parse_clamped_int(level, 50, 1, 100)
         raw = str(getattr(event, "message_str", "") or "")
         detailed, seed = parse_battle_options(raw)
+        try:
+            max_turns = parse_battle_max_turns(raw)
+        except ValueError as exc:
+            yield event.plain_result(str(exc))
+            return
         battle = await asyncio.to_thread(
             build_battle_report, self.db, row1, row2, level_i, seed=seed, detailed=detailed,
-            champion_line=self._champ_ranks_line([row1, row2]),
+            champion_line=self._champ_ranks_line([row1, row2]), max_turns=max_turns,
         )
         async for result in self._send_battle_report(event, battle, mode=self._battle_output_mode(raw)):
             yield result
@@ -1613,33 +1618,29 @@ class PokemonPartnerPlugin(Star):
         return targets
 
     @staticmethod
-    def _duel_index(raw: str) -> str:
-        numbers = re.findall(r"(?:^|\s)([0-9]+)(?=\s|$)", raw)
-        if not numbers:
-            raise GachaError("请填写「我的宝可梦」中的收藏序号，例如：接受对战 1。")
-        return numbers[-1]
+    def _duel_raw(event: AstrMessageEvent) -> str:
+        """优先组合文字组件，QQ 插入 @ 前后未加空格也不会连到宝可梦名字。"""
+        messages = getattr(getattr(event, "message_obj", None), "message", []) or []
+        parts = [message.text for message in messages if isinstance(message, Comp.Plain)]
+        text = " ".join(part for part in parts if isinstance(part, str) and part.strip())
+        commands = ("宝可梦挑战", "收藏挑战", "挑战宝可梦", "接收挑战", "接受对战", "接受挑战")
+        return text if any(command in text for command in commands) else str(getattr(event, "message_str", "") or "")
 
-    @filter.command("收藏挑战", alias={"挑战宝可梦"})
+    @filter.command("宝可梦挑战", alias={"收藏挑战", "挑战宝可梦"})
     async def cmd_owned_challenge(self, event: AstrMessageEvent, keyword: str = ""):
-        """收藏挑战 @群友 <收藏序号> [闪光]，等待对方选择并接受。"""
+        """宝可梦挑战 <自己的序号或名字> @群友 [回合] [闪光]。"""
         try:
+            try:
+                from .duel_commands import parse_challenge
+            except ImportError:
+                from duel_commands import parse_challenge
             duels, scope, user_id, nickname = self._owned_duel_context(event)
-            raw = str(getattr(event, "message_str", "") or "")
-            mentions = self._duel_mentions(event)
-            if len(mentions) > 1:
-                raise GachaError("一次只能向一位群友发起挑战。")
-            if mentions:
-                target_id, target_name = mentions[0]
-            else:
-                # 兼容不能传递 @ 组件的平台：显式用户 ID 加收藏序号。
-                found = re.search(r"(?:收藏挑战|挑战宝可梦)\s+@?([0-9]+)\s+[0-9]+(?:\s|$)", raw)
-                if not found:
-                    raise GachaError("用法：收藏挑战 @群友 <我的收藏序号> [闪光]。先发送「我的宝可梦」查看序号。")
-                target_id, target_name = found.group(1), ""
+            raw = self._duel_raw(event)
+            request = parse_challenge(raw, self._duel_mentions(event), bot_id=str(event.get_self_id() or ""))
             match = await asyncio.to_thread(
-                duels.challenge, scope, user_id, target_id, self._duel_index(raw),
-                challenger_name=nickname, target_name=target_name,
-                shiny=bool(re.search(r"(?:^|\s)闪光(?=\s|$)", raw)),
+                duels.challenge, scope, user_id, request.target_id, request.selection,
+                challenger_name=nickname, target_name=request.target_name,
+                shiny=request.shiny, max_turns=request.max_turns,
             )
         except GachaError as exc:
             yield event.plain_result(str(exc))
@@ -1650,35 +1651,40 @@ class PokemonPartnerPlugin(Star):
             return
         chosen = match["challenger"]
         text = (
-            f"【收藏挑战】{chosen['nickname']} 发起 Lv.50 收藏对战\n"
+            f"【宝可梦挑战】{chosen['nickname']} 发起 Lv.50 收藏对战 · 最多 {match['max_turns']} 回合\n"
             f"出战：序号 {chosen['index']} · {chosen['name']}{' · 闪光' if chosen['shiny'] else ''}\n"
-            "请在 5 分钟内发送「接受对战 <自己的收藏序号> [闪光]」，或「拒绝对战」。\n"
-            "先用「我的宝可梦」查看序号；对局不消耗宝可梦和星尘。发起者可发送「取消对战」。"
+            "直接发送「接收挑战 <自己的序号或名字> [闪光]」即可开战，或「拒绝挑战」。\n"
+            "挑战 5 分钟内有效；达到回合上限仍未分胜负判平局。对局不消耗宝可梦和星尘，可用「取消挑战」撤回。"
         )
         yield event.chain_result([Comp.At(qq=match["target"]["user_id"]), Comp.Plain(text)])
 
-    @filter.command("接受对战")
+    @filter.command("接收挑战", alias={"接受对战", "接受挑战"})
     async def cmd_owned_accept(self, event: AstrMessageEvent, keyword: str = ""):
-        """接受对战 <自己的收藏序号> [闪光] [详细] [卡片/转发/文本]。"""
+        """接收挑战 <自己的序号或名字> [闪光] [详细] [卡片/转发/文本]。"""
         match = None
         try:
+            try:
+                from .duel_commands import parse_accept
+            except ImportError:
+                from duel_commands import parse_accept
             duels, scope, user_id, nickname = self._owned_duel_context(event)
-            raw = str(getattr(event, "message_str", "") or "")
+            raw = self._duel_raw(event)
+            request = parse_accept(raw)
             match = await asyncio.to_thread(
-                duels.accept, scope, user_id, self._duel_index(raw), nickname=nickname,
-                shiny=bool(re.search(r"(?:^|\s)闪光(?=\s|$)", raw)),
+                duels.accept, scope, user_id, request.selection, nickname=nickname,
+                shiny=request.shiny,
             )
             detailed, _ = parse_battle_options(raw)
             battle = await asyncio.to_thread(
                 build_battle_report, self.db, match["challenger"]["row"], match["target"]["row"], 50,
-                seed=match["seed"], detailed=detailed,
+                seed=match["seed"], detailed=detailed, max_turns=match.get("max_turns", 50),
             )
             participants = [match["challenger"], match["target"]]
             battle["trainer_names"] = [side["nickname"] for side in participants]
             battle["owned_items"] = participants
             battle["duel_id"] = match["match_id"]
             await asyncio.to_thread(duels.complete, scope, match["match_id"], battle["result"])
-            battle["champion_line"] = "收藏对战 · 战绩已保存 · 对战记录可查询胜负与复盘种子"
+            battle["champion_line"] = f"收藏对战 · 最多 {match.get('max_turns', 50)} 回合 · 战绩已保存 · 对战记录可查询"
         except Exception as exc:
             if match is not None:
                 try:
@@ -1689,7 +1695,7 @@ class PokemonPartnerPlugin(Star):
                 logger.error(f"[{PLUGIN_ID}] 收藏对战失败: {exc}")
             yield event.plain_result(str(exc) if isinstance(exc, GachaError) else "对战暂时无法完成，本次未计入战绩，请重新挑战。")
             return
-        async for result in self._send_battle_report(event, battle):
+        async for result in self._send_battle_report(event, battle, mode=self._battle_output_mode(raw)):
             yield result
 
     async def _withdraw_owned_duel(self, event: AstrMessageEvent, *, reject: bool):
@@ -1705,13 +1711,13 @@ class PokemonPartnerPlugin(Star):
             return
         yield event.plain_result(f"已{'拒绝' if reject else '取消'} {match['challenger']['nickname']} 发起的挑战，未计入战绩。")
 
-    @filter.command("拒绝对战")
+    @filter.command("拒绝对战", alias={"拒绝挑战"})
     async def cmd_owned_reject(self, event: AstrMessageEvent):
         """拒绝等待自己接受的收藏挑战，不计入战绩。"""
         async for result in self._withdraw_owned_duel(event, reject=True):
             yield result
 
-    @filter.command("取消对战")
+    @filter.command("取消对战", alias={"取消挑战"})
     async def cmd_owned_cancel(self, event: AstrMessageEvent):
         """取消自己发起的收藏挑战，不计入战绩。"""
         async for result in self._withdraw_owned_duel(event, reject=False):
@@ -1746,7 +1752,7 @@ class PokemonPartnerPlugin(Star):
             verdict = "平局" if not record["winner_id"] else "胜" if record["winner_id"] == user_id else "负"
             lines.append(f"{verdict} · {a['nickname']}的{a['name']} vs {b['nickname']}的{b['name']} · {record['turns']}回合 · 种子={record['seed']}")
         if not records:
-            lines.append("暂无对战记录。发送「收藏挑战 @群友 <收藏序号>」开始第一场。")
+            lines.append("暂无对战记录。发送「宝可梦挑战 <序号或名字> @群友 [回合]」开始第一场。")
         else:
             lines.append("以上为最近五场；3分/胜、1分/平。对战排行查看本群榜单。")
         for part in split_battle_text("\n".join(lines)):

@@ -41,7 +41,7 @@
         </div>
 
         <nav class="nav" id="nav" aria-label="管理台导航">
-          <span class="nav-label">研究终端</span>
+          <div class="nav-heading"><span class="nav-label">研究终端</span><button class="icon-button sidebar-close" id="sidebarClose" type="button" aria-label="关闭导航"><i data-icon="x"></i></button></div>
           <button class="nav-item" type="button" data-view="overview">
             <i data-icon="gauge"></i><span>概览</span>
           </button>
@@ -72,8 +72,9 @@
         </div>
       </header>
 
+      <button class="sidebar-backdrop" id="sidebarBackdrop" type="button" aria-label="关闭导航" hidden></button>
       <main class="workspace" id="workspace" tabindex="-1">
-        <div class="workspace-bar"><span>TRAINER RESEARCH / <strong id="viewBreadcrumb">总览</strong></span><span class="edition">POKÉDEX TERMINAL <b>01</b></span></div>
+        <div class="workspace-bar"><button class="icon-button sidebar-toggle" id="sidebarToggle" type="button" aria-label="收起导航" aria-controls="nav" aria-expanded="true"><i data-icon="panel"></i></button><span class="workspace-label">TRAINER RESEARCH / <strong id="viewBreadcrumb">总览</strong></span><span class="edition">POKÉDEX TERMINAL <b>01</b></span></div>
         <div class="page-notice" id="pageNotice" role="alert" hidden></div>
         <!-- ============================ 概览 ============================ -->
         <section class="view" data-panel="overview" hidden>

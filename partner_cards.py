@@ -592,41 +592,16 @@ def render_draw_card(
     ssr_pity_after: int,
     image_loader: ImageLoader | None = None,
 ) -> bytes:
-    """抽卡结果卡片：以宝可梦立绘为视觉主体。
-
-    单个结果用大图展示（立绘 + 名字 + 属性 + 稀有度），多个结果用网格。
-    图片缺失时用同尺寸占位，版式不会塌。
-    """
-    if not items:
-        raise ValueError("抽卡卡片至少需要一个结果")
-    count = len(items)
-    if count == 1:
-        measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-        hero_layout = _hero_layout(measure, items[0])
-        height = hero_layout.height
-    else:
-        columns, rows, card_h = _grid_layout(count)
-        height = 214 + rows * card_h + (rows - 1) * 18 + 96
-    base = _gradient((W, height)).convert("RGBA")
-    draw = ImageDraw.Draw(base)
-    _starfield(draw, W, height)
-    _frame(draw, height)
-    _draw_draw_header(draw, nickname, remaining, daily_limit, dust, pity_ssr, ssr_pity_after)
-
-    if count == 1:
-        _draw_hero_result(base, draw, items[0], image_loader, hero_layout)
-    else:
-        columns, _rows, _card_h = _grid_layout(count)
-        _draw_result_grid(base, draw, items, image_loader, columns=columns, top=214)
-
-    foot_font = _font(21)
-    draw.text(
-        (PAD + 4, height - 62),
-        "重复宝可梦自动折算星尘 · 兑换宝可梦 <名称> 可定向获得",
-        font=foot_font,
-        fill=SUBTEXT,
+    """按稀有度与闪光使用独立构图，收藏和训练家卡片保留原有接口。"""
+    try:
+        from .rarity_cards import render_rarity_draw
+    except ImportError:
+        from rarity_cards import render_rarity_draw
+    return render_rarity_draw(
+        items, nickname=nickname, remaining=remaining, daily_limit=daily_limit,
+        dust=dust, pity_ssr=pity_ssr, ssr_pity_after=ssr_pity_after,
+        image_loader=image_loader,
     )
-    return _encode(base)
 
 
 def _draw_draw_header(

@@ -13,7 +13,11 @@ from owned_duels import CHALLENGE_TTL, MAX_HISTORY, OwnedDuelService
 
 
 def partner(key, dex, name):
-    return Partner(key, dex, str(dex).zfill(4), name, "电", 320, "C", {"id": str(dex), "name_zh": name, "types": "电"})
+    names = {25: ("皮卡丘", "Pikachu", "ピカチュウ"), 1: ("妙蛙种子", "Bulbasaur", "フシギダネ")}
+    zh, en, ja = names[dex]
+    return Partner(key, dex, str(dex).zfill(4), name, "电", 320, "C",
+                   {"id": str(dex), "name_zh": zh, "name_en": en, "name_ja": ja, "types": "电",
+                    "form_name": name if "form" in key else ""})
 
 
 PARTNERS = (partner("25-form", 25, "皮卡丘形态"), partner("1", 1, "妙蛙种子"), partner("25", 25, "皮卡丘"))
@@ -67,6 +71,67 @@ class OwnedDuelTests(unittest.TestCase):
         self.service.cancel("group:a", "alice", now=1003)
         with self.assertRaises(GachaError):
             self.service.challenge("group:a", "alice", "bob", 1, shiny=True, now=1004)
+
+    def test_full_collection_name_wins_over_shared_form_alias(self):
+        # 两个形态共用中文/英语/日语别名，但完整收藏名「皮卡丘」明确指向默认形态。
+        pending = self.service.challenge("group:a", "alice", "bob", "皮卡丘", now=1000)
+        self.assertEqual((pending["challenger"]["partner_key"], pending["challenger"]["index"]), ("25", 2))
+        accepted = self.service.accept("group:a", "bob", "皮卡丘形态", now=1001)
+        self.assertEqual(accepted["target"]["partner_key"], "25-form")
+        self.assertTrue(accepted["target"]["shiny"])
+
+    def test_owned_language_aliases_work_without_listing_collection_first(self):
+        for name in ("Bulbasaur", "bulbasaur", "ＢＵＬＢＡＳＡＵＲ", "フシギダネ"):
+            with self.subTest(name=name):
+                pending = self.service.challenge("group:a", "alice", "bob", name, now=1000)
+                self.assertEqual(pending["challenger"]["partner_key"], "1")
+                self.service.cancel("group:a", "alice", now=1001)
+
+    def test_decimal_ordinals_accept_fullwidth_without_throwing_on_superscripts(self):
+        pending = self.service.challenge("group:a", "alice", "bob", "２", now=1000)
+        self.assertEqual(pending["challenger"]["partner_key"], "25")
+        self.service.cancel("group:a", "alice", now=1001)
+        with self.assertRaises(GachaError):
+            self.service.challenge("group:a", "alice", "bob", "²", now=1002)
+
+    def test_ambiguous_language_alias_gives_collection_ordinals(self):
+        for name in ("Pikachu", "ピカチュウ", "皮卡"):
+            with self.subTest(name=name), self.assertRaisesRegex(GachaError, "序号 2.*序号 3"):
+                self.service.challenge("group:a", "alice", "bob", name, now=1000)
+        self.assertEqual(self.service.history("group:a"), [])
+
+    def test_unique_partial_name_and_unowned_name_or_shiny(self):
+        pending = self.service.challenge("group:a", "alice", "bob", "形态", now=1000)
+        self.assertEqual(pending["challenger"]["partner_key"], "25-form")
+        self.service.cancel("group:a", "alice", now=1001)
+        with self.assertRaisesRegex(GachaError, "尚未拥有"):
+            self.service.challenge("group:a", "alice", "bob", "火稚鸡", now=1002)
+        with self.assertRaisesRegex(GachaError, "闪光"):
+            self.service.challenge("group:a", "alice", "bob", "妙蛙种子", shiny=True, now=1002)
+
+    def test_round_limit_is_validated_and_frozen_through_history(self):
+        before = self.store.snapshot()
+        for limit in (True, 0, 101, -1, "abc", 1.5):
+            with self.subTest(limit=limit), self.assertRaises(GachaError):
+                self.challenge(max_turns=limit)
+        self.assertEqual(self.store.snapshot(), before)
+        self.assertEqual(self.challenge(max_turns=20)["max_turns"], 20)
+        match = self.service.accept("group:a", "bob", "妙蛙种子", now=1001)
+        self.assertEqual(match["max_turns"], 20)
+        record = self.service.complete("group:a", match["match_id"], self.result(match), now=1002)
+        self.assertEqual(record["max_turns"], 20)
+        self.assertEqual(OwnedDuelService(self.new_store()).history("group:a")[0]["max_turns"], 20)
+
+    def test_result_turns_cannot_exceed_agreed_limit_or_change_stats(self):
+        self.challenge(max_turns=20)
+        match = self.service.accept("group:a", "bob", "妙蛙种子", now=1001)
+        for turns in (21, -1, True, "3", 3.0):
+            result = {**self.result(match), "turns": turns}
+            with self.subTest(turns=turns), self.assertRaisesRegex(GachaError, "回合数"):
+                self.service.complete("group:a", match["match_id"], result, now=1002)
+            self.assertEqual(self.service.profile("group:a", "alice")["total"], 0)
+        self.service.complete("group:a", match["match_id"], {**self.result(match, "draw"), "turns": 20}, now=1003)
+        self.assertEqual(self.service.profile("group:a", "alice")["draws"], 1)
 
     def test_unowned_index_empty_opponent_self_and_private_are_rejected(self):
         for index in (0, -1, 99, True, "1.5", "abc"):
