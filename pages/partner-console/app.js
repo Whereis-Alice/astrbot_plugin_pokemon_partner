@@ -24,6 +24,7 @@ import {
   typeColor,
   typeStyle,
 } from "./js/core.js";
+import { learnsetExplorer } from "./js/learnset.js";
 
 const state = {
   view: "overview",
@@ -289,21 +290,22 @@ function setupDex() {
       grid.append(el("div", { class: "empty-state", text: "没有符合条件的宝可梦。" }));
     }
     for (const item of data.items ?? []) {
+      const itemKey = JSON.stringify([item.id_raw, item.form_name || ""]);
       const card = el(
         "button",
         {
           type: "button",
-          class: `dex-card${selected === item.id_raw ? " selected" : ""}`,
+          class: `dex-card${selected === itemKey ? " selected" : ""}`,
           dataset: { rarity: item.rarity || "C" },
           style: `--dex-type:${typeColor(item.types?.[0])}`,
           "aria-label": `${item.name_zh}${item.form_name ? `（${item.form_name}）` : ""}，打开图鉴详情`,
           onclick: () => {
             lastTrigger = card;
-            selected = item.id_raw;
+            selected = itemKey;
             for (const node of grid.children) node.classList?.remove("selected");
             card.classList.add("selected");
             loadDetail(item).catch((error) => {
-              if (selected !== item.id_raw || detail.hidden) return;
+              if (selected !== itemKey || detail.hidden) return;
               const content = mountDrawer();
               content.append(
                 el("div", { class: "empty-state", text: error.message }),
@@ -362,7 +364,9 @@ function setupDex() {
       [el("i", { "data-icon": "x" })],
     );
     const content = el("div", { class: "drawer-content" });
-    detail.append(close, content);
+    detail.append(el("div", { class: "drawer-toolbar" }, [
+      el("span", { text: "POKÉDEX / 图鉴档案", "aria-hidden": "true" }), close,
+    ]), content);
     paintIcons(detail);
     document.getElementById("nav").inert = true;
     document.getElementById("refreshButton").disabled = true;
@@ -374,16 +378,17 @@ function setupDex() {
     const version = ++detailVersion;
     const content = mountDrawer();
     content.append(el("p", { class: "placeholder", text: "加载中…" }));
-    const data = await api("/dex/detail", { key: item.id_raw });
+    const data = await api("/dex/detail", { key: item.id_raw, form: item.form_name });
     if (version !== detailVersion || detail.hidden) return;
     const row = data.row ?? {};
     clear(content);
-    detail.setAttribute("aria-label", `${row.name_zh || item.name_zh} 图鉴详情`);
+    const displayName = row.form_name || row.name_zh || item.name_zh;
+    detail.setAttribute("aria-label", `${displayName} 图鉴详情`);
 
     content.append(
       el("div", { class: "detail-head" }, [
         el("div", {}, [
-          el("div", { class: "detail-title", text: row.name_zh || item.name_zh }),
+          el("div", { class: "detail-title", text: displayName }),
           el("div", {
             class: "detail-en",
             text: [row.name_en, row.name_ja].filter(Boolean).join(" · "),
@@ -456,52 +461,16 @@ function setupDex() {
     content.append(section("个体档案", [el("div", { class: "detail-data-grid" }, [
       ["身高", row.height], ["体重", row.weight], ["捕获度", row.catch_rate], ["蛋群", row.egg_groups], ["性别比例", row.gender_ratio], ["世代", row.generation ? `第 ${row.generation} 世代` : ""],
     ].map(([label, value]) => el("div", { class: "detail-data" }, [el("span", { text: label }), value ?? "—"]))) ]));
-    content.append(
-      section("进化与基础信息", [
+    if (row.evolution) content.append(
+      section("进化路线", [
         el("div", {
           class: "text-block",
-          text: [
-            `身高 ${row.height || "—"}｜体重 ${row.weight || "—"}`,
-            `捕获度 ${row.catch_rate || "—"}`,
-            `蛋群 ${row.egg_groups || "—"}`,
-            `性别 ${row.gender_ratio || "—"}`,
-            row.evolution ? `进化：${row.evolution}` : "",
-          ]
-            .filter(Boolean)
-            .join("\n"),
+          text: row.evolution,
         }),
       ]),
     );
 
-    const learn = data.learnset ?? {};
-    if (learn.level_up?.length) {
-      content.append(
-        section("升级招式", [
-          el(
-            "div",
-            { class: "move-list" },
-            learn.level_up.map(([name, level]) =>
-              el("span", { class: "move", text: level ? `${name} ${level}` : name }),
-            ),
-          ),
-        ]),
-      );
-    }
-    for (const [label, moves] of [
-      ["招式学习器", learn.machine],
-      ["遗传招式", learn.egg],
-    ]) {
-      if (!moves?.length) continue;
-      content.append(
-        section(label, [
-          el(
-            "div",
-            { class: "move-list" },
-            moves.map((name) => el("span", { class: "move", text: name })),
-          ),
-        ]),
-      );
-    }
+    content.append(section("可学招式", [learnsetExplorer(data)]));
 
     if (data.profile) {
       content.append(section("图鉴描述", [clampedText(data.profile)]));
@@ -542,7 +511,7 @@ function setupDex() {
     if (detail.hidden) return;
     if (event.key === "Escape") closeDetail();
     if (event.key === "Tab") {
-      const focusable = [...detail.querySelectorAll("button:not(:disabled), a[href], input:not(:disabled), [tabindex='0']")];
+      const focusable = [...detail.querySelectorAll("button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex='0']")].filter((node) => node.getClientRects().length);
       const first = focusable[0]; const last = focusable.at(-1);
       if (!first) { event.preventDefault(); detail.focus(); return; }
       if (event.shiftKey && (document.activeElement === first || document.activeElement === detail)) { event.preventDefault(); last.focus(); }

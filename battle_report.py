@@ -83,6 +83,7 @@ def format_battle_report(db, row1: dict, row2: dict, level: int, *, seed: int | 
     report = BattleSimulator(db.type_chart(), rng=random.Random(seed)).simulate(*pokemon)
     lines = [f"【{row1.get('name_zh', '')} vs {row2.get('name_zh', '')}】Lv.{level} 对战 · 种子={seed}",
              "能力：31个体、0努力、中性性格。按先制度→速度行动；同速随机。",
+             "选招：根据对手属性、预计伤害、剩余HP及状态/回复收益选择；收益相同才随机，不预知本回合随机数或对手选招。",
              "规则：本系/属性/暴击、PP、异常状态、能力等级及已登记效果。特性只判定普通特性的属性免疫；吸收/引火增益未模拟。",
              "道具、天气、场地、换人未模拟；未实现的招式效果在配招中标注。"]
     if champion_line:

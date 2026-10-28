@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import io
 import math
+from dataclasses import dataclass
 from typing import Callable, Sequence
 
 from PIL import Image, ImageDraw, ImageFont
@@ -501,6 +502,85 @@ def _grid_layout(count: int) -> tuple[int, int, int]:
     return columns, rows, 460 if columns == 2 else 330
 
 
+@dataclass(frozen=True)
+class _HeroLayout:
+    """单抽页的测量结果，绘制与画布高度共用同一组换行。"""
+
+    height: int
+    name_font: ImageFont.FreeTypeFont
+    name_lines: tuple[str, ...]
+    name_top: int
+    name_step: int
+    type_positions: tuple[tuple[str, int, int], ...]
+    stats_top: int
+    info_top: int
+    info_lines: tuple[tuple[str, int], ...]
+    profile_lines: tuple[str, ...]
+
+
+def _hero_layout(draw: ImageDraw.ImageDraw, item: DrawItem) -> _HeroLayout:
+    """先测量名称和资料，避免长名称相撞或长进化链被底部结果条截断。"""
+    top, x = 214, PAD + 40 + 420 + 48
+    width = W - PAD - 40 - x
+    name_font = _fit_text_font(draw, item.name, width, 54, 30)
+    name_lines = tuple(_limited_wrapped_lines(draw, item.name, name_font, width, 2))
+    name_top, name_step = top + 22 + 64, name_font.size + 10
+    type_y = name_top + len(name_lines) * name_step + 12
+    tx = x
+    type_positions = []
+    for type_name in [t.strip() for t in item.types.split("/") if t.strip()]:
+        pill_width = int(draw.textlength(type_name, font=_font(24))) + 34
+        if tx > x and tx + pill_width - 8 > x + width:
+            tx, type_y = x, type_y + 44
+        type_positions.append((type_name, tx, type_y))
+        tx += pill_width
+    stats_top = type_y + (36 if type_positions else 0) + 52
+    # 六项能力条与总和占用 257px；左侧包含立绘及其编号。
+    stats_bottom = stats_top + (257 if _stat_dict(item) else 34)
+    hero_bottom = max(top + 466 + 30, stats_bottom)
+    info_top = hero_bottom + 76
+
+    left_width = x - (PAD + 40) - 28
+    line_font, line_h = _font(20), 27
+    info_lines: list[tuple[str, int]] = []
+    cursor = 0
+
+    def append_block(text: str, max_lines: int) -> None:
+        nonlocal cursor
+        for line in _limited_wrapped_lines(draw, text, line_font, left_width, max_lines):
+            info_lines.append((line, cursor))
+            cursor += line_h
+
+    for line in _info_lines(item):
+        append_block(line, 2)
+    cursor += 4
+    for line in _matchup_lines(item, line_font):
+        append_block(line, 2)
+    cursor += 4
+    egg_groups = str(item.row.get("egg_groups") or "").strip()
+    gender_ratio = _gender_text(str(item.row.get("gender_ratio") or "").strip())
+    detail = " · ".join(part for part in (
+        f"蛋群：{egg_groups}" if egg_groups else "",
+        f"性别：{gender_ratio}" if gender_ratio else "",
+    ) if part)
+    if detail:
+        append_block(detail, 2)
+        cursor += 4
+    evolution = str(item.row.get("evolution") or "").strip()
+    if evolution:
+        append_block(f"进化：{evolution}", 5)
+    if not info_lines:
+        append_block("暂无基础资料", 1)
+
+    profile = str(item.row.get("profile") or "").strip() or "暂无图鉴摘要"
+    profile_lines = tuple(_limited_wrapped_lines(draw, profile, _font(23), width, 12))
+    content_height = max(cursor, len(profile_lines) * 32)
+    height = max(960, info_top + content_height + 154)
+    return _HeroLayout(height, name_font, name_lines, name_top, name_step,
+                       tuple(type_positions), stats_top, info_top,
+                       tuple(info_lines), profile_lines)
+
+
 def render_draw_card(
     items: Sequence[DrawItem],
     *,
@@ -521,7 +601,9 @@ def render_draw_card(
         raise ValueError("抽卡卡片至少需要一个结果")
     count = len(items)
     if count == 1:
-        height = 1360
+        measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+        hero_layout = _hero_layout(measure, items[0])
+        height = hero_layout.height
     else:
         columns, rows, card_h = _grid_layout(count)
         height = 214 + rows * card_h + (rows - 1) * 18 + 96
@@ -532,7 +614,7 @@ def render_draw_card(
     _draw_draw_header(draw, nickname, remaining, daily_limit, dust, pity_ssr, ssr_pity_after)
 
     if count == 1:
-        _draw_hero_result(base, draw, items[0], image_loader, height)
+        _draw_hero_result(base, draw, items[0], image_loader, hero_layout)
     else:
         columns, _rows, _card_h = _grid_layout(count)
         _draw_result_grid(base, draw, items, image_loader, columns=columns, top=214)
@@ -604,7 +686,7 @@ def _draw_hero_result(
     draw: ImageDraw.ImageDraw,
     item: DrawItem,
     image_loader: ImageLoader | None,
-    height: int,
+    layout: _HeroLayout,
 ) -> None:
     """单抽图鉴页：大立绘、独立能力区、分栏资料与结果条。"""
     top = 214
@@ -629,108 +711,51 @@ def _draw_hero_result(
     badge_y = top + 22
     badge_end = _rarity_badge(draw, (x, badge_y), item.rarity)
     if item.is_new:
-        _pill(draw, (badge_end, badge_y), "NEW", NEW_GREEN)
+        badge_end = _pill(draw, (badge_end, badge_y), "NEW", NEW_GREEN) + 10
     if item.shiny:
-        _pill(draw, (badge_end + (76 if item.is_new else 0), badge_y), "闪光", GOLD)
+        _pill(draw, (badge_end, badge_y), "闪光", GOLD)
 
     # 名字
-    name_font = _fit_text_font(draw, item.name, width, 54, 30)
-    name_lines = _limited_wrapped_lines(draw, item.name, name_font, width, 2)
-    for index, name in enumerate(name_lines):
-        draw.text((x, badge_y + 64 + index * 38), name, font=name_font, fill=TEXT)
+    for index, name in enumerate(layout.name_lines):
+        draw.text((x, layout.name_top + index * layout.name_step), name,
+                  font=layout.name_font, fill=TEXT, anchor="lt")
 
     # 编号 + 属性
-    meta_font = _font(26)
     dex_label = f"#{item.dex_raw}"
     dex_font = _fit_text_font(draw, dex_label, 160, 24, 18)
     draw.text((PAD + 40, top + 466), dex_label, font=dex_font, fill=SUBTEXT)
-    tx = x
-    for type_name in [t.strip() for t in item.types.split("/") if t.strip()]:
-        tx = _type_pill(draw, (tx, badge_y + 136), type_name)
+    for type_name, tx, ty in layout.type_positions:
+        _type_pill(draw, (tx, ty), type_name)
 
     # 种族值
     stats = _stat_dict(item)
     if stats:
-        sy = badge_y + 200
+        sy = layout.stats_top
         draw.text((x, sy - 32), "种族值", font=_font(20), fill=SUBTEXT)
         _stat_bars(draw, x, sy, width - 20, stats, item.bst)
     else:
         draw.text(
-            (x, badge_y + 204),
+            (x, layout.stats_top),
             f"种族值总和 {item.bst}",
             font=_font(26),
             fill=SUBTEXT,
         )
 
-    # 立绘下方严格分成左右两栏：左侧基础资料与完整进化链，右侧图鉴摘要。
-    info_top = top + 562
+    # 立绘下方分成两栏：左侧基础资料与进化摘要，右侧图鉴摘要。
+    info_top = layout.info_top
     left_x = PAD + 40
-    left_width = x - left_x - 28
     line_font = _font(20)
-    line_h = 27
-    cursor = info_top
-    max_bottom = height - 154
     draw.line([PAD + 30, info_top - 61, W - PAD - 30, info_top - 61], fill=LINE, width=2)
     draw.text((left_x, info_top - 40), "宝可梦资料", font=_font(24), fill=TEXT)
 
-    def draw_block(lines: Sequence[str], max_lines: int, gap: int = 0) -> None:
-        nonlocal cursor
-        for line in lines:
-            wrapped = _limited_wrapped_lines(
-                draw, line, line_font, left_width, max_lines
-            )
-            for rendered in wrapped:
-                if cursor + line_h > max_bottom:
-                    return
-                draw.text(
-                    (left_x, cursor),
-                    rendered,
-                    font=line_font,
-                    fill=SUBTEXT,
-                )
-                cursor += line_h
-        cursor += gap
-
-    info = _info_lines(item)
-    for index, line in enumerate(info):
-        draw_block([line], 2 if index == 1 else 1)
-
-    cursor += 4
-    draw_block(_matchup_lines(item, line_font), 2)
-    cursor += 4
-
-    egg_groups = str(item.row.get("egg_groups") or "").strip()
-    gender_ratio = _gender_text(str(item.row.get("gender_ratio") or "").strip())
-    detail = " · ".join(
-        part
-        for part in (
-            f"蛋群：{egg_groups}" if egg_groups else "",
-            f"性别：{gender_ratio}" if gender_ratio else "",
-        )
-        if part
-    )
-    if detail:
-        draw_block([detail], 2, gap=4)
-
-    evolution = str(item.row.get("evolution") or "").strip()
-    if evolution:
-        draw_block([f"进化：{evolution}"], 5)
+    for line, offset in layout.info_lines:
+        draw.text((left_x, info_top + offset), line, font=line_font, fill=SUBTEXT)
 
     # 右侧摘要使用完整半栏宽度，并显著增加可读行数。
-    profile = str(item.row.get("profile") or "").strip()
-    if profile:
-        profile_font = _font(23)
-        profile_lines = _limited_wrapped_lines(
-            draw, profile, profile_font, width, 12
-        )
-        draw.text((x, info_top - 40), "图鉴摘要", font=_font(24), fill=TEXT)
-        for index, line in enumerate(profile_lines):
-            draw.text(
-                (x, info_top + index * 32),
-                line,
-                font=profile_font,
-                fill=SUBTEXT,
-            )
+    profile_font = _font(23)
+    draw.text((x, info_top - 40), "图鉴摘要", font=_font(24), fill=TEXT)
+    for index, line in enumerate(layout.profile_lines):
+        draw.text((x, info_top + index * 32), line, font=profile_font, fill=SUBTEXT)
 
     # 结果说明
     note = (
@@ -740,6 +765,7 @@ def _draw_hero_result(
     )
     note_color = GOLD if not item.is_new else NEW_GREEN
     note_bg = (249, 243, 224) if not item.is_new else (230, 244, 235)
+    height = layout.height
     _round_panel(draw, [PAD + 30, height - 128, W - PAD - 30, height - 80], fill=note_bg, radius=12)
     draw.text(
         (PAD + 48, height - 119),

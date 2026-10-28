@@ -153,6 +153,7 @@ class BattleRulesTests(unittest.TestCase):
     def test_move_registry_does_not_share_mutable_effects(self):
         self.assertIsNone(make_move(self.db.move_index()["勇鸟猛攻"]).status)
         self.assertEqual(make_move(self.db.move_index()["伏特攻击"]).status, "麻痹")
+        self.assertEqual(make_move(self.db.move_index()["暗影球"]).changes, (("target", "特防", -1),))
 
     def test_status_ability_and_powder_immunity(self):
         wave = make_move(self.db.move_index()["电磁波"])
@@ -178,6 +179,84 @@ class BattleRulesTests(unittest.TestCase):
         self.sim._take_turn(p1, p2, explosion)
         self.assertTrue(p1.fainted)
         self.assertEqual(p2.current_hp, 500)
+
+    def test_ai_avoids_immunity_and_useless_full_hp_healing(self):
+        immune = move("一般", power=100)
+        coverage = move("覆盖", power=40)
+        coverage.type = "恶"
+        heal = make_move(self.db.move_index()["自我再生"])
+        p1 = pokemon("甲", immune)
+        p1.moves.extend([coverage, heal])
+        p2 = pokemon("乙", move("撞击"), types=["幽灵"])
+        self.assertIs(self.sim._select_move(p1, p2), coverage)
+        p1.current_hp = 20
+        self.assertIs(self.sim._select_move(p1, p2), heal)
+
+    def test_ai_prefers_usable_status_and_stops_reapplying_it(self):
+        toxic = make_move(self.db.move_index()["剧毒"])
+        hit = move("撞击", power=10)
+        p1 = pokemon("甲", toxic)
+        p1.moves.append(hit)
+        p2 = pokemon("乙", move("撞击"))
+        self.assertIs(self.sim._select_move(p1, p2), toxic)
+        p2.status = "中毒"
+        self.assertIs(self.sim._select_move(p1, p2), hit)
+
+    def test_ai_immune_damage_cannot_apply_secondary_effects(self):
+        bolt = make_move(self.db.move_index()["十万伏特"])
+        bolt.effect_chance = 1
+        p1, p2 = pokemon("甲", bolt), pokemon("乙", move("撞击"), types=["水"])
+        p2.ability = "蓄电"
+        self.assertEqual(self.sim._move_score(p1, p2, bolt)[0], 0)
+        shadow = make_move(self.db.move_index()["暗影球"])
+        p2.types, p2.ability = ["一般"], ""
+        self.assertEqual(self.sim._move_score(p1, p2, shadow)[0], 0)
+
+    def test_ai_drain_estimate_uses_remaining_target_hp(self):
+        drain = move("吸取", power=1000, drain=0.5)
+        p1, p2 = pokemon("甲", drain), pokemon("乙", move("撞击"), hp=1)
+        p1.current_hp = 1
+        score, _reason = self.sim._move_score(p1, p2, drain)
+        self.assertLess(score, 5, "目标仅1HP时不能把几百点过量伤害当作回复收益")
+
+    def test_ai_respects_stage_cap_and_actual_attack_category(self):
+        sword = make_move(self.db.move_index()["剑舞"])
+        hit = move("撞击", power=40)
+        p1 = pokemon("甲", sword)
+        p1.moves.append(hit)
+        p2 = pokemon("乙", move("撞击"))
+        p1.stages["攻击"] = 6
+        self.assertIs(self.sim._select_move(p1, p2), hit)
+        p1.stages["攻击"] = -6
+        self.assertGreater(self.sim._move_score(p1, p2, sword)[0], 0)
+
+    def test_toxic_poison_user_bypasses_accuracy_roll(self):
+        toxic = make_move(self.db.move_index()["剧毒"])
+        toxic.accuracy = 0
+        p1, p2 = pokemon("甲", toxic, types=["毒"]), pokemon("乙", move("撞击"))
+        self.sim._take_turn(p1, p2, toxic)
+        self.assertEqual(p2.status, "剧毒")
+        self.assertIn("毒属性使用者必定命中", move_effect_text(toxic))
+
+    def test_heat_moves_thaw_user_and_can_burn_thawed_target(self):
+        scald = make_move(self.db.move_index()["热水"])
+        scald.effect_chance = 1
+        p1, p2 = pokemon("甲", scald), pokemon("乙", move("撞击"))
+        p1.status = p2.status = "冰冻"
+        self.sim._take_turn(p1, p2, scald)
+        self.assertIsNone(p1.status)
+        self.assertEqual(p2.status, "灼伤")
+        self.assertLess(p2.current_hp, 500)
+        self.assertIn("使用前可解除自身冰冻", move_effect_text(scald))
+
+    def test_ai_same_seed_keeps_selection_and_battle_reproducible(self):
+        def run():
+            p1 = pokemon("甲", move("撞击", power=40))
+            p1.moves.append(move("拍击", power=40))
+            p2 = pokemon("乙", move("撞击"))
+            return BattleSimulator(self.db.type_chart(), random.Random(8), max_turns=3).simulate(p1, p2)
+        self.assertEqual(run(), run())
+        self.assertIn("选择【", "\n".join(run()["log"]))
 
     def test_legal_ordinary_moves_and_report_replay(self):
         row1, row2 = self.db.pokemon("皮卡丘"), self.db.pokemon("喷火龙")

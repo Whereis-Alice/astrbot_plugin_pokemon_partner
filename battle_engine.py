@@ -131,6 +131,8 @@ class BattleMove:
     charge: bool = False
     recharge: bool = False
     self_destruct: bool = False
+    thaws_user: bool = False
+    thaws_target: bool = False
     supported: bool = False
 
 
@@ -191,6 +193,12 @@ _effects("恶之波动/神通力/龙之俯冲", flinch=0.2)
 _effects("日光束/日光刃/飞翔/挖洞/潜水/弹跳", charge=True)
 _effects("破坏光线/终极冲击/爆炸烈焰/加农水炮/疯狂植物/岩石炮/时光咆哮", recharge=True)
 _effects("自爆/大爆炸/薄雾炸裂", self_destruct=True)
+_effects("火焰车", status="灼伤", effect_chance=0.1, thaws_user=True)
+_effects("神圣之火", status="灼伤", effect_chance=0.5, thaws_user=True)
+for _name in ("闪焰冲锋", "热水"):
+    MOVE_EFFECTS[_name]["thaws_user"] = True
+_effects("蒸汽爆炸", status="灼伤", effect_chance=0.3, thaws_user=True, thaws_target=True)
+MOVE_EFFECTS["热水"]["thaws_target"] = True
 
 
 def move_effect_text(move: BattleMove) -> str:
@@ -219,11 +227,17 @@ def move_effect_text(move: BattleMove) -> str:
         parts.append("攻击后下一回合休息")
     if move.self_destruct:
         parts.append("使用后自身倒下")
+    if move.thaws_user:
+        parts.append("使用前可解除自身冰冻")
+    if move.thaws_target:
+        parts.append("命中后解除对手冰冻")
+    if move.name == "剧毒":
+        parts.append("毒属性使用者必定命中")
     if move.name == "羽栖":
         parts.append("飞行属性暂时移除未模拟")
     if move.name in {"光合作用", "月光", "晨光"}:
         parts.append("按无天气回复量结算")
-    if move.name in {"雷电牙", "火焰牙", "冰冻牙", "闪焰冲锋"}:
+    if move.name in {"雷电牙", "火焰牙", "冰冻牙"}:
         parts.append("其余附加效果未模拟")
     if not move.supported and move.description:
         parts.append("仅结算基础伤害；图鉴中的额外效果未模拟" if move.power else "该效果尚未模拟")
@@ -370,12 +384,15 @@ class BattleSimulator:
             start = len(self.log)
             for p in pokemon:
                 p.protected = p.flinched = False
-            moves = {id(p): p.charging or self._select_move(p) for p in pokemon}
+            moves = {
+                id(p1): p1.charging or self._select_move(p1, p2),
+                id(p2): p2.charging or self._select_move(p2, p1),
+            }
             key1 = (moves[id(p1)].priority, p1.effective_speed)
             key2 = (moves[id(p2)].priority, p2.effective_speed)
             first = key1 > key2 or (key1 == key2 and self.rng.random() < 0.5)
             order = pokemon if first else pokemon[::-1]
-            self.log.append(
+            self.log.insert(start,
                 f"第{turns}回合：{self._label(order[0])}先手"
                 f"（先制度{moves[id(order[0])].priority:+d}，速度{order[0].effective_speed}；"
                 f"对手先制度{moves[id(order[1])].priority:+d}，速度{order[1].effective_speed}）"
@@ -436,6 +453,7 @@ class BattleSimulator:
         if attacker.flinched:
             self.log.append(f"{label} 因畏缩无法行动！")
             return
+        move = move or attacker.charging or self._select_move(attacker, defender)
         if attacker.status == "睡眠":
             attacker.status_turns -= 1
             if attacker.status_turns > 0:
@@ -444,15 +462,18 @@ class BattleSimulator:
             attacker.status = None
             self.log.append(f"{label} 醒来了！")
         if attacker.status == "冰冻":
-            if self.rng.random() >= 0.2:
+            if move is not None and move.thaws_user:
+                attacker.status = None
+                self.log.append(f"{label} 使用{move.name}前解除了自身冰冻。")
+            elif self.rng.random() >= 0.2:
                 self.log.append(f"{label} 被冰冻，无法行动！")
                 return
-            attacker.status = None
-            self.log.append(f"{label} 解冻了！")
+            else:
+                attacker.status = None
+                self.log.append(f"{label} 解冻了！")
         if attacker.status == "麻痹" and self.rng.random() < 0.25:
             self.log.append(f"{label} 因麻痹无法行动！")
             return
-        move = move or self._select_move(attacker)
         releasing = attacker.charging is move
         if releasing:
             attacker.charging = None
@@ -471,7 +492,7 @@ class BattleSimulator:
             attacker.protected = success
             self.log.append(f"{label} {'守住了本回合的攻击！' if success else '连续守住失败！'}")
             return
-        if not self._hit(move):
+        if not self._hit(move, attacker):
             self.log.append(f"{label} 的{move.name}没打中（命中率{move.accuracy}%）！")
             if move.self_destruct:
                 self._self_destruct(attacker)
@@ -509,15 +530,122 @@ class BattleSimulator:
         if move.self_destruct:
             self._self_destruct(attacker)
 
-    def _select_move(self, p: BattlePokemon) -> BattleMove:
+    def _status_can_affect(self, move: BattleMove, defender: BattlePokemon) -> bool:
+        if not move.status or defender.status:
+            return False
+        immune_types = STATUS_IMMUNE_TYPES.get("中毒" if move.status == "剧毒" else move.status, set())
+        if set(defender.types) & immune_types or (move.status == "冰冻" and "冰" in defender.types):
+            return False
+        if move.category == "变化":
+            if (move.name.endswith("粉") or move.name == "蘑菇孢子") and "草" in defender.types:
+                return False
+            if move.type == "电" and "地面" in defender.types:
+                return False
+            if move.type and DEFENSIVE_ABILITY_IMMUNITY.get(defender.ability) == move.type:
+                return False
+        return True
+
+    def _expected_damage(self, attacker: BattlePokemon, defender: BattlePokemon, move: BattleMove) -> float:
+        """仅估算已实现的基础伤害，不预知随机数或对手本回合选招。"""
+        if move.category == "变化" or not move.power:
+            return 0.0
+        if move.type and DEFENSIVE_ABILITY_IMMUNITY.get(defender.ability) == move.type:
+            return 0.0
+        eff = self.effectiveness(move.type, defender.types)
+        atk = attacker.effective_stat("攻击" if move.category == "物理" else "特攻")
+        defense = defender.effective_stat("防御" if move.category == "物理" else "特防")
+        damage = ((2 * attacker.level / 5 + 2) * move.power * atk / defense / 50 + 2)
+        damage *= eff * (1.5 if move.type in attacker.types else 1) * 0.925
+        if attacker.status == "灼伤" and move.category == "物理":
+            damage *= 0.5
+        return damage
+
+    def _move_score(self, p: BattlePokemon, defender: BattlePokemon, move: BattleMove) -> tuple[float, str]:
+        chance = 1.0 if move.accuracy is None or (move.name == "剧毒" and "毒" in p.types) else move.accuracy / 100
+        damage = self._expected_damage(p, defender, move)
+        applied_damage = min(damage, defender.current_hp)
+        can_land_effects = move.category == "变化" or damage > 0
+        incoming = max((self._expected_damage(defender, p, m) for m in defender.moves if m.pp > 0), default=0)
+        outgoing = max((self._expected_damage(p, defender, m) for m in p.moves if m.pp > 0), default=0)
+        score = applied_damage * chance
+        reason = f"预计伤害约{damage:.0f}，命中收益{score:.0f}"
+        if move.charge or move.recharge:
+            score *= 0.5
+            reason += "，计入蓄力/休息成本"
+        if damage >= defender.current_hp and not move.charge:
+            # 濒危时先制补刀优先于通常速度较慢的高威力招。
+            faster = move.priority > 0 or (move.priority == 0 and p.effective_speed >= defender.effective_speed)
+            if faster:
+                score += defender.current_hp * 2 * chance
+                reason += "，有望先手结束对战"
+        if move.drain:
+            score += min(p.max_hp - p.current_hp, applied_damage * move.drain) * chance * 0.8
+        if move.recoil:
+            score -= min(p.current_hp, applied_damage * move.recoil) * 0.5
+        if move.self_destruct:
+            score -= p.current_hp + p.max_hp * 0.5
+            reason += "，计入自身倒下成本"
+        if can_land_effects and move.status and self._status_can_affect(move, defender):
+            status_gain = {
+                "睡眠": incoming * 1.8,
+                "冰冻": incoming * 1.8,
+                "麻痹": incoming * (1.0 if p.effective_speed < defender.effective_speed else 0.4),
+                "灼伤": defender.max_hp / 8 + incoming * 0.5,
+                "中毒": defender.max_hp / 4,
+                "剧毒": defender.max_hp * 3 / 8,
+            }.get(move.status, 0)
+            score += status_gain * chance * move.effect_chance
+            if move.category == "变化":
+                reason = f"可施加{move.status}，预计后续收益{score:.0f}"
+        if move.heal:
+            missing = p.max_hp - p.current_hp
+            score += min(missing, p.max_hp * move.heal) * (0.9 if p.hp_pct <= 0.6 else 0.2)
+            reason = f"可回复{min(missing, int(p.max_hp * move.heal))}HP，按当前受伤程度评估"
+        for target, stat, delta in move.changes:
+            if not can_land_effects:
+                continue
+            affected = p if target == "self" else defender
+            stage = affected.stages.get(stat, 0)
+            if (delta > 0 and stage >= 6) or (delta < 0 and stage <= -6):
+                continue
+            attack_stat = stat in {"攻击", "特攻"}
+            source = affected if attack_stat else defender if affected is p else p
+            relevant = any(m.category == ("物理" if stat in {"攻击", "防御"} else "特殊") and m.power for m in source.moves)
+            applied = abs(max(-6, min(6, stage + delta)) - stage)
+            gain = ((outgoing if source is p else incoming) * 0.35 if relevant else 0) * applied
+            if stat == "速度" and p.effective_speed < defender.effective_speed:
+                gain = incoming * 0.7
+            if p.hp_pct < 0.4:
+                gain *= 0.25
+            beneficial = (target == "self" and delta > 0) or (target == "target" and delta < 0)
+            score += gain * move.effect_chance * (1 if beneficial else -1)
+            if move.category == "变化":
+                reason = "按可用招式、能力等级与剩余HP评估强化/削弱收益"
+        if move.protect:
+            residual = defender.max_hp / (8 if defender.status == "中毒" else 16) if defender.status in {"灼伤", "中毒", "剧毒"} else 0
+            score = residual * 1.2 / (3 ** p.protect_streak)
+            reason = "守住可等待对手异常状态损耗" if residual else "本回合守住缺少持续收益"
+        if p.status == "冰冻" and move.thaws_user:
+            score += max(incoming, p.max_hp / 4)
+            reason += "，可解除自身冰冻"
+        return max(0.0, score), reason
+
+    def _select_move(self, p: BattlePokemon, defender: BattlePokemon | None = None) -> BattleMove:
         usable = [m for m in p.moves if m.pp > 0]
         if not usable:
             self.log.append(f"{self._label(p)} 没有可用招式，只能使用挣扎！")
             return STRUGGLE
-        return self.rng.choice(usable)
+        if defender is None:
+            return self.rng.choice(usable)
+        ranked = [(self._move_score(p, defender, m), m) for m in usable]
+        best = max(score for (score, _reason), _move in ranked)
+        candidates = [(reason, m) for (score, reason), m in ranked if abs(score - best) < 1e-9]
+        reason, selected = self.rng.choice(candidates)
+        self.log.append(f"{self._label(p)} 选择【{selected.name}】：{reason}（启发式估算，非胜率预测）。")
+        return selected
 
-    def _hit(self, move: BattleMove) -> bool:
-        return move.accuracy is None or self.rng.random() * 100 < move.accuracy
+    def _hit(self, move: BattleMove, attacker: BattlePokemon | None = None) -> bool:
+        return (move.name == "剧毒" and attacker is not None and "毒" in attacker.types) or move.accuracy is None or self.rng.random() * 100 < move.accuracy
 
     def _apply_status(
         self, move: BattleMove, attacker: BattlePokemon, defender: BattlePokemon
@@ -598,6 +726,9 @@ class BattleSimulator:
             f"（威力{move.power}，属性×{eff:g}，本系×{stab:g}"
             f"{'，灼伤×0.5' if burned else ''}），HP {defender.current_hp}/{defender.max_hp}。"
         )
+        if defender.status == "冰冻" and (move.type == "火" or move.thaws_target) and not defender.fainted:
+            defender.status = None
+            self.log.append(f"{self._label(defender)} 因{move.name}命中解冻。")
         if defender.fainted:
             self.log.append(f"{self._label(defender)} 倒下了！")
         elif move.effect_chance >= 1 or self.rng.random() < move.effect_chance:
@@ -618,9 +749,6 @@ class BattleSimulator:
         if not defender.fainted and move.flinch and self.rng.random() < move.flinch:
             defender.flinched = True
             self.log.append(f"{self._label(defender)} 畏缩了，本回合尚未行动时将无法行动。")
-        if defender.status == "冰冻" and move.type == "火":
-            defender.status = None
-            self.log.append(f"{self._label(defender)} 因火属性攻击解冻。")
         return True
 
     def _status_damage(self, p: BattlePokemon, dmg: int, label: str):

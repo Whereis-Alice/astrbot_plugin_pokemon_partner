@@ -303,7 +303,7 @@ class PokemonPartnerWebUI:
                         "abilities": row.get("abilities") or "",
                     }
                 )
-                source_rows[str(row.get("id_raw") or "")] = row
+                source_rows[(str(row.get("id_raw") or ""), row.get("form_name") or "")] = row
             rows.sort(key=lambda x: (int(x["id"]) if str(x["id"]).isdigit() else 9999))
             total = len(rows)
             start = (page - 1) * size
@@ -311,7 +311,7 @@ class PokemonPartnerWebUI:
 
             def add_thumbnails() -> None:
                 for item in page_rows:
-                    item["artwork"] = self._local_thumbnail(source_rows.get(str(item["id_raw"]), {}))
+                    item["artwork"] = self._local_thumbnail(source_rows.get((str(item["id_raw"]), item["form_name"]), {}))
 
             await asyncio.to_thread(add_thumbnails)
             return _json(
@@ -336,6 +336,9 @@ class PokemonPartnerWebUI:
             if not keyword:
                 return _fail("缺少 key 参数")
             rows = db.query("pokemon", keyword)
+            form_name = _query("form")
+            if form_name:
+                rows = [row for row in rows if row.get("form_name") == form_name]
             if not rows:
                 return _fail(f"没有查到「{keyword}」", 404)
             row = db.pick_best(rows, keyword)
@@ -343,6 +346,36 @@ class PokemonPartnerWebUI:
             stats = dict(parsed[0]) if parsed else {}
             bst = int(parsed[1]) if parsed else 0
             learn = db.learnset(row)
+            move_index = db.move_index()
+            detailed_moves = {
+                info["name_zh"]: info
+                for info in db.table("moves")
+                if info.get("name_zh")
+            }
+            move_names = dict.fromkeys(
+                name for entries in learn.values() for name, _ in entries
+            )
+            move_details = {
+                name: {
+                    key: (
+                        move_index.get(name, {}).get(key)
+                        or detailed_moves.get(name, {}).get(key)
+                        or ""
+                    )
+                    for key in (
+                        "name_en", "type", "category", "power", "accuracy", "pp",
+                        "description", "additional_effect",
+                    )
+                }
+                for name in move_names
+            }
+            # learnset() intentionally falls back to the species' default form.
+            learnset_note = "本地资料中的学习表；招式可用性会随游戏版本变化。"
+            if row.get("form_name") and any(
+                not candidate.get("form_name") and candidate.get("id") == row.get("id")
+                for candidate in db.table("pokemon")
+            ):
+                learnset_note += "此形态沿用同种族默认形态学习表。"
             rules = self._service().store.rules
             artwork = await self._artwork_data_url(row)
             return _json(
@@ -361,6 +394,8 @@ class PokemonPartnerWebUI:
                         "machine": [n for n, _ in learn["machine"]],
                         "egg": [n for n, _ in learn["egg"]],
                     },
+                    "move_details": move_details,
+                    "learnset_note": learnset_note,
                     "profile": row.get("profile") or "",
                     "dex_entries": row.get("dex_entries") or "",
                     "artwork": artwork,

@@ -193,7 +193,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.2.0",
+    "v1.2.1",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -404,6 +404,10 @@ class PokemonPartnerPlugin(Star):
         extra = []
         if notice:
             extra.append(notice)
+        if outcome.capped:
+            extra.append(
+                f"本次请求 {outcome.requested} 次，今日剩余次数只够抽取 {len(outcome.items)} 位。"
+            )
         for reward in outcome.milestones:
             bonus = f"，额外 {reward.bonus} 次" if reward.bonus else ""
             extra.append(
