@@ -870,7 +870,7 @@ def render_collection_card(
     """收藏图鉴：每页 ``page_size`` 个，按全国图鉴编号标记的6列网格。"""
     cols = 6
     rows = max(1, math.ceil(len(owned) / cols))
-    cell_w, cell_h = 158, 196
+    cell_w, cell_h = 158, 240
     grid_top = 174
     height = grid_top + rows * (cell_h + 18) + 104
     base = _gradient((W, height)).convert("RGBA")
@@ -909,7 +909,7 @@ def render_collection_card(
             [x, y, x + cell_w, y + 8], radius=4, fill=color
         )
         art = image_loader(partner.row) if image_loader else None
-        art_box = (x + 38, y + 20, 82, 0)
+        art_box = (x + 34, y + 50, 90, 0)
         if art is None:
             _placeholder_art(draw, art_box, partner.rarity)
         else:
@@ -943,20 +943,21 @@ def render_collection_card(
         for line_index, line in enumerate(lines):
             tw = draw.textlength(line, font=item_name_font)
             draw.text(
-                (x + (cell_w - tw) / 2, y + 108 + line_index * 25),
+                (x + (cell_w - tw) / 2, y + 146 + line_index * 25),
                 line,
                 font=item_name_font,
                 fill=TEXT,
             )
-        footer = f"#{partner.dex_raw}"
+        footer = f"持有×{owned_item.normal_count + owned_item.shiny_count}"
         if shiny:
-            footer += f"  闪光×{owned_item.shiny_count}"
-        footer = _ellipsize(draw, footer, small, cell_w - 12)
-        tw = draw.textlength(footer, font=small)
+            footer += f" · 闪光×{owned_item.shiny_count}"
+        count_font = _fit_text_font(draw, footer, cell_w - 20, 17, 13)
+        footer = _ellipsize(draw, footer, count_font, cell_w - 20)
+        tw = draw.textlength(footer, font=count_font)
         draw.text(
             (x + (cell_w - tw) / 2, y + cell_h - 34),
             footer,
-            font=small,
+            font=count_font,
             fill=GOLD if shiny else SUBTEXT,
         )
 
