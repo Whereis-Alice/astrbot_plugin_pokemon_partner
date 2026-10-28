@@ -872,6 +872,12 @@ function setupRules() {
 
 const SETTINGS_FIELDS = [
   {
+    group: "对战战报",
+    fields: [
+      { key: "battle_output_mode", label: "对战发送方式", type: "select", default: "card", options: [["card", "精美分页卡片"], ["forward", "合并转发（QQ / OneBot）"], ["text", "文本战报"]], hint: "命令末尾可加「卡片 / 转发 / 文本」覆盖本次选择；不支持转发的平台会自动发送文本。" },
+    ],
+  },
+  {
     group: "抽取规则",
     fields: [
       { key: "gacha_enabled", label: "启用宝可梦系统", type: "bool", hint: "关闭后聊天指令会提示未启用" },
@@ -964,6 +970,9 @@ function setupSettings() {
         if (field.type === "bool") {
           input = el("input", { type: "checkbox" });
           input.checked = Boolean(value);
+        } else if (field.type === "select") {
+          input = el("select", {}, field.options.map(([key, label]) => el("option", { value: key, text: label })));
+          input.value = value ?? field.default;
         } else {
           input = el("input", {
             type: field.type === "number" ? "number" : "text",

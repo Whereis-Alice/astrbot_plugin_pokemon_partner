@@ -76,20 +76,49 @@ def build_battle_pokemon(db, row: dict, level: int) -> BattlePokemon:
     return pokemon
 
 
-def format_battle_report(db, row1: dict, row2: dict, level: int, *, seed: int | None = None, detailed: bool = False, champion_line: str = "") -> str:
-    """显示配招和实际效果，默认回合预览，详细模式保留完整事件。"""
+BATTLE_RULES = (
+    "能力：31个体、0努力、中性性格。按先制度→速度行动；同速随机。",
+    "选招：根据对手属性、预计伤害、剩余HP及状态/回复收益选择；收益相同才随机，不预知本回合随机数或对手选招。",
+    "规则：本系/属性/暴击、PP、异常状态、能力等级及已登记效果。特性只判定普通特性的属性免疫；吸收/引火增益未模拟。",
+    "道具、天气、场地、换人未模拟；未实现的招式效果在配招中标注。",
+)
+
+
+def build_battle_report(db, row1: dict, row2: dict, level: int, *, seed: int | None = None, detailed: bool = False, champion_line: str = "") -> dict:
+    """只模拟一次；图片、合并转发和文本共用同一份结果与开场快照。"""
     seed = secrets.randbelow(2**32) if seed is None else int(seed) % (2**32)
     pokemon = [build_battle_pokemon(db, row, level) for row in (row1, row2)]
+    snapshots = [
+        {"stats": dict(p.stats), "types": list(p.types), "moves_source": p.moves_source}
+        for p in pokemon
+    ]
     report = BattleSimulator(db.type_chart(), rng=random.Random(seed)).simulate(*pokemon)
+    for setup, snapshot in zip(report["setup"], snapshots):
+        setup.update(snapshot)
+    return {
+        "row1": dict(row1), "row2": dict(row2), "level": level, "seed": seed,
+        "result": report, "champion_line": champion_line, "detailed": detailed,
+        "rules": list(BATTLE_RULES),
+    }
+
+
+def format_battle_report_data(battle: dict) -> str:
+    """把已有结果格式化为战报，不重新计算对局或消耗随机数。"""
+    row1, row2 = battle["row1"], battle["row2"]
+    level, seed = battle["level"], battle["seed"]
+    report = battle["result"]
+    detailed, champion_line = battle.get("detailed", False), battle.get("champion_line", "")
     lines = [f"【{row1.get('name_zh', '')} vs {row2.get('name_zh', '')}】Lv.{level} 对战 · 种子={seed}",
-             "能力：31个体、0努力、中性性格。按先制度→速度行动；同速随机。",
-             "选招：根据对手属性、预计伤害、剩余HP及状态/回复收益选择；收益相同才随机，不预知本回合随机数或对手选招。",
-             "规则：本系/属性/暴击、PP、异常状态、能力等级及已登记效果。特性只判定普通特性的属性免疫；吸收/引火增益未模拟。",
-             "道具、天气、场地、换人未模拟；未实现的招式效果在配招中标注。"]
+             *battle.get("rules", BATTLE_RULES)]
+    trainers = battle.get("trainer_names") or []
+    if len(trainers) == 2:
+        lines.insert(1, f"收藏对战：{trainers[0]} vs {trainers[1]}")
+    if battle.get("duel_id"):
+        lines.append(f"对局编号：{battle['duel_id'][:8]}")
     if champion_line:
         lines.append(champion_line)
-    for p, setup in zip(pokemon, report["setup"]):
-        lines.append(f"\n{setup['name']}｜特性：{setup['ability'] or '未收录'}｜{p.moves_source}")
+    for setup in report["setup"]:
+        lines.append(f"\n{setup['name']}｜特性：{setup['ability'] or '未收录'}｜{setup.get('moves_source', '演示配招')}")
         if not setup["moves"]:
             lines.append("无可用招式，将使用挣扎（50威力，每次反伤最大HP的1/4）。")
         for move in setup["moves"]:
@@ -112,6 +141,13 @@ def format_battle_report(db, row1: dict, row2: dict, level: int, *, seed: int | 
         lines.extend(line for turn in turns[-2:] for line in turn)
         lines.append(f"完整复盘：对战 {row1.get('name_zh', '')} {row2.get('name_zh', '')} {level} 详细 种子={seed}")
     return "\n".join(lines)
+
+
+def format_battle_report(db, row1: dict, row2: dict, level: int, *, seed: int | None = None, detailed: bool = False, champion_line: str = "") -> str:
+    """兼容原文本调用；显示配招效果与默认预览或详细回合。"""
+    return format_battle_report_data(build_battle_report(
+        db, row1, row2, level, seed=seed, detailed=detailed, champion_line=champion_line,
+    ))
 
 
 def parse_battle_options(text: str) -> tuple[bool, int | None]:

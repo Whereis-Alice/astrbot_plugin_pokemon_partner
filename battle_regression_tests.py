@@ -2,9 +2,10 @@
 
 import random
 import unittest
+from unittest.mock import patch
 
 from battle_engine import BattleMove, BattlePokemon, BattleSimulator, make_move, move_effect_text
-from battle_report import build_battle_pokemon, format_battle_report, parse_battle_options, split_battle_text
+from battle_report import build_battle_pokemon, build_battle_report, format_battle_report, format_battle_report_data, parse_battle_options, split_battle_text
 from pokedex_db import PokedexDB
 
 
@@ -274,6 +275,14 @@ class BattleRulesTests(unittest.TestCase):
         self.assertIn("PP", first)
         self.assertEqual(parse_battle_options("对战 A B 50 详细 种子=123"), (True, 123))
         self.assertTrue(all(len(p) <= 1800 for p in split_battle_text(first)))
+
+    def test_shared_snapshot_does_not_resimulate_when_formatting(self):
+        row1, row2 = self.db.pokemon("皮卡丘"), self.db.pokemon("喷火龙")
+        battle = build_battle_report(self.db, row1, row2, 50, seed=7, detailed=True)
+        self.assertEqual(battle["result"]["setup"][0]["stats"]["HP"], 110)
+        expected = format_battle_report(self.db, row1, row2, 50, seed=7, detailed=True)
+        with patch.object(BattleSimulator, "simulate", side_effect=AssertionError("must reuse snapshot")):
+            self.assertEqual(format_battle_report_data(battle), expected)
 
 
 if __name__ == "__main__":

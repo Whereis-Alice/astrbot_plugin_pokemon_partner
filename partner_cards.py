@@ -939,6 +939,15 @@ def render_collection_card(
             _placeholder_art(draw, art_box, partner.rarity)
         else:
             _paste_art(base, art, art_box)
+        ordinal = (max(1, page) - 1) * page_size + index + 1
+        ordinal_label = f"序号 {ordinal}"
+        ordinal_font = _font(18)
+        ordinal_width = int(draw.textlength(ordinal_label, font=ordinal_font)) + 14
+        draw.rounded_rectangle(
+            [x + 8, y + 13, x + 8 + ordinal_width, y + 42],
+            radius=8, fill=(251, 233, 230),
+        )
+        draw.text((x + 15, y + 17), ordinal_label, font=ordinal_font, fill=TEXT)
         lines = _limited_wrapped_lines(draw, partner.name, name_font, cell_w - 20, 2)
         for line_index, line in enumerate(lines):
             tw = draw.textlength(line, font=name_font)
@@ -962,7 +971,7 @@ def render_collection_card(
 
     # 分页按"已收集"计算；total 是卡池规模，只用于展示进度。
     pages = max(1, math.ceil(collected / max(1, page_size)))
-    foot = f"第 {page}/{pages} 页 · 我的宝可梦 <页码> 翻页 · 兑换宝可梦 <名称> 定向获取"
+    foot = f"第 {page}/{pages} 页 · 我的宝可梦 <页码> 翻页 · 收藏挑战 @群友 <序号>"
     tw = draw.textlength(foot, font=small)
     draw.text(((W - tw) / 2, height - 66), foot, font=small, fill=SUBTEXT)
     return _encode(base)

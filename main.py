@@ -36,7 +36,7 @@ from astrbot.api.event import AstrMessageEvent, MessageChain, filter
 from astrbot.api.star import Context, Star, register
 
 try:
-    from .battle_report import build_battle_pokemon, format_battle_report, parse_battle_options, split_battle_text
+    from .battle_report import build_battle_pokemon, build_battle_report, format_battle_report, format_battle_report_data, parse_battle_options, split_battle_text
     from .battle_engine import (
         NATURES,
         STAT_KEYS,
@@ -63,10 +63,11 @@ try:
         render_rarity_legend,
     )
     from .partner_service import PartnerService
+    from .owned_duels import OwnedDuelService
     from .webui import PokemonPartnerWebUI
     from .wishmaker_card import build_wishmaker_markdown
 except ImportError:  # 兼容以普通模块方式加载插件
-    from battle_report import build_battle_pokemon, format_battle_report, parse_battle_options, split_battle_text
+    from battle_report import build_battle_pokemon, build_battle_report, format_battle_report, format_battle_report_data, parse_battle_options, split_battle_text
     from battle_engine import (
         NATURES,
         STAT_KEYS,
@@ -93,6 +94,7 @@ except ImportError:  # 兼容以普通模块方式加载插件
         render_rarity_legend,
     )
     from partner_service import PartnerService
+    from owned_duels import OwnedDuelService
     from webui import PokemonPartnerWebUI
     from wishmaker_card import build_wishmaker_markdown
 
@@ -193,7 +195,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.2.1",
+    "v1.2.2",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -517,11 +519,12 @@ class PokemonPartnerPlugin(Star):
             f"{summary.collected}/{summary.total}（第 {page_no}/{pages} 页）"
         ]
         lines += [
-            f"#{item.partner.dex_raw} {item.partner.name}"
+            f"{(page_no - 1) * page_size + index}. #{item.partner.dex_raw} {item.partner.name}"
             f"｜{item.partner.rarity}"
             + (f"｜闪光×{item.shiny_count}" if item.shiny_count else "")
-            for item in chunk
+            for index, item in enumerate(chunk, 1)
         ]
+        lines.append("按收藏序号选择：收藏挑战 @群友 <序号>；闪光需追加「闪光」。")
         yield event.plain_result("\n".join(lines))
 
     @filter.command("收集资料", alias={"图鉴资料", "我的资料"})
@@ -825,6 +828,9 @@ class PokemonPartnerPlugin(Star):
             "相性 <属性1> [属性2]｜相性 打 <属性> — 属性相性\n"
             "克制 <宝可梦>｜克制 <A> <B> — 克制推荐与对比\n"
             "对战 <A> <B> [等级] [详细] [种子=123] — 招式效果与逐回合复盘\n"
+            "收藏挑战 @群友 <收藏序号> [闪光] — 用自己的收藏邀请对战\n"
+            "接受对战 <自己的序号>｜拒绝对战｜取消对战 — 群内挑战\n"
+            "对战记录 [@群友]｜对战排行 — 收藏对战胜负与群榜\n"
             "队伍分析 <名称...> — 队伍弱点分析\n"
             "筛选 <条件> — 按种族值筛选\n"
             "宝冠军 <关键词> — 冠军赛数据\n"
@@ -1463,6 +1469,99 @@ class PokemonPartnerPlugin(Star):
         return format_battle_report(self.db, row1, row2, level, seed=seed, detailed=detailed,
                                     champion_line=self._champ_ranks_line([row1, row2]))
 
+    def _battle_output_mode(self, raw: str) -> str:
+        """配置决定默认方式，命令末尾的方式关键词只覆盖本次对战。"""
+        modes = {"卡片": "card", "转发": "forward", "合并转发": "forward", "文本": "text"}
+        choices = re.findall(r"(?:^|\s)(卡片|合并转发|转发|文本)(?=\s|$)", raw)
+        configured = str(self.config.get("battle_output_mode", "card"))
+        mode = modes[choices[-1]] if choices else configured
+        if mode not in {"card", "forward", "text"}:
+            mode = "card"
+        return "text" if mode == "card" and not self._card_enabled() else mode
+
+    @staticmethod
+    def _battle_forward_blocks(report: str) -> list[str]:
+        """概况、双方配招、结果与每个回合分别作为转发节点，保留全部原文。"""
+        prefix, separator, turns = report.partition("\n逐回合战报：\n")
+        sections = prefix.split("\n\n")
+        if separator:
+            sections.extend(re.split(r"\n(?=第\d+回合：)", turns))
+        return [part for section in sections if section.strip() for part in split_battle_text(section, 1600)]
+
+    async def _battle_card_pages(self, battle: dict) -> list[bytes]:
+        """立绘预取与渲染分离，关闭抽卡时也能独立生成对战卡片。"""
+        try:
+            from .battle_cards import render_battle_cards
+        except ImportError:
+            from battle_cards import render_battle_cards
+
+        artwork = self.artwork
+        if artwork is None:
+            artwork = ArtworkCache(
+                self._partner_state_dir() / "artwork", db=self.db,
+                images_dir=getattr(self.renderer, "images_dir", None),
+                allow_download=bool(self.config.get("fallback_web_image", True)),
+                timeout=float(self.config.get("pokeapi_timeout", 15)),
+            )
+        rows = [battle["row1"], battle["row2"]]
+        try:
+            await asyncio.wait_for(artwork.prefetch(rows, limit=2), timeout=8.0)
+        except Exception as exc:
+            logger.warning(f"[{PLUGIN_ID}] 对战立绘预取失败，使用现有素材: {exc}")
+
+        def load(row: dict):
+            # 默认形态缓存不能冒充 Mega/地区形态的立绘。
+            if row.get("form_name") and not (
+                artwork.images_dir and self.db.find_image(row, artwork.images_dir)
+            ):
+                return None
+            return artwork.load(row)
+
+        return await asyncio.to_thread(render_battle_cards, battle, image_loader=load)
+
+    async def _send_battle_report(self, event: AstrMessageEvent, battle: dict, *, mode: str | None = None):
+        """所有发送方式共用已生成的对局；失败时格式化同一结果回退。"""
+        mode = mode or self._battle_output_mode(str(getattr(event, "message_str", "") or ""))
+        if mode == "card" and not self._card_enabled():
+            mode = "text"
+        report = format_battle_report_data(battle)
+        notice = ""
+        if mode == "card":
+            try:
+                pages = await self._battle_card_pages(battle)
+                if not pages:
+                    raise ValueError("卡片渲染未返回页面")
+                # 先准备全部组件，再逐页 yield，避免中途构造失败后重复发送完整战报。
+                results = [event.chain_result([Comp.Image.fromBytes(page)]) for page in pages]
+            except Exception as exc:
+                logger.warning(f"[{PLUGIN_ID}] 对战卡片生成失败，回退文本: {exc}")
+                notice = "图片暂时无法生成，已改为文本战报。\n"
+            else:
+                for result in results:
+                    yield result
+                return
+        elif mode == "forward":
+            platform_name = event.get_platform_name()
+            if platform_name == "aiocqhttp":
+                try:
+                    bot_id = str(event.get_self_id() or event.get_sender_id() or "0")
+                    nodes = [
+                        Comp.Node(content=[Comp.Plain(block)], uin=bot_id, name="宝可梦对战")
+                        for block in self._battle_forward_blocks(report)
+                    ]
+                    chain = MessageChain()
+                    chain.chain.append(Comp.Nodes(nodes=nodes))
+                    await event.send(chain)
+                except Exception as exc:
+                    logger.warning(f"[{PLUGIN_ID}] 对战合并转发失败，回退文本: {exc}")
+                    notice = "合并转发暂时无法发送，以下为文本战报。\n"
+                else:
+                    return
+            else:
+                notice = "当前平台不支持合并转发，以下为文本战报。\n"
+        for part in split_battle_text(notice + report):
+            yield event.plain_result(part)
+
     @filter.command("对战")
     async def cmd_battle(
         self,
@@ -1471,10 +1570,10 @@ class PokemonPartnerPlugin(Star):
         name2: str = "",
         level: str = "50",
     ):
-        """模拟对战；可追加「详细 种子=123」复盘完整回合。"""
+        """模拟对战；可追加「详细 种子=123」及「卡片/转发/文本」。"""
         if not name1 or not name2:
             yield event.plain_result(
-                "用法：对战 <名称1> <名称2> [等级] [详细] [种子=123]，如：对战 皮卡丘 喷火龙 50 详细"
+                "用法：对战 <名称1> <名称2> [等级] [详细] [种子=123] [卡片/转发/文本]，如：对战 皮卡丘 喷火龙 50 详细 卡片"
             )
             return
         row1, row2 = self.db.pokemon(name1), self.db.pokemon(name2)
@@ -1485,9 +1584,192 @@ class PokemonPartnerPlugin(Star):
         level_i = self._parse_clamped_int(level, 50, 1, 100)
         raw = str(getattr(event, "message_str", "") or "")
         detailed, seed = parse_battle_options(raw)
-        report = await asyncio.to_thread(self._battle_text, row1, row2, level_i, seed=seed, detailed=detailed)
-        for part in split_battle_text(report):
+        battle = await asyncio.to_thread(
+            build_battle_report, self.db, row1, row2, level_i, seed=seed, detailed=detailed,
+            champion_line=self._champ_ranks_line([row1, row2]),
+        )
+        async for result in self._send_battle_report(event, battle, mode=self._battle_output_mode(raw)):
+            yield result
+
+    # ---------- 已收藏宝可梦的群内对战 ----------
+    def _owned_duel_context(self, event: AstrMessageEvent):
+        if event.is_private_chat():
+            raise GachaError("收藏对战只能在群聊中进行，请在群里使用。")
+        service = self._partner_or_error()
+        scope, user_id, nickname = self._scope(event)
+        return OwnedDuelService(service.store), scope, user_id, nickname
+
+    @staticmethod
+    def _duel_mentions(event: AstrMessageEvent) -> list[tuple[str, str]]:
+        """只取真实 @ 组件，忽略对机器人的 @，避免昵称和序号混淆。"""
+        bot_id = str(event.get_self_id() or "")
+        messages = getattr(getattr(event, "message_obj", None), "message", []) or []
+        targets = []
+        for message in messages:
+            if isinstance(message, Comp.At):
+                user_id = str(getattr(message, "qq", "") or "")
+                if user_id and user_id not in {bot_id, "all"} and user_id not in {x[0] for x in targets}:
+                    targets.append((user_id, str(getattr(message, "name", "") or "")))
+        return targets
+
+    @staticmethod
+    def _duel_index(raw: str) -> str:
+        numbers = re.findall(r"(?:^|\s)([0-9]+)(?=\s|$)", raw)
+        if not numbers:
+            raise GachaError("请填写「我的宝可梦」中的收藏序号，例如：接受对战 1。")
+        return numbers[-1]
+
+    @filter.command("收藏挑战", alias={"挑战宝可梦"})
+    async def cmd_owned_challenge(self, event: AstrMessageEvent, keyword: str = ""):
+        """收藏挑战 @群友 <收藏序号> [闪光]，等待对方选择并接受。"""
+        try:
+            duels, scope, user_id, nickname = self._owned_duel_context(event)
+            raw = str(getattr(event, "message_str", "") or "")
+            mentions = self._duel_mentions(event)
+            if len(mentions) > 1:
+                raise GachaError("一次只能向一位群友发起挑战。")
+            if mentions:
+                target_id, target_name = mentions[0]
+            else:
+                # 兼容不能传递 @ 组件的平台：显式用户 ID 加收藏序号。
+                found = re.search(r"(?:收藏挑战|挑战宝可梦)\s+@?([0-9]+)\s+[0-9]+(?:\s|$)", raw)
+                if not found:
+                    raise GachaError("用法：收藏挑战 @群友 <我的收藏序号> [闪光]。先发送「我的宝可梦」查看序号。")
+                target_id, target_name = found.group(1), ""
+            match = await asyncio.to_thread(
+                duels.challenge, scope, user_id, target_id, self._duel_index(raw),
+                challenger_name=nickname, target_name=target_name,
+                shiny=bool(re.search(r"(?:^|\s)闪光(?=\s|$)", raw)),
+            )
+        except GachaError as exc:
+            yield event.plain_result(str(exc))
+            return
+        except Exception as exc:
+            logger.error(f"[{PLUGIN_ID}] 发起收藏对战失败: {exc}")
+            yield event.plain_result("挑战暂时无法保存，请稍后重试。")
+            return
+        chosen = match["challenger"]
+        text = (
+            f"【收藏挑战】{chosen['nickname']} 发起 Lv.50 收藏对战\n"
+            f"出战：序号 {chosen['index']} · {chosen['name']}{' · 闪光' if chosen['shiny'] else ''}\n"
+            "请在 5 分钟内发送「接受对战 <自己的收藏序号> [闪光]」，或「拒绝对战」。\n"
+            "先用「我的宝可梦」查看序号；对局不消耗宝可梦和星尘。发起者可发送「取消对战」。"
+        )
+        yield event.chain_result([Comp.At(qq=match["target"]["user_id"]), Comp.Plain(text)])
+
+    @filter.command("接受对战")
+    async def cmd_owned_accept(self, event: AstrMessageEvent, keyword: str = ""):
+        """接受对战 <自己的收藏序号> [闪光] [详细] [卡片/转发/文本]。"""
+        match = None
+        try:
+            duels, scope, user_id, nickname = self._owned_duel_context(event)
+            raw = str(getattr(event, "message_str", "") or "")
+            match = await asyncio.to_thread(
+                duels.accept, scope, user_id, self._duel_index(raw), nickname=nickname,
+                shiny=bool(re.search(r"(?:^|\s)闪光(?=\s|$)", raw)),
+            )
+            detailed, _ = parse_battle_options(raw)
+            battle = await asyncio.to_thread(
+                build_battle_report, self.db, match["challenger"]["row"], match["target"]["row"], 50,
+                seed=match["seed"], detailed=detailed,
+            )
+            participants = [match["challenger"], match["target"]]
+            battle["trainer_names"] = [side["nickname"] for side in participants]
+            battle["owned_items"] = participants
+            battle["duel_id"] = match["match_id"]
+            await asyncio.to_thread(duels.complete, scope, match["match_id"], battle["result"])
+            battle["champion_line"] = "收藏对战 · 战绩已保存 · 对战记录可查询胜负与复盘种子"
+        except Exception as exc:
+            if match is not None:
+                try:
+                    await asyncio.to_thread(duels.abort, scope, match["match_id"])
+                except Exception as abort_exc:
+                    logger.error(f"[{PLUGIN_ID}] 释放收藏对战失败: {abort_exc}")
+            if not isinstance(exc, GachaError):
+                logger.error(f"[{PLUGIN_ID}] 收藏对战失败: {exc}")
+            yield event.plain_result(str(exc) if isinstance(exc, GachaError) else "对战暂时无法完成，本次未计入战绩，请重新挑战。")
+            return
+        async for result in self._send_battle_report(event, battle):
+            yield result
+
+    async def _withdraw_owned_duel(self, event: AstrMessageEvent, *, reject: bool):
+        try:
+            duels, scope, user_id, _ = self._owned_duel_context(event)
+            match = await asyncio.to_thread(duels.reject if reject else duels.cancel, scope, user_id)
+        except GachaError as exc:
+            yield event.plain_result(str(exc))
+            return
+        except Exception as exc:
+            logger.error(f"[{PLUGIN_ID}] 撤回收藏挑战失败: {exc}")
+            yield event.plain_result("操作暂时无法保存，请稍后重试。")
+            return
+        yield event.plain_result(f"已{'拒绝' if reject else '取消'} {match['challenger']['nickname']} 发起的挑战，未计入战绩。")
+
+    @filter.command("拒绝对战")
+    async def cmd_owned_reject(self, event: AstrMessageEvent):
+        """拒绝等待自己接受的收藏挑战，不计入战绩。"""
+        async for result in self._withdraw_owned_duel(event, reject=True):
+            yield result
+
+    @filter.command("取消对战")
+    async def cmd_owned_cancel(self, event: AstrMessageEvent):
+        """取消自己发起的收藏挑战，不计入战绩。"""
+        async for result in self._withdraw_owned_duel(event, reject=False):
+            yield result
+
+    @filter.command("对战记录", alias={"我的战绩"})
+    async def cmd_owned_history(self, event: AstrMessageEvent):
+        """查看自己或 @ 群友的胜负平统计及最近五场收藏对战。"""
+        try:
+            duels, scope, user_id, nickname = self._owned_duel_context(event)
+            mentions = self._duel_mentions(event)
+            if len(mentions) > 1:
+                raise GachaError("一次只能查看一位训练家的战绩。")
+            if mentions:
+                user_id, nickname = mentions[0]
+            stats, records = await asyncio.gather(
+                asyncio.to_thread(duels.profile, scope, user_id),
+                asyncio.to_thread(duels.history, scope, user_id, limit=5),
+            )
+        except GachaError as exc:
+            yield event.plain_result(str(exc))
+            return
+        except Exception as exc:
+            logger.error(f"[{PLUGIN_ID}] 读取收藏战绩失败: {exc}")
+            yield event.plain_result("战绩暂时无法读取，请稍后重试。")
+            return
+        name = nickname or stats["nickname"]
+        lines = [f"【{name} 的收藏战绩】", f"{stats['wins']}胜 / {stats['losses']}负 / {stats['draws']}平 · {stats['total']}场",
+                 f"积分 {stats['points']} · 胜率 {stats['win_rate']:g}%"]
+        for record in records:
+            a, b = record["challenger"], record["target"]
+            verdict = "平局" if not record["winner_id"] else "胜" if record["winner_id"] == user_id else "负"
+            lines.append(f"{verdict} · {a['nickname']}的{a['name']} vs {b['nickname']}的{b['name']} · {record['turns']}回合 · 种子={record['seed']}")
+        if not records:
+            lines.append("暂无对战记录。发送「收藏挑战 @群友 <收藏序号>」开始第一场。")
+        else:
+            lines.append("以上为最近五场；3分/胜、1分/平。对战排行查看本群榜单。")
+        for part in split_battle_text("\n".join(lines)):
             yield event.plain_result(part)
+
+    @filter.command("对战排行")
+    async def cmd_owned_ranking(self, event: AstrMessageEvent):
+        """本群收藏对战积分前十名，3分/胜、1分/平。"""
+        try:
+            duels, scope, _, _ = self._owned_duel_context(event)
+            rows = await asyncio.to_thread(duels.ranking, scope, limit=10)
+        except GachaError as exc:
+            yield event.plain_result(str(exc))
+            return
+        except Exception as exc:
+            logger.error(f"[{PLUGIN_ID}] 读取对战排行失败: {exc}")
+            yield event.plain_result("对战排行暂时无法读取，请稍后重试。")
+            return
+        lines = ["【本群对战排行】3分/胜、1分/平；同分按胜率、胜场排序"]
+        lines.extend(f"{index}. {row['nickname']} · {row['points']}分 · {row['wins']}胜{row['losses']}负{row['draws']}平 · 胜率{row['win_rate']:g}%" for index, row in enumerate(rows, 1))
+        if not rows:
+            lines.append("暂无已完成的收藏对战。")
+        yield event.plain_result("\n".join(lines))
 
     # ---------- Phase 4：队伍分析 / 种族值筛选 ----------
     def _champ_rank_short(self, name: str) -> str:
