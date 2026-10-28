@@ -195,7 +195,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.2.3",
+    "v1.2.4",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -383,7 +383,12 @@ class PokemonPartnerPlugin(Star):
             yield event.plain_result(f"{notice}\n{text}" if notice else text)
             return
         # 先把本批立绘取齐再渲染，否则卡片里只会是占位图。
-        await self._ensure_artwork([item.row for item in outcome.items])
+        art_rows = []
+        for item in outcome.items:
+            if item.shiny:
+                art_rows.append(dict(item.row, _artwork_shiny=True))
+            art_rows.append(item.row)
+        await self._ensure_artwork(art_rows)
         try:
             png = await asyncio.to_thread(
                 render_draw_card,

@@ -6,6 +6,9 @@
 2. 插件数据目录 ``artwork/`` 下已缓存的官方图；
 3. 可选的 PokéAPI 官方图下载（``fallback_web_image`` 控制）。
 
+闪光请求只在行副本中携带 ``_artwork_shiny=True``，优先本地闪光图、独立
+``shiny/`` 缓存及官方闪光图源；缺图可读取已存在的普通图。
+
 渲染路径要求同步返回 ``PIL.Image``，所以下载由 :meth:`ArtworkCache.prefetch`
 在抽卡前批量完成（异步），渲染时只读缓存。
 """
@@ -47,6 +50,11 @@ SHINY_SPRITE_URL = (
     "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/"
     "pokemon/other/official-artwork/shiny/{dex}.png"
 )
+SHINY_SPRITE_URL_HOME = (
+    "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/"
+    "pokemon/other/home/shiny/{dex}.png"
+)
+SHINY_SPRITE_URL_FALLBACK = "https://raw.githubusercontent.com/PokeAPI/sprites/master/sprites/pokemon/shiny/{dex}.png"
 
 
 class ArtworkCache:
@@ -73,10 +81,24 @@ class ArtworkCache:
         self.max_images = MAX_CACHED_IMAGES
 
     # ---------- 同步读取（渲染线程） ----------
+    @staticmethod
+    def _is_shiny(row: Mapping[str, Any]) -> bool:
+        """仅内部请求副本携带此标记，图鉴和业务存档保持原样。"""
+        return row.get("_artwork_shiny") is True
+
     def _local_path(self, row: Mapping[str, Any]) -> Path | None:
+        shiny = self._is_shiny(row)
+        if shiny and self.images_dir is not None and not row.get("form_name"):
+            name = self._cache_name(row.get("id"))
+            candidate = self.images_dir / "shiny" / name if name else None
+            if candidate is not None and self._valid_cache_file(candidate):
+                return candidate
         if self.db is not None and self.images_dir is not None:
             try:
-                found = self.db.find_image(dict(row), self.images_dir)
+                if shiny:
+                    found = self.db.find_image(dict(row), self.images_dir, shiny=True)
+                else:
+                    found = self.db.find_image(dict(row), self.images_dir)
             except Exception:
                 found = None
             if found:
@@ -86,19 +108,30 @@ class ArtworkCache:
     @staticmethod
     def _cache_name(dex: Any) -> str:
         try:
-            return f"{int(dex):04d}.png"
+            if isinstance(dex, bool) or not str(dex).strip().isdecimal():
+                return ""
+            value = int(dex)
+            return f"{value:04d}.png" if value > 0 else ""
         except (TypeError, ValueError):
             return ""
 
-    def path_for(self, row: Mapping[str, Any]) -> Path | None:
-        local = self._local_path(row)
-        if local is not None and self._valid_cache_file(local):
-            return local
+    def _cache_path(self, row: Mapping[str, Any]) -> Path | None:
+        # 全国编号图源是默认形态；形态行必须由本地数据集精确匹配。
+        if row.get("form_name"):
+            return None
         name = self._cache_name(row.get("id"))
         if not name:
             return None
-        cached = self.cache_dir / name
-        return cached if self._valid_cache_file(cached) else None
+        folder = self.cache_dir / "shiny" if self._is_shiny(row) else self.cache_dir
+        return folder / name
+
+    def path_for(self, row: Mapping[str, Any]) -> Path | None:
+        """返回请求版本的真实图路径；此层不把普通图当作闪光缓存。"""
+        local = self._local_path(row)
+        if local is not None and self._valid_cache_file(local):
+            return local
+        cached = self._cache_path(row)
+        return cached if cached is not None and self._valid_cache_file(cached) else None
 
     def _valid_cache_file(self, path: Path) -> bool:
         """仅在文件变化时验证 PNG，损坏缓存视为缺图并允许重新下载。"""
@@ -126,8 +159,12 @@ class ArtworkCache:
             return False
 
     def load(self, row: Mapping[str, Any]) -> Image.Image | None:
-        """同步加载，供 Pillow 渲染回调使用。失败返回 ``None``。"""
+        """同步加载；缺少真实闪光图时可读取已有普通图，不联网或伪造染色。"""
         path = self.path_for(row)
+        if path is None and self._is_shiny(row):
+            normal_row = dict(row)
+            normal_row.pop("_artwork_shiny", None)
+            path = self.path_for(normal_row)
         key = str(path or "")
         if not path:
             return None
@@ -169,17 +206,18 @@ class ArtworkCache:
             local = self._local_path(row)
             if local is not None and self._valid_cache_file(local):
                 continue
-            name = self._cache_name(row.get("id"))
-            if not name:
+            target = self._cache_path(row)
+            if target is None:
                 continue
-            target = self.cache_dir / name
-            if name not in seen and not self._valid_cache_file(target):
+            key = str(target)
+            if key not in seen and not self._valid_cache_file(target):
                 out.append((int(row["id"]), target))
-                seen.add(name)
+                seen.add(key)
         return out
 
     def _save_download(self, target: Path, data: bytes) -> None:
         """同目录原子提交，防止并行读取或取消任务留下半张图。"""
+        target.parent.mkdir(parents=True, exist_ok=True)
         temporary = target.with_name(f".{target.name}.{uuid.uuid4().hex}.tmp")
         try:
             temporary.write_bytes(data)
@@ -203,13 +241,14 @@ class ArtworkCache:
 
         Args:
             rows: 需要立绘的图鉴行。
+                闪光行副本可携带 ``_artwork_shiny=True``。
             limit: 单次最多下载数量。
             wait: 为 ``True`` 时等全部下载完成（抽卡前需要）；
                 为 ``False`` 时只发起后台任务（图鉴浏览等场景）。
         """
         if not self.allow_download:
             return 0
-        todo = await asyncio.to_thread(lambda: self.missing(rows)[:max(0, limit)])
+        todo = await asyncio.to_thread(lambda: self.missing(rows)[: max(0, limit)])
         if not todo:
             return 0
         self.cache_dir.mkdir(parents=True, exist_ok=True)
@@ -220,7 +259,12 @@ class ArtworkCache:
         timeout = aiohttp.ClientTimeout(total=self.timeout)
         async with aiohttp.ClientSession(timeout=timeout) as session:
             results = await asyncio.gather(
-                *(self._download(session, dex) for dex, _ in todo),
+                *(
+                    self._download(session, dex, shiny=True)
+                    if target.parent == self.cache_dir / "shiny"
+                    else self._download(session, dex)
+                    for dex, target in todo
+                ),
                 return_exceptions=True,
             )
         saved = 0
@@ -234,16 +278,25 @@ class ArtworkCache:
                 continue
         return saved
 
-    async def _download(self, session, dex: int) -> bytes | None:
-        """依次尝试官方高清图、HOME 图与普通精灵图，兼容网络受限的环境。"""
-        for url in (SPRITE_URL, SPRITE_URL_HOME, SPRITE_URL_FALLBACK):
+    async def _download(
+        self, session, dex: int, *, shiny: bool = False
+    ) -> bytes | None:
+        """依次尝试对应版本的高清、HOME 与精灵图，闪光图不混入普通缓存。"""
+        sources = (
+            (SHINY_SPRITE_URL, SHINY_SPRITE_URL_HOME, SHINY_SPRITE_URL_FALLBACK)
+            if shiny
+            else (SPRITE_URL, SPRITE_URL_HOME, SPRITE_URL_FALLBACK)
+        )
+        for url in sources:
             try:
                 async with session.get(url.format(dex=dex)) as resp:
                     if resp.status != 200:
                         continue
                     content_type = resp.headers.get("Content-Type", "")
                     if "image" not in content_type.lower():
-                        logger.debug(f"宝可梦立绘 #{dex} 返回非图片内容: {content_type}")
+                        logger.debug(
+                            f"宝可梦立绘 #{dex} 返回非图片内容: {content_type}"
+                        )
                         continue
                     declared = int(resp.headers.get("Content-Length") or 0)
                     if declared > 8 * 1024 * 1024:
@@ -268,7 +321,11 @@ class ArtworkCache:
         removed = 0
         if not self.cache_dir.is_dir():
             return 0
-        for path in self.cache_dir.glob("*.png"):
+        paths = (
+            *self.cache_dir.glob("*.png"),
+            *(self.cache_dir / "shiny").glob("*.png"),
+        )
+        for path in paths:
             if path.name not in wanted:
                 try:
                     path.unlink()
@@ -281,7 +338,9 @@ class ArtworkCache:
         """已缓存的本地立绘数量。"""
         if not self.cache_dir.is_dir():
             return 0
-        return sum(1 for _ in self.cache_dir.glob("*.png"))
+        return sum(1 for _ in self.cache_dir.glob("*.png")) + sum(
+            1 for _ in (self.cache_dir / "shiny").glob("*.png")
+        )
 
     async def download_all(
         self,
@@ -300,13 +359,13 @@ class ArtworkCache:
         Returns:
             ``{"total", "saved", "skipped", "failed"}``。
         """
-        unique: dict[int, Mapping[str, Any]] = {}
+        unique: dict[tuple[int, bool], Mapping[str, Any]] = {}
         for row in rows:
             try:
                 dex = int(row.get("id"))
             except (TypeError, ValueError):
                 continue
-            unique.setdefault(dex, row)
+            unique.setdefault((dex, self._is_shiny(row)), row)
 
         total = len(unique)
         if not self.allow_download:
@@ -333,15 +392,19 @@ class ArtworkCache:
         chunk_size = max(1, int(chunk_size))
         saved = failed = 0
 
-        async def run_one(session, dex: int) -> tuple[int, bytes | None]:
+        async def run_one(session, dex: int, target: Path) -> tuple[int, bytes | None]:
             async with semaphore:
-                return dex, await self._download(session, dex)
+                if target.parent == self.cache_dir / "shiny":
+                    data = await self._download(session, dex, shiny=True)
+                else:
+                    data = await self._download(session, dex)
+                return dex, data
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
             for start in range(0, len(todo), chunk_size):
                 batch = todo[start : start + chunk_size]
                 results = await asyncio.gather(
-                    *(run_one(session, dex) for dex, _ in batch)
+                    *(run_one(session, dex, target) for dex, target in batch)
                 )
                 for (_dex, target), (_result_dex, data) in zip(batch, results):
                     if not data:
