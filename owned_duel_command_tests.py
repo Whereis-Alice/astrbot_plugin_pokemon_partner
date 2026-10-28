@@ -140,6 +140,28 @@ class OwnedDuelCommandTests(unittest.TestCase):
                 Plain("接收挑战 火稚鸡"), Plain("详细 合并转发")]))
         self.assertEqual(captured, [{"mode": "forward"}])
 
+    def test_accept_image_forward_keeps_own_selection_and_records_once(self):
+        for option in ("图片转发", "卡片转发"):
+            with self.subTest(option=option):
+                self.invite()
+                before = self.duels.profile("group:room", "bob")["total"]
+                captured = []
+
+                async def deliver(event, battle, **kwargs):
+                    captured.append((battle, kwargs))
+                    yield ("images-forward", "sent")
+
+                with patch.object(self.plugin, "_send_battle_report", deliver):
+                    result = self.run_command("cmd_owned_accept", Event("bob", f"接收挑战 火稚鸡 {option}"))
+                    repeated = self.run_command("cmd_owned_accept", Event("bob", f"接收挑战 火稚鸡 {option}"))
+                self.assertEqual(result, [("images-forward", "sent")])
+                self.assertEqual(len(captured), 1)
+                battle, options = captured[0]
+                self.assertEqual(battle["row2"]["name_zh"], "火稚鸡")
+                self.assertEqual(options["mode"], "card_forward")
+                self.assertEqual(self.duels.profile("group:room", "bob")["total"], before + 1)
+                self.assertIn("没有等待", repeated[0][1])
+
     def test_quoted_reply_text_does_not_override_current_selection_target_or_mode(self):
         invite = self.run_command("cmd_owned_challenge", Event(
             "alice", "宝可梦挑战 皮卡丘20", mentions=[

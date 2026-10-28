@@ -147,14 +147,14 @@
     "description": "启用图片卡片",
     "type": "bool",
     "default": true,
-    "hint": "宝可梦指令以图片卡片返回；关闭后返回纯文本，也会将对战卡片模式改为文本。今日宝可梦及对战卡片渲染失败时自动回退文本。"
+    "hint": "宝可梦指令以图片卡片返回；关闭后返回纯文本，也会将对战卡片与图片合并转发改为文本。今日宝可梦及对战卡片渲染失败时自动回退文本。"
   },
   "battle_output_mode": {
     "description": "对战战报发送方式",
     "type": "string",
     "default": "card",
-    "options": ["card", "forward", "text"],
-    "hint": "card=精美分页卡片（默认）；forward=QQ/OneBot 合并转发；text=文本。命令末尾可加「卡片」「转发」「文本」临时覆盖。不支持转发的平台或生成失败时自动回退文本。"
+    "options": ["card", "card_forward", "forward", "text"],
+    "hint": "card=三张精美卡片（默认）：封面、双方配招与效果长图、完整对战过程长图；card_forward=将所有图片合并转发（QQ/OneBot）；forward=文字合并转发；text=文本。命令末尾可加「卡片」「图片转发」「转发」「文本」临时覆盖。图片转发不支持或发送失败时改为普通卡片，图片生成失败时回退文本。"
   },
   "wishmaker_style": {
     "description": "许愿星结果输出样式",

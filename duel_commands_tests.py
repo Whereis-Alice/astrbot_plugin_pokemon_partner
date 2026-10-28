@@ -95,6 +95,21 @@ class DuelCommandParserTests(unittest.TestCase):
             with self.subTest(text=text), self.assertRaises(GachaError):
                 parse_accept(text)
 
+    def test_image_forward_options_keep_selection_shiny_and_rounds_separate(self):
+        for option in ("图片转发", "卡片转发"):
+            for selection in ("2", "皮卡丘", '"Mr. Mime"'):
+                with self.subTest(option=option, selection=selection):
+                    accepted = parse_accept(f"接收挑战 {selection} 闪光 {option}")
+                    challenged = parse_challenge(f"宝可梦挑战 {selection} @123 20 {option} 闪光")
+                    self.assertEqual(accepted.selection, selection.strip('"'))
+                    self.assertTrue(accepted.shiny)
+                    self.assertEqual(challenged.selection, accepted.selection)
+                    self.assertEqual(challenged.max_turns, 20)
+                    self.assertEqual(challenged.target_id, "123")
+                    self.assertTrue(challenged.shiny)
+            with self.subTest(option=option), self.assertRaises(GachaError):
+                parse_accept(f"接收挑战 {option}")
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)

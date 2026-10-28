@@ -137,8 +137,13 @@ data/plugin_data/astrbot_plugin_pokemon_partner/artwork/
 | `fallback_web_image` | `true` | 本地缺图时使用网络官方图 |
 | `pokeapi_enabled` | `true` | PokéAPI 补充查询 |
 | `pokeapi_timeout` | `15` | PokéAPI 超时秒数 |
-| `battle_output_mode` | `card` | 对战战报：`card` 卡片、`forward` 合并转发、`text` 文本 |
+| `battle_output_mode` | `card` | 对战战报：`card` 三张卡片、`card_forward` 图片合并转发、`forward` 文字合并转发、`text` 文本 |
 | `wishmaker_style` | `image` | 许愿星结果：`image` 图片、`markdown` Markdown 文本 |
+
+卡片战报由封面、双方配招与效果长图、完整对战过程长图组成，全部回合保留在同一张过程图中。
+希望群聊只显示一条战报，可将「对战发送方式」设为「图片合并转发」。此方式适用于 QQ / OneBot，
+会将所有战报图片收进一条合并转发；不支持的平台或转发失败时改发普通卡片，图片生成失败时回退文本。
+命令末尾追加 `图片转发`（或 `卡片转发`）可以只对本次对局启用；`转发` 仍表示文字合并转发。
 
 ### 冠军赛
 

@@ -21,11 +21,11 @@ python -m pip install -r requirements.txt
 | 核心图鉴、抽卡、配置与接口注册 | `python tests.py` |
 | 今日指令的整句触发、权限与消息去重 | `python daily_draw_command_tests.py` |
 | 对战计算和招式效果 | `python battle_regression_tests.py` |
-| 对战卡片与消息发送方式 | `python battle_card_tests.py`、`python battle_delivery_tests.py` |
+| 对战卡片与消息发送方式 | `python battle_card_tests.py`、`python battle_delivery_tests.py`、`python battle_image_forward_sdk_tests.py` |
 | 群友挑战、收藏与指令解析 | `python owned_duels_tests.py`、`python owned_duel_command_tests.py`、`python duel_commands_tests.py` |
 | 卡片排版与稀有度样式 | `python card_layout_tests.py`、`python rarity_card_tests.py`、`python rarity_visual_tests.py` |
 | 场景、精灵球圆盘与闪光图片缓存 | `python rarity_scene_tests.py`、`python rarity_emblem_tests.py`、`python shiny_artwork_tests.py` |
-| 管理台操作与招式查询 | `python webui_action_tests.py`、`python webui_learnset_tests.py` |
+| 管理台操作、设置保存与招式查询 | `python webui_action_tests.py`、`python webui_learnset_tests.py` |
 | 前端招式搜索与展开 | `node --test pages/partner-console/js/learnset.test.mjs` |
 
 这些检查使用本地数据、临时存档和模拟消息，不需要连接在线 AstrBot 服务或向真实群聊发送消息。

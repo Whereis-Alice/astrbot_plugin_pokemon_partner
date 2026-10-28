@@ -3,6 +3,7 @@
 import asyncio
 import contextlib
 import io
+import json
 import random
 import tempfile
 import unittest
@@ -18,6 +19,51 @@ with contextlib.redirect_stdout(io.StringIO()):
 from gacha import GachaRules, Partner
 from gacha_store import GachaStore, today_key
 from webui import PokemonPartnerWebUI
+
+
+class SettingsActionTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(prefix="webui-settings-")
+        self.addCleanup(self.temp.cleanup)
+        self.config_path = Path(self.temp.name) / "config.json"
+
+        class Config(dict):
+            def save_config(config):
+                self.config_path.write_text(json.dumps(config), encoding="utf-8")
+
+        self.config = Config(battle_output_mode="card", daily_draw_limit=3)
+        self.config.save_config()
+        self.plugin = SimpleNamespace(
+            config=self.config,
+            partner_service=object(),
+            _init_partners=lambda: None,
+        )
+        self.ui = PokemonPartnerWebUI(self.plugin)
+
+    def save(self, value):
+        with patch.object(
+            self.ui, "_body", AsyncMock(return_value={"config": {"battle_output_mode": value}})
+        ):
+            return asyncio.run(self.ui.api_settings_save())
+
+    def test_all_battle_modes_persist_and_are_read_back_by_settings(self):
+        for mode in ("card_forward", "card", "forward", "text"):
+            with self.subTest(mode=mode):
+                self.assertEqual(self.save(mode), {"ok": True})
+                persisted = json.loads(self.config_path.read_text(encoding="utf-8"))
+                self.assertEqual(persisted["battle_output_mode"], mode)
+                self.assertEqual(persisted["daily_draw_limit"], 3)
+                result = asyncio.run(self.ui.api_settings())
+                self.assertEqual(result["config"]["battle_output_mode"], mode)
+
+    def test_invalid_battle_modes_fail_before_mutating_saved_settings(self):
+        before = self.config_path.read_bytes()
+        for invalid in ("invalid", "图片转发", True, 1):
+            with self.subTest(value=invalid):
+                result = self.save(invalid)
+                self.assertFalse(result["ok"])
+                self.assertEqual(self.config["battle_output_mode"], "card")
+                self.assertEqual(self.config_path.read_bytes(), before)
 
 
 class MemberActionTests(unittest.TestCase):

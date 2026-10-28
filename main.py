@@ -27,6 +27,7 @@
 
 import asyncio
 import re
+from collections.abc import AsyncIterator
 from pathlib import Path
 from typing import ClassVar
 
@@ -197,7 +198,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.2.5",
+    "v1.2.6",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -850,7 +851,7 @@ class PokemonPartnerPlugin(Star):
             "特性 / 招式 / 道具 / 性格 — 数据查询\n"
             "相性 <属性1> [属性2]｜相性 打 <属性> — 属性相性\n"
             "克制 <宝可梦>｜克制 <A> <B> — 克制推荐与对比\n"
-            "对战 <A> <B> [等级] [详细] [种子=123] — 招式效果与逐回合复盘\n"
+            "对战 <A> <B> [等级] [详细] [种子=123] — 招式效果与对战过程\n"
             "宝可梦挑战 <序号/名字> @群友 [回合] — 用已持有的宝可梦邀请对战\n"
             "接收挑战 <自己的序号/名字>｜拒绝挑战｜取消挑战 — 群内挑战\n"
             "对战记录 [@群友]｜对战排行 — 收藏对战胜负与群榜\n"
@@ -1494,13 +1495,16 @@ class PokemonPartnerPlugin(Star):
 
     def _battle_output_mode(self, raw: str) -> str:
         """配置决定默认方式，命令末尾的方式关键词只覆盖本次对战。"""
-        modes = {"卡片": "card", "转发": "forward", "合并转发": "forward", "文本": "text"}
-        choices = re.findall(r"(?:^|\s)(卡片|合并转发|转发|文本)(?=\s|$)", raw)
+        modes = {
+            "卡片": "card", "图片转发": "card_forward", "卡片转发": "card_forward",
+            "转发": "forward", "合并转发": "forward", "文本": "text",
+        }
+        choices = re.findall(r"(?:^|\s)(图片转发|卡片转发|卡片|合并转发|转发|文本)(?=\s|$)", raw)
         configured = str(self.config.get("battle_output_mode", "card"))
         mode = modes[choices[-1]] if choices else configured
-        if mode not in {"card", "forward", "text"}:
+        if mode not in {"card", "card_forward", "forward", "text"}:
             mode = "card"
-        return "text" if mode == "card" and not self._card_enabled() else mode
+        return "text" if mode in {"card", "card_forward"} and not self._card_enabled() else mode
 
     @staticmethod
     def _battle_forward_blocks(report: str) -> list[str]:
@@ -1526,7 +1530,14 @@ class PokemonPartnerPlugin(Star):
                 allow_download=bool(self.config.get("fallback_web_image", True)),
                 timeout=float(self.config.get("pokeapi_timeout", 15)),
             )
-        rows = [battle["row1"], battle["row2"]]
+        rows = [dict(battle["row1"]), dict(battle["row2"])]
+        owned_items = battle.get("owned_items") or []
+        for index, row in enumerate(rows):
+            row.pop("_artwork_shiny", None)
+            if index < len(owned_items):
+                item = owned_items[index]
+                if bool(item.get("shiny") if isinstance(item, dict) else getattr(item, "shiny", False)):
+                    row["_artwork_shiny"] = True
         try:
             await asyncio.wait_for(artwork.prefetch(rows, limit=2), timeout=8.0)
         except Exception as exc:
@@ -1534,35 +1545,72 @@ class PokemonPartnerPlugin(Star):
 
         def load(row: dict):
             # 默认形态缓存不能冒充 Mega/地区形态的立绘。
-            if row.get("form_name") and not (
-                artwork.images_dir and self.db.find_image(row, artwork.images_dir)
-            ):
-                return None
+            if row.get("form_name"):
+                if not artwork.images_dir:
+                    return None
+                shiny = row.get("_artwork_shiny") is True
+                exact = self.db.find_image(row, artwork.images_dir, shiny=True) if shiny else self.db.find_image(row, artwork.images_dir)
+                if not exact and shiny:
+                    normal_row = dict(row)
+                    normal_row.pop("_artwork_shiny", None)
+                    exact = self.db.find_image(normal_row, artwork.images_dir)
+                if not exact:
+                    return None
             return artwork.load(row)
 
         return await asyncio.to_thread(render_battle_cards, battle, image_loader=load)
 
-    async def _send_battle_report(self, event: AstrMessageEvent, battle: dict, *, mode: str | None = None):
-        """所有发送方式共用已生成的对局；失败时格式化同一结果回退。"""
+    async def _send_battle_report(self, event: AstrMessageEvent, battle: dict, *, mode: str | None = None) -> AsyncIterator[object]:
+        """同一对局生成战报；图片转发失败复用普通图片，图片失败保留全回合文本。"""
         mode = mode or self._battle_output_mode(str(getattr(event, "message_str", "") or ""))
-        if mode == "card" and not self._card_enabled():
+        image_mode = mode in {"card", "card_forward"}
+        if image_mode and not self._card_enabled():
             mode = "text"
-        report = format_battle_report_data(battle)
+        report = format_battle_report_data({**battle, "detailed": True} if image_mode else battle)
         notice = ""
-        if mode == "card":
+        if mode in {"card", "card_forward"}:
             try:
                 pages = await self._battle_card_pages(battle)
                 if not pages:
                     raise ValueError("卡片渲染未返回页面")
-                # 先准备全部组件，再逐页 yield，避免中途构造失败后重复发送完整战报。
-                results = [event.chain_result([Comp.Image.fromBytes(page)]) for page in pages]
+                # 先准备全部图片和普通发送结果；转发失败可直接复用，不重新渲染或模拟。
+                images = [Comp.Image.fromBytes(page) for page in pages]
+                results = [event.chain_result([image]) for image in images]
             except Exception as exc:
                 logger.warning(f"[{PLUGIN_ID}] 对战卡片生成失败，回退文本: {exc}")
                 notice = "图片暂时无法生成，已改为文本战报。\n"
             else:
-                for result in results:
-                    yield result
-                return
+                if mode == "card_forward":
+                    if event.get_platform_name() == "aiocqhttp":
+                        try:
+                            bot_id = str(event.get_self_id() or event.get_sender_id() or "0")
+                            titles = ("对战结果", "双方配招与效果", "对战过程")
+                            nodes = [
+                                Comp.Node(content=[image], uin=bot_id,
+                                          name=f"宝可梦对战 · {titles[index] if index < len(titles) else '战报'}")
+                                for index, image in enumerate(images)
+                            ]
+                            chain = MessageChain()
+                            chain.chain.append(Comp.Nodes(nodes=nodes))
+                            await event.send(chain)
+                        except Exception as exc:
+                            logger.warning(f"[{PLUGIN_ID}] 图片合并转发失败，改为普通图片: {exc}")
+                            notice = "图片合并转发暂时无法发送，已改为普通图片。\n"
+                        else:
+                            return
+                    else:
+                        notice = "当前平台不支持图片合并转发，已改为普通图片。\n"
+                    try:
+                        # 提示随第一张图片发送，不额外增加一条消息。
+                        results[0] = event.chain_result([Comp.Plain(notice), images[0]])
+                    except Exception as exc:
+                        logger.warning(f"[{PLUGIN_ID}] 普通图片结果构造失败，回退文本: {exc}")
+                        notice = "图片暂时无法发送，已改为文本战报。\n"
+                        results = []
+                if results:
+                    for result in results:
+                        yield result
+                    return
         elif mode == "forward":
             platform_name = event.get_platform_name()
             if platform_name == "aiocqhttp":
@@ -1593,10 +1641,10 @@ class PokemonPartnerPlugin(Star):
         name2: str = "",
         level: str = "50",
     ):
-        """模拟对战；可追加「详细 种子=123 回合=20」及「卡片/转发/文本」。"""
+        """模拟对战；可追加「详细 种子=123 回合=20」及「卡片/图片转发/转发/文本」。"""
         if not name1 or not name2:
             yield event.plain_result(
-                "用法：对战 <名称1> <名称2> [等级] [详细] [种子=123] [回合=20] [卡片/转发/文本]，如：对战 皮卡丘 喷火龙 50 详细 卡片"
+                "用法：对战 <名称1> <名称2> [等级] [详细] [种子=123] [回合=20] [卡片/图片转发/转发/文本]，如：对战 皮卡丘 喷火龙 50 详细 图片转发"
             )
             return
         row1, row2 = self.db.pokemon(name1), self.db.pokemon(name2)
@@ -1683,7 +1731,7 @@ class PokemonPartnerPlugin(Star):
 
     @filter.command("接收挑战", alias={"接受对战", "接受挑战"})
     async def cmd_owned_accept(self, event: AstrMessageEvent, keyword: str = ""):
-        """接收挑战 <自己的序号或名字> [闪光] [详细] [卡片/转发/文本]。"""
+        """接收挑战 <自己的序号或名字> [闪光] [详细] [卡片/图片转发/转发/文本]。"""
         match = None
         try:
             try:
