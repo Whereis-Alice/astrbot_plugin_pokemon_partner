@@ -98,7 +98,7 @@ def parse_challenge(raw: str, mentions: Sequence[tuple[str, str]] = (), *, bot_i
             # 原格式「收藏挑战 用户ID 序号」仅在没有真实 @ 时使用。
             target_id = remaining.pop(0)
         else:
-            raise GachaError("用法：宝可梦挑战 <自己的序号或名字> @群友 [回合]，例如：宝可梦挑战 皮卡丘 @群友 20。")
+            raise GachaError("请选择自己在本群已拥有的宝可梦，并真正 @ 一位群友，例如“宝可梦挑战 1 @群友 20”；1 可换成自己的序号或名字，20 是回合上限，可以省略。")
 
     limits = []
     selected = []
@@ -138,5 +138,5 @@ def parse_accept(raw: str) -> SelectionRequest:
         raise GachaError("回合上限由发起方约定，接收挑战时只需填写自己的序号或名字。")
     selection = " ".join(tokens).strip()
     if not selection:
-        raise GachaError("用法：接收挑战 <自己的序号或名字> [闪光]，例如：接收挑战 火稚鸡。")
+        raise GachaError("请在“接收挑战”后加上你在本群已拥有的宝可梦序号或名字，例如“接收挑战 1”或“接收挑战 皮卡丘”。")
     return SelectionRequest(selection, shiny)

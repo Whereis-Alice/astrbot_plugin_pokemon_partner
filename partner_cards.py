@@ -946,7 +946,7 @@ def render_collection_card(
 
     # 分页按"已收集"计算；total 是卡池规模，只用于展示进度。
     pages = max(1, math.ceil(collected / max(1, page_size)))
-    foot = f"第 {page}/{pages} 页 · 我的宝可梦 <页码> 翻页 · 收藏挑战 @群友 <序号>"
+    foot = f"第 {page}/{pages} 页 · 翻页示例：我的宝可梦 2 · 挑战示例：宝可梦挑战 1 @群友"
     tw = draw.textlength(foot, font=small)
     draw.text(((W - tw) / 2, height - 66), foot, font=small, fill=SUBTEXT)
     return _encode(base)

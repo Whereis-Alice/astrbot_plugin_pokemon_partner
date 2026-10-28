@@ -198,7 +198,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.2.6",
+    "v1.2.7",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -548,7 +548,7 @@ class PokemonPartnerPlugin(Star):
             + (f"｜闪光×{item.shiny_count}" if item.shiny_count else "")
             for index, item in enumerate(chunk, 1)
         ]
-        lines.append("直接选择序号或名字：宝可梦挑战 <序号/名字> @群友 [回合]；闪光可追加「闪光」。")
+        lines.append("挑战示例：宝可梦挑战 1 @群友 20。把 1 换成本群已拥有的宝可梦序号或名字；20 是回合上限，可省略。使用闪光个体时在末尾加“闪光”。")
         yield event.plain_result("\n".join(lines))
 
     @filter.command("收集资料", alias={"图鉴资料", "我的资料"})
@@ -1724,8 +1724,8 @@ class PokemonPartnerPlugin(Star):
         text = (
             f"【宝可梦挑战】{chosen['nickname']} 发起 Lv.50 收藏对战 · 最多 {match['max_turns']} 回合\n"
             f"出战：序号 {chosen['index']} · {chosen['name']}{' · 闪光' if chosen['shiny'] else ''}\n"
-            "直接发送「接收挑战 <自己的序号或名字> [闪光]」即可开战，或「拒绝挑战」。\n"
-            "挑战 5 分钟内有效；达到回合上限仍未分胜负判平局。对局不消耗宝可梦和星尘，可用「取消挑战」撤回。"
+            "直接发送“接收挑战”，后面加上你在本群已拥有的宝可梦序号或名字即可开战，例如“接收挑战 1”或“接收挑战 皮卡丘”。不想应战可发送“拒绝挑战”。\n"
+            "挑战 5 分钟内有效；达到回合上限仍未分胜负判平局。对局不消耗宝可梦和星尘，可用“取消挑战”撤回。"
         )
         yield event.chain_result([Comp.At(qq=match["target"]["user_id"]), Comp.Plain(text)])
 
@@ -1823,7 +1823,7 @@ class PokemonPartnerPlugin(Star):
             verdict = "平局" if not record["winner_id"] else "胜" if record["winner_id"] == user_id else "负"
             lines.append(f"{verdict} · {a['nickname']}的{a['name']} vs {b['nickname']}的{b['name']} · {record['turns']}回合 · 种子={record['seed']}")
         if not records:
-            lines.append("暂无对战记录。发送「宝可梦挑战 <序号或名字> @群友 [回合]」开始第一场。")
+            lines.append("暂无对战记录。例如发送“宝可梦挑战 1 @群友”开始第一场；把 1 换成本群已拥有的宝可梦序号或名字，并真正 @ 要挑战的群友。")
         else:
             lines.append("以上为最近五场；3分/胜、1分/平。对战排行查看本群榜单。")
         for part in split_battle_text("\n".join(lines)):
