@@ -198,7 +198,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.2.7",
+    "v1.2.8",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -543,12 +543,12 @@ class PokemonPartnerPlugin(Star):
             f"{summary.collected}/{summary.total}（第 {page_no}/{pages} 页）"
         ]
         lines += [
-            f"{(page_no - 1) * page_size + index}. #{item.partner.dex_raw} {item.partner.name}"
+            f"#{item.partner.dex_raw} {item.partner.name}"
             f"｜{item.partner.rarity}"
             + (f"｜闪光×{item.shiny_count}" if item.shiny_count else "")
-            for index, item in enumerate(chunk, 1)
+            for item in chunk
         ]
-        lines.append("挑战示例：宝可梦挑战 1 @群友 20。把 1 换成本群已拥有的宝可梦序号或名字；20 是回合上限，可省略。使用闪光个体时在末尾加“闪光”。")
+        lines.append("按全国图鉴编号排列。挑战示例：宝可梦挑战 25 @群友 20。把 25 换成本群已拥有的宝可梦图鉴编号或名字；20 是回合上限，可省略。使用闪光个体时在末尾加“闪光”。")
         yield event.plain_result("\n".join(lines))
 
     @filter.command("收集资料", alias={"图鉴资料", "我的资料"})
@@ -852,8 +852,8 @@ class PokemonPartnerPlugin(Star):
             "相性 <属性1> [属性2]｜相性 打 <属性> — 属性相性\n"
             "克制 <宝可梦>｜克制 <A> <B> — 克制推荐与对比\n"
             "对战 <A> <B> [等级] [详细] [种子=123] — 招式效果与对战过程\n"
-            "宝可梦挑战 <序号/名字> @群友 [回合] — 用已持有的宝可梦邀请对战\n"
-            "接收挑战 <自己的序号/名字>｜拒绝挑战｜取消挑战 — 群内挑战\n"
+            "宝可梦挑战 <图鉴编号/名字> @群友 [回合] — 用已持有的宝可梦邀请对战\n"
+            "接收挑战 <自己的图鉴编号/名字>｜拒绝挑战｜取消挑战 — 群内挑战\n"
             "对战记录 [@群友]｜对战排行 — 收藏对战胜负与群榜\n"
             "队伍分析 <名称...> — 队伍弱点分析\n"
             "筛选 <条件> — 按种族值筛选\n"
@@ -1699,7 +1699,7 @@ class PokemonPartnerPlugin(Star):
 
     @filter.command("宝可梦挑战", alias={"收藏挑战", "挑战宝可梦"})
     async def cmd_owned_challenge(self, event: AstrMessageEvent, keyword: str = ""):
-        """宝可梦挑战 <自己的序号或名字> @群友 [回合] [闪光]。"""
+        """宝可梦挑战 <自己的图鉴编号或名字> @群友 [回合] [闪光]。"""
         try:
             try:
                 from .duel_commands import parse_challenge
@@ -1723,15 +1723,15 @@ class PokemonPartnerPlugin(Star):
         chosen = match["challenger"]
         text = (
             f"【宝可梦挑战】{chosen['nickname']} 发起 Lv.50 收藏对战 · 最多 {match['max_turns']} 回合\n"
-            f"出战：序号 {chosen['index']} · {chosen['name']}{' · 闪光' if chosen['shiny'] else ''}\n"
-            "直接发送“接收挑战”，后面加上你在本群已拥有的宝可梦序号或名字即可开战，例如“接收挑战 1”或“接收挑战 皮卡丘”。不想应战可发送“拒绝挑战”。\n"
+            f"出战：图鉴编号 #{chosen['dex']} · {chosen['name']}{' · 闪光' if chosen['shiny'] else ''}\n"
+            "直接发送“接收挑战”，后面加上你在本群已拥有的宝可梦图鉴编号或名字即可开战，例如“接收挑战 25”或“接收挑战 皮卡丘”。使用闪光个体时在末尾加“闪光”；不想应战可发送“拒绝挑战”。\n"
             "挑战 5 分钟内有效；达到回合上限仍未分胜负判平局。对局不消耗宝可梦和星尘，可用“取消挑战”撤回。"
         )
         yield event.chain_result([Comp.At(qq=match["target"]["user_id"]), Comp.Plain(text)])
 
     @filter.command("接收挑战", alias={"接受对战", "接受挑战"})
     async def cmd_owned_accept(self, event: AstrMessageEvent, keyword: str = ""):
-        """接收挑战 <自己的序号或名字> [闪光] [详细] [卡片/图片转发/转发/文本]。"""
+        """接收挑战 <自己的图鉴编号或名字> [闪光] [详细] [卡片/图片转发/转发/文本]。"""
         match = None
         try:
             try:
@@ -1823,7 +1823,7 @@ class PokemonPartnerPlugin(Star):
             verdict = "平局" if not record["winner_id"] else "胜" if record["winner_id"] == user_id else "负"
             lines.append(f"{verdict} · {a['nickname']}的{a['name']} vs {b['nickname']}的{b['name']} · {record['turns']}回合 · 种子={record['seed']}")
         if not records:
-            lines.append("暂无对战记录。例如发送“宝可梦挑战 1 @群友”开始第一场；把 1 换成本群已拥有的宝可梦序号或名字，并真正 @ 要挑战的群友。")
+            lines.append("暂无对战记录。例如发送“宝可梦挑战 25 @群友”开始第一场；把 25 换成本群已拥有的宝可梦图鉴编号或名字，并真正 @ 要挑战的群友。")
         else:
             lines.append("以上为最近五场；3分/胜、1分/平。对战排行查看本群榜单。")
         for part in split_battle_text("\n".join(lines)):

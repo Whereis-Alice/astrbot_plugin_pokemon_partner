@@ -1,4 +1,4 @@
-"""宝可梦挑战指令的纯解析：名字/序号、真实 @、回合上限互不混淆。"""
+"""宝可梦挑战指令的纯解析：名字/图鉴编号、真实 @、回合上限互不混淆。"""
 
 from __future__ import annotations
 
@@ -56,7 +56,7 @@ def _options(tokens: list[str]) -> tuple[list[str], bool]:
 
 
 def parse_challenge(raw: str, mentions: Sequence[tuple[str, str]] = (), *, bot_id: str = "") -> ChallengeRequest:
-    """解析 `宝可梦挑战 <序号/名字> @群友 [回合]`，也兼容旧 @ 在前的格式。"""
+    """解析 `宝可梦挑战 <图鉴编号/名字> @群友 [回合]`，也兼容 @ 在前的格式。"""
     command, tokens = _tokens(raw, CHALLENGE_COMMANDS)
     tokens, shiny = _options(tokens)
     by_id = {}
@@ -95,10 +95,10 @@ def parse_challenge(raw: str, mentions: Sequence[tuple[str, str]] = (), *, bot_i
                 raise GachaError("请真正 @ 一位群友，或使用 @用户ID，不能只写昵称。")
             target_id = text_mentions[0]
         elif command != "宝可梦挑战" and len(remaining) >= 2 and remaining[0].isdigit():
-            # 原格式「收藏挑战 用户ID 序号」仅在没有真实 @ 时使用。
+            # 用户 ID 在前的旧指令格式仅在没有真实 @ 时使用。
             target_id = remaining.pop(0)
         else:
-            raise GachaError("请选择自己在本群已拥有的宝可梦，并真正 @ 一位群友，例如“宝可梦挑战 1 @群友 20”；1 可换成自己的序号或名字，20 是回合上限，可以省略。")
+            raise GachaError("请选择自己在本群已拥有的宝可梦，并真正 @ 一位群友，例如“宝可梦挑战 25 @群友 20”；25 可换成自己的图鉴编号或名字，20 是回合上限，可以省略。")
 
     limits = []
     selected = []
@@ -117,14 +117,14 @@ def parse_challenge(raw: str, mentions: Sequence[tuple[str, str]] = (), *, bot_i
         else:
             selected.append(token)
         cursor += 1
-    # 一个数字是收藏序号；名字/序号后面的数字只能是回合，非法数值也应明确报错。
+    # 一个数字是图鉴编号；名字/编号后面的数字只能是回合，非法数值也应明确报错。
     while len(selected) > 1 and (selected[-1].isdigit() or _NUMERIC_OPTION.fullmatch(selected[-1])):
         limits.append(round_limit(selected.pop()))
     if len(limits) > 1:
         raise GachaError("一次挑战只能指定一个回合上限。")
     selection = " ".join(selected).strip()
     if not selection:
-        raise GachaError("请填写自己的宝可梦序号或名字，例如：宝可梦挑战 2 @群友。")
+        raise GachaError("请填写自己已拥有的宝可梦图鉴编号或名字，例如：宝可梦挑战 25 @群友。")
     return ChallengeRequest(selection, shiny, target_id, target_name, limits[0] if limits else 50)
 
 
@@ -133,10 +133,10 @@ def parse_accept(raw: str) -> SelectionRequest:
     _, tokens = _tokens(raw, ACCEPT_COMMANDS)
     tokens, shiny = _options(tokens)
     if any(token.startswith("回合") or token.endswith("回合") for token in tokens):
-        raise GachaError("回合上限由发起方约定，接收挑战时只需填写自己的序号或名字。")
+        raise GachaError("回合上限由发起方约定，接收挑战时只需填写自己的图鉴编号或名字。")
     if len(tokens) > 1 and (tokens[-1].isdigit() or _NUMERIC_OPTION.fullmatch(tokens[-1])):
-        raise GachaError("回合上限由发起方约定，接收挑战时只需填写自己的序号或名字。")
+        raise GachaError("回合上限由发起方约定，接收挑战时只需填写自己的图鉴编号或名字。")
     selection = " ".join(tokens).strip()
     if not selection:
-        raise GachaError("请在“接收挑战”后加上你在本群已拥有的宝可梦序号或名字，例如“接收挑战 1”或“接收挑战 皮卡丘”。")
+        raise GachaError("请在“接收挑战”后加上你在本群已拥有的宝可梦图鉴编号或名字，例如“接收挑战 25”或“接收挑战 皮卡丘”；使用闪光个体时在末尾加“闪光”。")
     return SelectionRequest(selection, shiny)

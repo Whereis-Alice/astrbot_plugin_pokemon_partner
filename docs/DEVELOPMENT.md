@@ -23,6 +23,7 @@ python -m pip install -r requirements.txt
 | 对战计算和招式效果 | `python battle_regression_tests.py` |
 | 对战卡片与消息发送方式 | `python battle_card_tests.py`、`python battle_delivery_tests.py`、`python battle_image_forward_sdk_tests.py` |
 | 群友挑战、收藏与指令解析 | `python owned_duels_tests.py`、`python owned_duel_command_tests.py`、`python duel_commands_tests.py` |
+| 收藏卡片的图鉴编号与分页显示 | `python dex_collection_card_tests.py` |
 | 卡片排版与稀有度样式 | `python card_layout_tests.py`、`python rarity_card_tests.py`、`python rarity_visual_tests.py` |
 | 场景、精灵球圆盘与闪光图片缓存 | `python rarity_scene_tests.py`、`python rarity_emblem_tests.py`、`python shiny_artwork_tests.py` |
 | 管理台操作、设置保存与招式查询 | `python webui_action_tests.py`、`python webui_learnset_tests.py` |

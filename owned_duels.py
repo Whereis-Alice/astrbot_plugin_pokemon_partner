@@ -48,11 +48,12 @@ class OwnedDuelService:
 
     @staticmethod
     def _index(index: int | str) -> int:
+        """Validate a National Pokédex number; never treat it as a list position."""
         if isinstance(index, bool) or not str(index).strip().isdecimal():
-            raise GachaError("请使用「我的宝可梦」中的正整数序号。")
+            raise GachaError("请填写正整数图鉴编号，例如 25，或自己的宝可梦名字。")
         value = int(index)
         if value < 1:
-            raise GachaError("宝可梦序号从 1 开始。")
+            raise GachaError("全国图鉴编号从 1 开始。")
         return value
 
     @staticmethod
@@ -115,34 +116,46 @@ class OwnedDuelService:
 
     def _resolve_owned(self, owned: list[OwnedPartner], selection: int | str) -> tuple[int, OwnedPartner]:
         if isinstance(selection, bool):
-            raise GachaError("请选择自己的宝可梦序号或名字。")
+            raise GachaError("请选择自己已拥有的宝可梦图鉴编号或名字。")
         text = str(selection).strip()
-        if text.isdecimal():
-            ordinal = self._index(selection)
-            if ordinal > len(owned):
-                raise GachaError(f"没有收藏序号 {ordinal}；也可以直接填写已拥有的宝可梦名字。")
-            return ordinal, owned[ordinal - 1]
+        number = text[1:] if text.startswith(("#", "＃")) else text
+        # NFKC name matching would turn a superscript such as ² into 2 and
+        # accidentally match a numeric name alias (for example Porygon2).
+        if number.isdigit() and not number.isdecimal():
+            raise GachaError("请填写正整数图鉴编号，例如 25，或自己的宝可梦名字。")
+        if number.isdecimal():
+            dex = self._index(number)
+            matches = [(item.partner.dex, item) for item in owned if item.partner.dex == dex]
+            if not matches:
+                raise GachaError(f"你尚未拥有图鉴编号 {dex} 的宝可梦；也可以直接填写已拥有的宝可梦名字。")
+            if len(matches) == 1:
+                return matches[0]
+            defaults = [match for match in matches if not str(match[1].partner.row.get("form_name") or "").strip()]
+            if len(defaults) == 1:
+                return defaults[0]
+            choices = "；".join(f"图鉴编号 {number} · {item.partner.name}" for number, item in matches[:8])
+            raise GachaError(f"图鉴编号 {dex} 对应多个已拥有的形态，请直接填写完整宝可梦名字：{choices}")
         needle = self._normal_name(text)
         if not needle:
-            raise GachaError("请填写自己的宝可梦序号或名字。")
+            raise GachaError("请填写自己已拥有的宝可梦图鉴编号或名字。")
         indexed = []
-        for ordinal, item in enumerate(owned, 1):
+        for item in owned:
             row = item.partner.row
             names = {self._normal_name(item.partner.name), *(self._normal_name(row.get(column)) for column in
                      ("name_zh", "name_en", "name_ja", "name_jp", "form_name"))}
             names.discard("")
-            indexed.append((ordinal, item, names))
+            indexed.append((item.partner.dex, item, names))
         # 完整收藏名称最明确，默认形态与特殊形态共用语言别名时优先它。
-        matches = [(ordinal, item) for ordinal, item, _ in indexed if needle == self._normal_name(item.partner.name)]
+        matches = [(dex, item) for dex, item, _ in indexed if needle == self._normal_name(item.partner.name)]
         if not matches:
-            matches = [(ordinal, item) for ordinal, item, names in indexed if needle in names]
+            matches = [(dex, item) for dex, item, names in indexed if needle in names]
         if not matches:
-            matches = [(ordinal, item) for ordinal, item, names in indexed if any(needle in name for name in names)]
+            matches = [(dex, item) for dex, item, names in indexed if any(needle in name for name in names)]
         if not matches:
             raise GachaError(f"你尚未拥有「{text}」，只能选择自己已抽到的宝可梦。")
         if len(matches) > 1:
-            choices = "；".join(f"序号 {ordinal} · {item.partner.name}" for ordinal, item in matches[:8])
-            raise GachaError(f"「{text}」对应多个已拥有的宝可梦，请用完整形态名或序号选择：{choices}")
+            choices = "；".join(f"图鉴编号 {dex} · {item.partner.name}" for dex, item in matches[:8])
+            raise GachaError(f"「{text}」对应多个已拥有的宝可梦，请用完整宝可梦名字选择：{choices}")
         return matches[0]
 
     def _selection(self, scope: str, user_id: str, index: int | str, shiny: bool, nickname: str = "") -> dict:
@@ -151,7 +164,7 @@ class OwnedDuelService:
         owned = self._owned(scope, user_id)
         if not owned:
             raise GachaError("这位训练家还没有收藏宝可梦，先发送「今日宝可梦」吧。")
-        ordinal, selected = self._resolve_owned(owned, index)
+        dex, selected = self._resolve_owned(owned, index)
         if shiny and selected.shiny_count < 1:
             raise GachaError("你还没有这只宝可梦的闪光个体，不能选择闪光。")
         use_shiny = shiny or selected.normal_count < 1
@@ -159,7 +172,9 @@ class OwnedDuelService:
         name = str(nickname or profile.get("nickname") or user_id)[:48]
         return {
             "user_id": user_id, "nickname": name, "partner_key": selected.partner.key,
-            "index": ordinal, "name": selected.partner.name, "dex": selected.partner.dex_raw,
+            # Keep the snapshot shape. Existing snapshots retain their old
+            # index; ownership and completion always use the frozen key.
+            "index": dex, "name": selected.partner.name, "dex": selected.partner.dex_raw,
             "rarity": selected.partner.rarity, "shiny": use_shiny,
         }
 

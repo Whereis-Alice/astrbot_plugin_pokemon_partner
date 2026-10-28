@@ -867,7 +867,7 @@ def render_collection_card(
     collected: int,
     image_loader: ImageLoader | None = None,
 ) -> bytes:
-    """收藏图鉴：每页 ``page_size`` 个，6 列网格。"""
+    """收藏图鉴：每页 ``page_size`` 个，按全国图鉴编号标记的6列网格。"""
     cols = 6
     rows = max(1, math.ceil(len(owned) / cols))
     cell_w, cell_h = 158, 196
@@ -914,22 +914,38 @@ def render_collection_card(
             _placeholder_art(draw, art_box, partner.rarity)
         else:
             _paste_art(base, art, art_box)
-        ordinal = (max(1, page) - 1) * page_size + index + 1
-        ordinal_label = f"序号 {ordinal}"
-        ordinal_font = _font(18)
-        ordinal_width = int(draw.textlength(ordinal_label, font=ordinal_font)) + 14
+        dex_label = f"图鉴 #{partner.dex:04d}"
+        dex_font = _font(18)
+        dex_width = int(draw.textlength(dex_label, font=dex_font)) + 14
         draw.rounded_rectangle(
-            [x + 8, y + 13, x + 8 + ordinal_width, y + 42],
+            [x + 8, y + 13, x + 8 + dex_width, y + 42],
             radius=8, fill=(251, 233, 230),
         )
-        draw.text((x + 15, y + 17), ordinal_label, font=ordinal_font, fill=TEXT)
-        lines = _limited_wrapped_lines(draw, partner.name, name_font, cell_w - 20, 2)
+        draw.text((x + 15, y + 17), dex_label, font=dex_font, fill=TEXT)
+        display_name = partner.name
+        form = str(partner.row.get("form_name") or "")
+        species_name = str(partner.row.get("name_zh") or "")
+        item_name_font = name_font
+        if form:
+            # A form already containing the species name is complete on its own.
+            # Avoid repeating it and clipping the distinguishing form suffix.
+            if species_name and species_name in form:
+                display_name = form
+            for size in range(21, 13, -1):
+                item_name_font = _font(size)
+                lines = _wrap(draw, display_name, item_name_font, cell_w - 20)
+                if len(lines) <= 2:
+                    break
+            else:
+                raise ValueError("完整形态名超出收藏卡片的空间，请使用文本列表。")
+        else:
+            lines = _limited_wrapped_lines(draw, display_name, item_name_font, cell_w - 20, 2)
         for line_index, line in enumerate(lines):
-            tw = draw.textlength(line, font=name_font)
+            tw = draw.textlength(line, font=item_name_font)
             draw.text(
                 (x + (cell_w - tw) / 2, y + 108 + line_index * 25),
                 line,
-                font=name_font,
+                font=item_name_font,
                 fill=TEXT,
             )
         footer = f"#{partner.dex_raw}"
@@ -946,7 +962,7 @@ def render_collection_card(
 
     # 分页按"已收集"计算；total 是卡池规模，只用于展示进度。
     pages = max(1, math.ceil(collected / max(1, page_size)))
-    foot = f"第 {page}/{pages} 页 · 翻页示例：我的宝可梦 2 · 挑战示例：宝可梦挑战 1 @群友"
+    foot = f"第 {page}/{pages} 页 · 数字即图鉴编号 · 挑战示例：宝可梦挑战 25 @群友 · 我的宝可梦 2 翻页"
     tw = draw.textlength(foot, font=small)
     draw.text(((W - tw) / 2, height - 66), foot, font=small, fill=SUBTEXT)
     return _encode(base)
