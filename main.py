@@ -46,6 +46,7 @@ try:
         make_move,
     )
     from .card_renderer import CardRenderer
+    from .daily_draw_trigger import DailyDrawTrigger
     from .champions_db import (
         OPTION_LABELS,
         ChampionsDB,
@@ -77,6 +78,7 @@ except ImportError:  # 兼容以普通模块方式加载插件
         make_move,
     )
     from card_renderer import CardRenderer
+    from daily_draw_trigger import DailyDrawTrigger
     from champions_db import (
         OPTION_LABELS,
         ChampionsDB,
@@ -195,7 +197,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.2.4",
+    "v1.2.5",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -435,6 +437,15 @@ class PokemonPartnerPlugin(Star):
     @filter.command("今日宝可梦", alias={"抽取宝可梦", "抽宝可梦"})
     async def cmd_partner_draw(self, event: AstrMessageEvent):
         """今日宝可梦：抽取宝可梦。每次数量与稀有度概率由插件配置决定。"""
+        text = event.get_message_str().strip()
+        if text.startswith("今日宝可梦") and text != "今日宝可梦":
+            return
+        # 私聊、空唤醒前缀等情况下，command 和 regex 可以同时命中同一事件。
+        # 在任何异步操作之前标记；抽取或发卡失败也不能从另一入口重抽。
+        dispatch_key = f"{PLUGIN_ID}:daily_draw_dispatched"
+        if event.get_extra(dispatch_key, False):
+            return
+        event.set_extra(dispatch_key, True)
         try:
             service = self._partner_or_error()
             scope, user_id, nickname = self._scope(event)
@@ -449,6 +460,13 @@ class PokemonPartnerPlugin(Star):
             yield event.plain_result("抽取失败，请稍后再试。")
             return
         async for result in self._send_draw_card(event, outcome, nickname or "训练家"):
+            yield result
+
+    @filter.custom_filter(DailyDrawTrigger)
+    @filter.regex(r"\A今日宝可梦\Z")
+    async def cmd_partner_draw_bare(self, event: AstrMessageEvent):
+        """直接发送整句今日宝可梦，无需唤醒前缀。"""
+        async for result in self.cmd_partner_draw(event):
             yield result
 
     @filter.command("抽取概率", alias={"抽取规则", "抽卡概率"})

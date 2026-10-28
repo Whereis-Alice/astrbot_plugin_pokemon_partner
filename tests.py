@@ -206,6 +206,9 @@ def test_main_imports():
         "astrbot.api.event",
         filter=types.SimpleNamespace(
             command=_command,
+            regex=lambda *a, **kw: (lambda fn: fn),
+            custom_filter=lambda *a, **kw: (lambda fn: fn),
+            CustomFilter=_Dummy,
             llm_tool=_llm_tool,
             permission_type=lambda *a, **kw: (lambda fn: fn),
             PermissionType=types.SimpleNamespace(ADMIN="admin"),

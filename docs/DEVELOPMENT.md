@@ -19,6 +19,7 @@ python -m pip install -r requirements.txt
 | 修改内容 | 检查命令 |
 | --- | --- |
 | 核心图鉴、抽卡、配置与接口注册 | `python tests.py` |
+| 今日指令的整句触发、权限与消息去重 | `python daily_draw_command_tests.py` |
 | 对战计算和招式效果 | `python battle_regression_tests.py` |
 | 对战卡片与消息发送方式 | `python battle_card_tests.py`、`python battle_delivery_tests.py` |
 | 群友挑战、收藏与指令解析 | `python owned_duels_tests.py`、`python owned_duel_command_tests.py`、`python duel_commands_tests.py` |
