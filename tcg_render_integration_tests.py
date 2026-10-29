@@ -27,9 +27,11 @@ class CardRoutingTests(unittest.TestCase):
                             pity_ssr=1, ssr_pity_after=30, image_loader=self.loader)
         self.classic = Mock(return_value=b"classic")
         self.tcg = Mock(return_value=b"tcg")
+        self.yugioh = Mock(return_value=b"yugioh")
         self.patches = (
             patch.object(rarity_cards, "render_rarity_draw", self.classic),
             patch.dict(sys.modules, {"tcg_cards": SimpleNamespace(render_tcg_draw=self.tcg)}),
+            patch.dict(sys.modules, {"yugioh_cards": SimpleNamespace(render_yugioh_draw=self.yugioh)}),
         )
         for item in self.patches:
             item.start()
@@ -39,6 +41,7 @@ class CardRoutingTests(unittest.TestCase):
         self.assertEqual(partner_cards.render_draw_card(self.items, **self.options), b"classic")
         self.classic.assert_called_once_with(self.items, **self.options)
         self.tcg.assert_not_called()
+        self.yugioh.assert_not_called()
 
     def test_tcg_uses_independent_renderer_with_the_same_context(self):
         self.assertEqual(partner_cards.render_draw_card(self.items, style="tcg", **self.options), b"tcg")
@@ -48,9 +51,21 @@ class CardRoutingTests(unittest.TestCase):
     def test_unknown_style_falls_back_to_existing_renderer(self):
         self.assertEqual(partner_cards.render_draw_card(self.items, style="unavailable", **self.options), b"classic")
         self.tcg.assert_not_called()
+        self.yugioh.assert_not_called()
 
-    def test_both_styles_share_the_same_overflow_collection(self):
-        for style, renderer in (("classic", self.classic), ("tcg", self.tcg)):
+    def test_yugioh_uses_independent_renderer_with_the_same_context(self):
+        self.assertEqual(partner_cards.render_draw_card(self.items, style="yugioh", **self.options), b"yugioh")
+        self.yugioh.assert_called_once_with(self.items, **self.options)
+        self.classic.assert_not_called()
+        self.tcg.assert_not_called()
+
+    def test_manual_style_values_accept_case_and_whitespace(self):
+        for style, expected in ((" TCG ", b"tcg"), ("YuGiOh", b"yugioh"), (None, b"classic"), (True, b"classic")):
+            with self.subTest(style=style):
+                self.assertEqual(partner_cards.render_draw_card(self.items, style=style, **self.options), expected)
+
+    def test_all_styles_share_the_same_overflow_collection(self):
+        for style, renderer in (("classic", self.classic), ("tcg", self.tcg), ("yugioh", self.yugioh)):
             with self.subTest(style=style):
                 notes = []
                 partner_cards.render_draw_card(self.items, style=style, details_out=notes, **self.options)
@@ -85,6 +100,9 @@ class DailyCardSendTests(unittest.TestCase):
             self.plugin.config["daily_card_style"] = "tcg"
             self.assertEqual(len(self.send()), 1)
             self.assertEqual(render.call_args.kwargs["style"], "tcg")
+            self.plugin.config["daily_card_style"] = "yugioh"
+            self.assertEqual(len(self.send()), 1)
+            self.assertEqual(render.call_args.kwargs["style"], "yugioh")
             self.assertIs(render.call_args.args[0], self.outcome.items)
             self.assertIs(render.call_args.kwargs["image_loader"], self.loader)
             self.assertEqual(self.plugin._ensure_artwork.call_args.args[0],
@@ -100,8 +118,8 @@ class DailyCardSendTests(unittest.TestCase):
         self.assertIn("闪光", results[0])
         self.assertIn("今日剩余 2/3", results[0])
 
-    def test_success_sends_notice_then_one_pure_card_for_either_style(self):
-        for style in ("classic", "tcg"):
+    def test_success_sends_notice_then_one_pure_card_for_each_style(self):
+        for style in ("classic", "tcg", "yugioh"):
             with self.subTest(style=style), patch.object(main, "render_draw_card", return_value=b"card"):
                 self.plugin.config["daily_card_style"] = style
                 results = self.send()
@@ -236,8 +254,8 @@ class CardSettingsTests(unittest.TestCase):
         with patch.object(self.ui, "_body", AsyncMock(return_value={"config": {"daily_card_style": value}})):
             return asyncio.run(self.ui.api_settings_save())
 
-    def test_both_styles_save_and_are_returned_without_changing_other_settings(self):
-        for style in ("tcg", "classic"):
+    def test_all_styles_save_and_are_returned_without_changing_other_settings(self):
+        for style in ("tcg", "classic", "yugioh"):
             with self.subTest(style=style):
                 self.assertEqual(self.save(style), {"ok": True})
                 saved = json.loads(self.path.read_text(encoding="utf-8"))
@@ -246,7 +264,7 @@ class CardSettingsTests(unittest.TestCase):
 
     def test_invalid_styles_are_rejected_without_writing(self):
         before = self.path.read_bytes()
-        for style in ("invalid", "TCG", True, 1):
+        for style in ("invalid", "TCG", "YuGiOh", True, 1):
             with self.subTest(style=style):
                 self.assertFalse(self.save(style)["ok"])
                 self.assertEqual(self.config["daily_card_style"], "classic")

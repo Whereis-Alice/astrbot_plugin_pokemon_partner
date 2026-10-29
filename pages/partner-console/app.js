@@ -893,7 +893,7 @@ const SETTINGS_FIELDS = [
   {
     group: "今日宝可梦卡面",
     fields: [
-      { key: "daily_card_style", label: "今日宝可梦卡面风格", type: "select", default: "classic", options: [["classic", "现有稀有度卡面"], ["tcg", "TCG 收藏卡面"]], hint: "两套均发送文字提示与纯卡牌，卡内以属性图标显示弱点、抗性和免疫。仅切换今日宝可梦卡面；关闭图片卡片时使用文本。" },
+      { key: "daily_card_style", label: "今日宝可梦卡面风格", type: "select", default: "classic", options: [["classic", "现有稀有度卡面"], ["tcg", "TCG 收藏卡面"], ["yugioh", "游戏王收藏卡面"]], hint: "三套均发送文字提示与纯卡牌，卡内以属性图标显示弱点、抗性和免疫。仅切换今日宝可梦卡面；关闭图片卡片时使用文本。" },
     ],
   },
   {
@@ -975,6 +975,7 @@ function dailyCardStylePicker(input, field) {
   const options = [
     { key: "classic", title: "现有稀有度卡面", detail: "场景立绘 · 主题边饰 · 稀有度光效" },
     { key: "tcg", title: "TCG 收藏卡面", detail: "实体卡比例 · 金属包边 · 五档印刷材质" },
+    { key: "yugioh", title: "游戏王收藏卡面", detail: "怪兽卡构图 · 立绘画窗 · 五档纸面与稀有工艺" },
   ];
   const hintId = `${input.id}-hint`;
   const picker = el("fieldset", { class: "card-style-picker", "aria-describedby": hintId });

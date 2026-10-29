@@ -595,7 +595,13 @@ def render_draw_card(
     details_out: list[str] | None = None,
 ) -> bytes:
     """切换今日卡面；未指定或未知样式时保留现有稀有度卡面。"""
-    if style == "tcg":
+    style = style.strip().lower() if isinstance(style, str) else "classic"
+    if style == "yugioh":
+        try:
+            from .yugioh_cards import render_yugioh_draw as render
+        except ImportError:
+            from yugioh_cards import render_yugioh_draw as render
+    elif style == "tcg":
         try:
             from .tcg_cards import render_tcg_draw as render
         except ImportError:

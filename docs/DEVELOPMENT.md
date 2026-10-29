@@ -29,6 +29,7 @@ python -m pip install -r requirements.txt
 | 今日卡面切换、配置保存与发送分流 | `python tcg_render_integration_tests.py` |
 | 卡内基础属性相性、双属性倍率与免疫 | `python card_matchups_tests.py` |
 | TCG 实卡比例、文字边界、闪光请求与十连 | `python tcg_card_tests.py` |
+| 游戏王卡面、真实文字对比度、完整立绘、属性相性与十连 | `python yugioh_card_tests.py` |
 | 场景、精灵球圆盘与闪光图片缓存 | `python rarity_scene_tests.py`、`python rarity_emblem_tests.py`、`python shiny_artwork_tests.py` |
 | 图片下载大小限制与备用图源 | `python image_download_tests.py` |
 | 形态立绘匹配、独立缓存与缺图日志 | `python artwork_form_tests.py` |
@@ -61,6 +62,7 @@ python rarity_visual_tests.py --output /path/to/review --art-dir /path/to/review
 | `partner_cards.py`、`rarity_cards.py`、`tcg_cards.py` | 收藏及抽卡卡片排版，现有卡面与 TCG 卡面分流 |
 | `rarity_scenes.py`、`rarity_emblems.py` | 稀有度场景与精灵球圆盘材质 |
 | `tcg_materials.py`、`tcg_symbols.py` | TCG 纸面、彩箔、雕纹与 18 种属性能量图标 |
+| `yugioh_cards.py`、`yugioh_materials.py` | 游戏王怪兽卡构图、五档纸面／箔材质，复用 18 种属性能量图标 |
 | `artwork.py` | 普通与闪光立绘的查找、预取和缓存 |
 | `webui.py`、`pages/` | 管理台接口、页面与样式 |
 | `pokedex_db.py`、`data/*.tsv` | 本地中文图鉴数据查询 |
@@ -72,7 +74,7 @@ python rarity_visual_tests.py --output /path/to/review --art-dir /path/to/review
 | `logo.png`、`logo.svg` | 插件图标 |
 
 卡片渲染接收普通数据，只读图片缓存；网络下载在异步预取阶段完成。
-`daily_card_style` 只影响今日宝可梦单抽和多抽，默认 `classic`；`tcg` 使用独立渲染模块。
+`daily_card_style` 只影响今日宝可梦单抽和多抽，默认 `classic`；`tcg` 和 `yugioh` 使用各自的独立渲染模块。
 消息入口每次读取当前配置，切换样式不会重新抽取、迁移收藏或改变闪光判定。
 修改玩法时保持群聊/私聊的数据隔离，修改消息输出时保留图片或转发失败后的文本回退。
 

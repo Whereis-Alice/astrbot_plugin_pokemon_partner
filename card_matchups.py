@@ -1,4 +1,4 @@
-"""Immutable, cached main-series type matchups for the two draw card styles.
+"""Immutable, cached main-series type matchups shared by draw card styles.
 
 These are species type multipliers, independent of abilities, moves, weather,
 and the TCG's damage modifiers. Neutral attacking types are intentionally omitted.

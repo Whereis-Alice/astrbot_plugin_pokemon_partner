@@ -90,7 +90,7 @@ body.drawer-open { overflow:hidden; } .drawer-backdrop { position:fixed; inset:0
 .group-title { grid-column:1/-1; margin-top:16px; padding-bottom:12px; border-bottom:1px solid var(--pk-border); font-size:13px; font-weight:750; } .group-title:first-child { margin-top:0; }
 .card-style-picker { grid-column:1/-1; min-width:0; border:0; padding:0; margin:0; }
 .card-style-picker>legend { padding:0; margin-bottom:13px; font-size:12px; font-weight:650; color:var(--pk-text-muted); }
-.card-style-options { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+.card-style-options { display:grid; grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr)); gap:16px; }
 .card-style-option { min-width:0; overflow:hidden; border:1px solid var(--pk-border-strong); border-radius:16px; background:var(--pk-bg-sunken); transition:border-color var(--pk-dur-fast),box-shadow var(--pk-dur-fast); }
 .card-style-option:hover { border-color:var(--pk-accent); }
 .card-style-option.selected { border-color:var(--pk-accent); box-shadow:0 0 0 3px var(--pk-accent-soft); background:var(--pk-bg-panel); }
