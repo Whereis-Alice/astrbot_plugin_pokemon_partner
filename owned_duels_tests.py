@@ -381,6 +381,32 @@ class OwnedDuelTests(unittest.TestCase):
         self.assertFalse(self.service.abort("group:a", match["match_id"]))
         self.assertNotIn("group:a", self.store.snapshot()["scopes"])
 
+    def test_deleting_a_member_releases_only_their_pending_challenge(self):
+        self.challenge()
+        elsewhere=self.service.challenge("group:b","alice","bob",25,now=1000)
+        before_users=self.store.snapshot()["scopes"]["group:a"]["users"]
+        self.assertEqual(self.store.delete_scope("group:a","alice"),1)
+        snapshot=self.store.snapshot()
+        self.assertEqual(snapshot["scopes"]["group:a"]["duels"]["pending"],{})
+        self.assertIn(elsewhere["match_id"],snapshot["scopes"]["group:b"]["duels"]["pending"])
+        self.assertEqual(snapshot["scopes"]["group:a"]["users"]["bob"],before_users["bob"])
+        # The surviving trainer can immediately take another challenge.
+        self.service.challenge("group:a","carol","bob",1,now=1001)
+
+    def test_deleting_a_member_aborts_running_reservation_but_keeps_old_history(self):
+        first=self.start()
+        self.service.complete("group:a",first["match_id"],self.result(first),now=1002)
+        history=self.service.history("group:a")
+        self.service.challenge("group:a","alice","bob",25,now=2000)
+        running=self.service.accept("group:a","bob",1,now=2001)
+        self.store.delete_scope("group:a","alice")
+        with self.assertRaises(GachaError):
+            self.service.complete("group:a",running["match_id"],self.result(running),now=2002)
+        self.assertFalse(self.service.abort("group:a",running["match_id"]))
+        self.assertNotIn("alice",self.store.snapshot()["scopes"]["group:a"]["users"])
+        self.assertEqual(self.service.history("group:a"),history)
+        self.assertEqual(self.service.profile("group:a","bob")["total"],1)
+
     def test_records_are_bounded_and_invalid_results_are_not_counted(self):
         match = self.start()
         with self.assertRaises(GachaError):

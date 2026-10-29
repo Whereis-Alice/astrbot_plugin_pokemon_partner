@@ -121,6 +121,22 @@ class PokemonPartnerWebUI:
     def _store(self):
         return self._service().store
 
+    def _dex_rules(self) -> GachaRules:
+        """图鉴只依赖稀有度阈值，关闭或加载失败的抽卡不应阻止浏览。"""
+        service = getattr(self.plugin, "partner_service", None)
+        if service is not None:
+            return service.store.rules
+        config = getattr(self.plugin, "config", {}) or {}
+        thresholds = {
+            key: config[key]
+            for key in ("rare_min_bst", "super_rare_min_bst", "ultra_rare_min_bst")
+            if key in config
+        }
+        try:
+            return GachaRules.from_config(thresholds)
+        except ConfigError:
+            return GachaRules.from_config({})
+
     def _local_thumbnail(self, row: Mapping[str, Any]) -> str:
         """列表只显示现有本地立绘，不触发网络下载或详情查询。"""
         artwork = getattr(self.plugin, "artwork", None)
@@ -200,9 +216,9 @@ class PokemonPartnerWebUI:
                 for profile in users.values():
                     if not isinstance(profile, Mapping):
                         continue
-                    owned = store._owned(profile)
-                    if not owned:
+                    if not store._owned(profile):
                         continue
+                    owned = store._active_owned(profile)
                     total_users += 1
                     total_owned += len(owned)
                     total_shiny += sum(1 for v in owned.values() if v[1] > 0)
@@ -260,7 +276,7 @@ class PokemonPartnerWebUI:
             forms = _query("forms") == "1"
             page = _query_int("page", 1, 1, 100000)
             size = _query_int("size", 24, 1, MAX_PAGE_SIZE)
-            rules = self._service().store.rules
+            rules = self._dex_rules()
 
             rows = []
             source_rows = {}
@@ -376,7 +392,7 @@ class PokemonPartnerWebUI:
                 for candidate in db.table("pokemon")
             ):
                 learnset_note += "此形态沿用同种族默认形态学习表。"
-            rules = self._service().store.rules
+            rules = self._dex_rules()
             artwork = await self._artwork_data_url(row)
             return _json(
                 {
@@ -422,10 +438,9 @@ class PokemonPartnerWebUI:
                 for profile in users.values():
                     if not isinstance(profile, Mapping):
                         continue
-                    owned = store._owned(profile)
-                    if owned:
+                    if store._owned(profile):
                         members += 1
-                        collected += len(owned)
+                        collected += len(store._active_owned(profile))
                 out.append(
                     {
                         "scope": str(scope),
@@ -461,11 +476,12 @@ class PokemonPartnerWebUI:
                 for user_id, profile in users.items():
                     if not isinstance(profile, Mapping):
                         continue
-                    owned = store._owned(profile)
+                    raw_owned = store._owned(profile)
+                    owned = store._active_owned(profile)
                     name = str(profile.get("nickname") or user_id)
                     if keyword and keyword.lower() not in f"{name} {user_id}".lower():
                         continue
-                    if not owned and not keyword:
+                    if not raw_owned and not keyword:
                         continue
                     items.append(
                         {
@@ -507,22 +523,33 @@ class PokemonPartnerWebUI:
                 return _fail("缺少 scope 或 user_id")
             field = str(body.get("field") or "")
             action = str(body.get("action") or "set")
+            if action not in {"set", "add_bonus", "reset"}:
+                return _fail(f"不支持的操作：{action}")
+            value = body.get("value", 1 if action == "add_bonus" else None)
+            if action == "add_bonus":
+                if type(value) is not int or not 1 <= value <= 100:
+                    return _fail("额外次数需要填写 1–100 之间的整数")
+            elif action == "set":
+                if field in {"dust", "pity_ssr", "pity_new", "total_draws"}:
+                    if type(value) is not int or value < 0:
+                        return _fail("星尘、保底进度和累计次数需要填写非负整数")
+                elif field == "nickname" and not isinstance(value, str):
+                    return _fail("昵称需要填写文本")
 
             def work() -> dict:
                 if action == "add_bonus":
-                    amount = max(1, min(100, int(body.get("value") or 1)))
-                    bonus = store.add_bonus(scope, user_id, amount)
+                    bonus = store.add_bonus(scope, user_id, value)
                     return {"bonus_today": bonus}
                 if action == "reset":
                     store.reset_today(scope, user_id)
                     return {}
                 if field == "dust":
-                    dust = store.set_dust(scope, user_id, int(body.get("value") or 0))
+                    dust = store.set_dust(scope, user_id, value)
                     return {"dust": dust}
                 if field == "nickname":
-                    return {field: store.update_member(scope, user_id, field, body.get("value"))}
+                    return {field: store.update_member(scope, user_id, field, value)}
                 if field in {"pity_ssr", "pity_new", "total_draws"}:
-                    return {field: store.update_member(scope, user_id, field, body.get("value"))}
+                    return {field: store.update_member(scope, user_id, field, value)}
                 raise ValueError(f"不支持的字段或操作: {field or action}")
 
             result = await asyncio.to_thread(work)
@@ -630,7 +657,8 @@ class PokemonPartnerWebUI:
 
     async def api_settings(self):
         try:
-            config = dict(getattr(self.plugin, "config", {}) or {})
+            async with self._settings_lock:
+                config = dict(getattr(self.plugin, "config", {}) or {})
             return _json({"ok": True, "config": config})
         except Exception as exc:
             return _fail(str(exc), 500)
@@ -645,8 +673,7 @@ class PokemonPartnerWebUI:
             if config is None:
                 return _fail("插件配置不可写")
             async with self._settings_lock:
-                merged = dict(config)
-                merged.update(dict(patch))
+                merged = self._merge_settings(config, patch)
                 self._validate_settings(merged, patch)
                 await asyncio.to_thread(self._apply_settings, merged)
             return _json({"ok": True})
@@ -655,6 +682,24 @@ class PokemonPartnerWebUI:
         except Exception as exc:
             logger.warning("[%s] settings save 失败: %s", PLUGIN_ID, exc)
             return _fail(str(exc))
+
+    @staticmethod
+    def _merge_settings(config: Mapping[str, Any], patch: Mapping[str, Any]) -> dict[str, Any]:
+        """对象配置逐项更新；未提交的同级设置与原映射均保持完整。"""
+        schema = json.loads((Path(__file__).parent / "_conf_schema.json").read_text(encoding="utf-8"))
+
+        def merge(before: Mapping[str, Any], updates: Mapping[str, Any], fields: Mapping[str, Any]) -> dict[str, Any]:
+            result = dict(before)
+            for key, value in updates.items():
+                field = fields.get(key, {})
+                if field.get("type") == "object" and isinstance(value, Mapping):
+                    old = result.get(key)
+                    result[key] = merge(old if isinstance(old, Mapping) else {}, value, field.get("items", {}))
+                else:
+                    result[key] = value
+            return result
+
+        return merge(config, patch, schema)
 
     @staticmethod
     def _validate_settings(merged: Mapping[str, Any], patch: Mapping[str, Any]) -> None:

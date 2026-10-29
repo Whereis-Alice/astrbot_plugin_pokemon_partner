@@ -6,6 +6,7 @@ import io
 import json
 import random
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
@@ -65,6 +66,62 @@ class SettingsActionTests(unittest.TestCase):
                 self.assertEqual(self.config["battle_output_mode"], "card")
                 self.assertEqual(self.config_path.read_bytes(), before)
 
+    def test_partial_nested_setting_preserves_other_custom_values(self):
+        original = {"C": 70, "R": 20, "SR": 8, "SSR": 2}
+        self.config["rarity_weights"] = original
+        self.config.save_config()
+        with patch.object(self.ui, "_body", AsyncMock(return_value={"config": {"rarity_weights": {"SSR": 5}}})):
+            result = asyncio.run(self.ui.api_settings_save())
+        self.assertEqual(result, {"ok": True})
+        expected = {"C": 70, "R": 20, "SR": 8, "SSR": 5}
+        self.assertEqual(self.config["rarity_weights"], expected)
+        self.assertEqual(json.loads(self.config_path.read_text())["rarity_weights"], expected)
+        self.assertEqual(original, {"C": 70, "R": 20, "SR": 8, "SSR": 2})
+
+    def test_invalid_nested_patch_and_failed_reload_keep_original_config(self):
+        original = {"C": 70, "R": 20, "SR": 8, "SSR": 2}
+        self.config["rarity_weights"] = original
+        self.config.save_config()
+        before = self.config_path.read_bytes()
+        for values in ({"unknown": 5}, {"SSR": True}):
+            with self.subTest(values=values), patch.object(self.ui, "_body", AsyncMock(return_value={"config": {"rarity_weights": values}})):
+                result = asyncio.run(self.ui.api_settings_save())
+                self.assertFalse(result["ok"])
+                self.assertEqual(self.config_path.read_bytes(), before)
+        self.plugin._init_partners = lambda: (_ for _ in ()).throw(RuntimeError("模拟重载失败"))
+        with patch.object(self.ui, "_body", AsyncMock(return_value={"config": {"rarity_weights": {"SSR": 5}}})):
+            result = asyncio.run(self.ui.api_settings_save())
+        self.assertFalse(result["ok"])
+        self.assertEqual(self.config["rarity_weights"], original)
+        self.assertEqual(self.config_path.read_bytes(), before)
+
+    def test_settings_read_waits_for_an_in_flight_save(self):
+        cleared, release = threading.Event(), threading.Event()
+        original_clear = self.config.clear
+
+        def paused_clear():
+            original_clear()
+            cleared.set()
+            release.wait(3)
+
+        self.config.clear = paused_clear
+
+        async def concurrent_read():
+            save = asyncio.create_task(self.ui.api_settings_save())
+            self.assertTrue(await asyncio.to_thread(cleared.wait, 2))
+            read = asyncio.create_task(self.ui.api_settings())
+            try:
+                await asyncio.sleep(.02)
+                self.assertFalse(read.done(), "读取不应看到 clear/update 之间的空配置")
+            finally:
+                release.set()
+                saved, loaded = await asyncio.gather(save, read)
+            self.assertEqual(saved, {"ok": True})
+            self.assertEqual(loaded["config"], {"battle_output_mode": "text", "daily_draw_limit": 3})
+
+        with patch.object(self.ui, "_body", AsyncMock(return_value={"config": {"battle_output_mode": "text"}})):
+            asyncio.run(concurrent_read())
+
 
 class MemberActionTests(unittest.TestCase):
     def setUp(self):
@@ -122,6 +179,53 @@ class MemberActionTests(unittest.TestCase):
             expected = before["scopes"]["group:a"]["users"][user]
             self.assertEqual(profile["owned"], expected["owned"])
             self.assertEqual(profile["dust"], expected["dust"])
+
+    def test_invalid_actions_and_amounts_never_change_member_data(self):
+        before = self.store.snapshot()
+        requests = [
+            {"field": "dust", "action": "unknown", "value": 5},
+            *({"field": "dust", "value": value} for value in (True, False, 1.5, -1, None)),
+            *({"action": "add_bonus", "value": value} for value in (True, 0, -1, 101)),
+            {"field": "pity_ssr", "value": 2.5},
+            {"field": "nickname", "value": {"name": "昵称"}},
+        ]
+        for values in requests:
+            with self.subTest(values=values):
+                result = self.call(self.ui.api_member_update, {"scope": "group:a", "user_id": "alice", **values})
+                self.assertFalse(result["ok"])
+                self.assertEqual(self.reload_store().snapshot(), before)
+
+    def test_valid_integer_updates_keep_other_members_and_persist(self):
+        before = self.store.snapshot()
+        result = self.call(self.ui.api_member_update, {"scope": "group:a", "user_id": "alice", "field": "dust", "value": 0})
+        self.assertEqual(result, {"ok": True, "result": {"dust": 0}})
+        result = self.call(self.ui.api_member_update, {"scope": "group:a", "user_id": "alice", "action": "add_bonus", "value": 2})
+        self.assertEqual(result, {"ok": True, "result": {"bonus_today": 2}})
+        after = self.reload_store().snapshot()
+        self.assertEqual(after["scopes"]["group:a"]["users"]["alice"]["dust"], 0)
+        self.assertEqual(after["scopes"]["group:a"]["users"]["bob"], before["scopes"]["group:a"]["users"]["bob"])
+        self.assertEqual(after["scopes"]["group:b"], before["scopes"]["group:b"])
+
+    def test_excluded_form_counts_do_not_hide_members_or_inflate_progress(self):
+        with self.store._transaction():
+            profiles = self.store.state["scopes"]["group:a"]["users"]
+            profiles["alice"]["owned"]["25:excluded"] = {"normal": 1, "shiny": 1}
+            profiles["bob"]["owned"] = {"25:excluded": {"normal": 0, "shiny": 1}}
+            self.store._save()
+        self.ui.plugin.partner_service.pool_counts = lambda: {"C": 1, "R": 0, "SR": 0, "SSR": 0}
+        self.ui.plugin.partner_service.effective_weights = self.store.effective_weights
+        with patch("webui._query", side_effect=lambda key, default="": {"scope": "group:a"}.get(key, default)):
+            members = asyncio.run(self.ui.api_members())
+        self.assertTrue(members["ok"])
+        self.assertEqual({item["user_id"]: item["collected"] for item in members["items"]}, {"alice": 1, "bob": 0})
+        self.assertEqual(sum(item["shiny"] for item in members["items"]), 0)
+        sessions = asyncio.run(self.ui.api_sessions())
+        group = next(item for item in sessions["items"] if item["scope"] == "group:a")
+        self.assertEqual((group["members"], group["collected"]), (2, 1))
+        overview = asyncio.run(self.ui.api_overview())
+        self.assertTrue(overview["ok"])
+        self.assertEqual((overview["stats"]["trainers"], overview["stats"]["collected"], overview["stats"]["shiny"]), (4, 3, 0))
+        self.assertIn("25:excluded", self.reload_store().snapshot()["scopes"]["group:a"]["users"]["bob"]["owned"])
 
 
 if __name__ == "__main__":

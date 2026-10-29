@@ -19,6 +19,7 @@ python -m pip install -r requirements.txt
 | 修改内容 | 检查命令 |
 | --- | --- |
 | 核心图鉴、抽卡、配置与接口注册 | `python tests.py` |
+| 双保底、禁止重复、形态开关与收集奖励 | `python gacha_store_regression_tests.py` |
 | 今日指令的整句触发、权限与消息去重 | `python daily_draw_command_tests.py` |
 | 对战计算和招式效果 | `python battle_regression_tests.py` |
 | 对战卡片与消息发送方式 | `python battle_card_tests.py`、`python battle_delivery_tests.py`、`python battle_image_forward_sdk_tests.py` |
@@ -28,6 +29,7 @@ python -m pip install -r requirements.txt
 | 今日卡面切换、配置保存与发送分流 | `python tcg_render_integration_tests.py` |
 | TCG 实卡比例、文字边界、闪光请求与十连 | `python tcg_card_tests.py` |
 | 场景、精灵球圆盘与闪光图片缓存 | `python rarity_scene_tests.py`、`python rarity_emblem_tests.py`、`python shiny_artwork_tests.py` |
+| 图片下载大小限制与备用图源 | `python image_download_tests.py` |
 | 管理台操作、设置保存与招式查询 | `python webui_action_tests.py`、`python webui_learnset_tests.py` |
 | 前端招式搜索与展开 | `node --test pages/partner-console/js/learnset.test.mjs` |
 

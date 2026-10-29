@@ -641,6 +641,7 @@ function setupMembers() {
     updating = true;
     try {
       await apiPost("/members/update", body);
+      state.loaded.delete("overview");
       toast(okMessage, "success");
       await load();
       await loadSessions(true);
@@ -671,13 +672,18 @@ function setupMembers() {
   const load = async () => {
     const version = ++memberVersion;
     meta.textContent = "正在读取训练家数据…";
-    const data = await api("/members", {
+    let data;
+    try { data = await api("/members", {
       scope: scopeSel.value,
       q: search.value.trim(),
       page: page.index,
       size: page.size,
-    });
-    if (version !== memberVersion) return;
+    }); } catch (error) {
+      if (version !== memberVersion) return false;
+      meta.textContent = "训练家数据加载失败，请重试";
+      throw error;
+    }
+    if (version !== memberVersion) return false;
     page.total = data.total ?? 0;
     const pages = Math.max(1, Math.ceil(page.total / page.size));
     if (page.index > pages) { page.index = pages; return load(); }
@@ -799,6 +805,7 @@ function setupMembers() {
     if (!(await confirmAction({ title: "重置今日次数？", message: `重置 ${scope} 全部成员今天的抽取次数，收藏和星尘保留。`, confirmLabel: "重置今日次数" }))) return;
     try {
       const result = await apiPost("/sessions/reset", { scope });
+      state.loaded.delete("overview");
       toast(`已重置 ${result.changed ?? 0} 位成员`, "success");
       await load();
     } catch (error) {
@@ -809,11 +816,11 @@ function setupMembers() {
   return {
     load: async () => {
       await loadSessions();
-      await load();
+      return load();
     },
     refresh: async () => {
       await loadSessions(true);
-      await load();
+      return load();
     },
   };
 }
@@ -1144,6 +1151,8 @@ function setupSettings() {
       cardStylePicker?.saved();
       state.loaded.delete("overview");
       state.loaded.delete("rules");
+      state.loaded.delete("dex");
+      state.loaded.delete("members");
       status.textContent = "已保存并重新加载抽卡规则。";
       status.className = "form-status success";
       toast("配置已保存", "success");

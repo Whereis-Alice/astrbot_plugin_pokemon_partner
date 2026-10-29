@@ -75,26 +75,26 @@
     "type": "int",
     "default": 30,
     "slider": {"min": 0, "max": 200, "step": 1},
-    "hint": "连续这么多次没出 SSR 时，下一次必出 SSR。0 表示关闭。计数按用户分别保存。"
+    "hint": "如设为 30，前 29 次未出 SSR 时，第 30 次必出。0 表示关闭，卡池无 SSR 时不生效。计数按用户分别保存。"
   },
   "new_pity_after": {
     "description": "新宝可梦保底次数",
     "type": "int",
     "default": 0,
     "slider": {"min": 0, "max": 200, "step": 1},
-    "hint": "连续这么多次重复后，下一次强制未拥有。0 表示关闭。默认关闭，避免图鉴过快集齐。"
+    "hint": "连续这么多次重复后，下一次优先未拥有。与 SSR 保底同时触发时先保证 SSR，新宝可梦保底进度保留。0 表示关闭。"
   },
   "allow_duplicate_draw": {
     "description": "允许抽到已拥有的宝可梦",
     "type": "bool",
     "default": true,
-    "hint": "关闭后优先从尚未拥有的宝可梦中抽取；全部拥有后仍可能重复并折算星尘。"
+    "hint": "关闭后从全卡池优先寻找尚未拥有的宝可梦；全部拥有后仍可能重复。强制 SSR 保底优先于避免重复，重复仍折算星尘。"
   },
   "include_alternate_forms": {
     "description": "把地区形态/超级进化等形态计入卡池",
     "type": "bool",
     "default": false,
-    "hint": "默认只收录 1025 个默认形态。开启后卡池增至 1320 项，图鉴也更难集齐。"
+    "hint": "默认收录 1025 个默认形态。开启后加入可用的地区、超级进化等形态，实际数量以抽取概率页面为准。关闭不会删除已获得的形态。"
   },
   "shiny_chance_percent": {
     "description": "闪光概率（百分比）",

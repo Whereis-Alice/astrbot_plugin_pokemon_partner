@@ -401,16 +401,18 @@ class BattleSimulator:
                 if attacker.fainted or defender.fainted:
                     continue
                 self._take_turn(attacker, defender, moves[id(attacker)])
-            for p in pokemon:  # 回合结束结算异常状态
-                if p.fainted:
-                    continue
-                if p.status == "灼伤":
-                    self._status_damage(p, max(1, p.max_hp // 16), "灼伤")
-                elif p.status == "中毒":
-                    self._status_damage(p, max(1, p.max_hp // 8), "中毒")
-                elif p.status == "剧毒":
-                    p.poison_turns += 1
-                    self._status_damage(p, max(1, p.max_hp * min(15, p.poison_turns) // 16), "剧毒")
+            # 招式内反伤/自爆已结算；一方倒下时，1v1 不再进入回合末阶段。
+            if not (p1.fainted or p2.fainted):
+                for p in pokemon:  # 回合结束结算异常状态
+                    if p.fainted:
+                        continue
+                    if p.status == "灼伤":
+                        self._status_damage(p, max(1, p.max_hp // 16), "灼伤")
+                    elif p.status == "中毒":
+                        self._status_damage(p, max(1, p.max_hp // 8), "中毒")
+                    elif p.status == "剧毒":
+                        p.poison_turns += 1
+                        self._status_damage(p, max(1, p.max_hp * min(15, p.poison_turns) // 16), "剧毒")
             turn_reports.append(self.log[start:].copy())
 
         if p1.fainted and p2.fainted:
@@ -652,7 +654,7 @@ class BattleSimulator:
     ):
         if defender.status:
             self.log.append(
-                f"{defender.name} 已处于{defender.status}状态，{move.name}没有效果。"
+                f"{self._label(defender)} 已处于{defender.status}状态，{move.name}没有效果。"
             )
             return
         immune = STATUS_IMMUNE_TYPES.get("中毒" if move.status == "剧毒" else move.status, set()) & set(defender.types)
@@ -660,7 +662,7 @@ class BattleSimulator:
             immune = {"冰"}
         if immune:
             self.log.append(
-                f"{defender.name}（{'/'.join(defender.types)}）免受{move.status}，{move.name}没有效果。"
+                f"{self._label(defender)}（{'/'.join(defender.types)}）免受{move.status}，{move.name}没有效果。"
             )
             return
         defender.status = move.status
@@ -755,7 +757,7 @@ class BattleSimulator:
         actual = p.take_damage(dmg)
         self.log.append(f"{self._label(p)} 受到{label}伤害 {actual} 点，HP {p.current_hp}/{p.max_hp}！")
         if p.fainted:
-            self.log.append(f"{p.name} 倒下了！")
+            self.log.append(f"{self._label(p)} 倒下了！")
 
     def _key_moments(self, limit: int = 5) -> list[str]:
         marks = ("陷入", "倒下", "暴击", "效果拔群", "免疫", "挣扎", "无法行动")

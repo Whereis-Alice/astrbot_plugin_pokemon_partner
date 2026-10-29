@@ -114,7 +114,7 @@ data/plugin_data/astrbot_plugin_pokemon_partner/artwork/
 | `rare_min_bst` | `400` | R 档最低种族值总和 |
 | `super_rare_min_bst` | `480` | SR 档最低种族值总和 |
 | `ultra_rare_min_bst` | `580` | SSR 档最低种族值总和 |
-| `ssr_pity_after` | `30` | 连续多少次未出 SSR 后必出；0 关闭 |
+| `ssr_pity_after` | `30` | 前 29 次未出时第 30 次必出；0 关闭，SSR 保底优先 |
 | `new_pity_after` | `0` | 连续多少次重复后必出新；0 关闭 |
 | `allow_duplicate_draw` | `true` | 关闭后优先抽未拥有的宝可梦 |
 | `include_alternate_forms` | `false` | 是否把地区形态、Mega 等计入卡池；缺少种族值的形态会跳过 |

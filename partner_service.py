@@ -98,7 +98,7 @@ class PartnerService:
             f"稀有度概率：{weights}",
         ]
         if rules.ssr_pity_after:
-            lines.append(f"SSR 保底：连续 {rules.ssr_pity_after} 次未出则必出")
+            lines.append(f"SSR 保底：最多 {rules.ssr_pity_after} 次内必出，出 SSR 后重新计数")
         if rules.new_pity_after:
             lines.append(f"新宝可梦保底：连续 {rules.new_pity_after} 次重复后必出新")
         lines.append(f"闪光概率 {rules.shiny_chance_percent:g}%")

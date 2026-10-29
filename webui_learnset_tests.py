@@ -70,6 +70,33 @@ class LearnsetAPITests(unittest.TestCase):
         for item in result["items"]:
             self.assertEqual(item["artwork"], item["form_name"] or "default")
 
+    def test_pokedex_browsing_survives_disabled_draws_and_invalid_draw_weights(self):
+        self.ui.plugin.partner_service = None
+        self.ui.plugin.config = {
+            "gacha_enabled": False,
+            "rarity_weights": {"C": 0, "R": 0, "SR": 0, "SSR": 0},
+            "rare_min_bst": 300, "super_rare_min_bst": 400, "ultra_rare_min_bst": 500,
+        }
+        with patch("webui._query", side_effect=lambda key, default="": {"q": "皮卡丘"}.get(key, default)), patch.object(self.ui, "_local_thumbnail", return_value=""):
+            result = asyncio.run(self.ui.api_dex_list())
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["items"][0]["rarity"], "R")
+        detail = self.detail("皮卡丘")
+        self.assertTrue(detail["ok"])
+        self.assertEqual(detail["rarity"], "R")
+        self.assertIsNone(self.ui.plugin.partner_service)
+
+    def test_invalid_thresholds_do_not_block_read_only_pokedex(self):
+        self.ui.plugin.partner_service = None
+        self.ui.plugin.config = {
+            "gacha_enabled": False,
+            "rare_min_bst": 500, "super_rare_min_bst": 400, "ultra_rare_min_bst": 300,
+        }
+        result = self.detail("皮卡丘")
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["rarity"], "C")
+        self.assertIsNone(self.ui.plugin.partner_service)
+
 
 if __name__ == "__main__":
     unittest.main()

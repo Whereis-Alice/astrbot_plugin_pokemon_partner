@@ -69,7 +69,7 @@ def build_battle_pokemon(db, row: dict, level: int) -> BattlePokemon:
         if move not in selected:
             selected.append(move)
     pokemon = BattlePokemon(
-        row.get("name_zh", ""), types, stats, selected, level,
+        row.get("form_name") or row.get("name_zh", ""), types, stats, selected, level,
         ability=re.split(r"[、/，,]", row.get("abilities") or "")[0].strip(),
     )
     pokemon.moves_source = source
@@ -111,7 +111,7 @@ def format_battle_report_data(battle: dict) -> str:
     level, seed = battle["level"], battle["seed"]
     report = battle["result"]
     detailed, champion_line = battle.get("detailed", False), battle.get("champion_line", "")
-    lines = [f"【{row1.get('name_zh', '')} vs {row2.get('name_zh', '')}】Lv.{level} 对战 · 种子={seed}",
+    lines = [f"【{row1.get('form_name') or row1.get('name_zh', '')} vs {row2.get('form_name') or row2.get('name_zh', '')}】Lv.{level} 对战 · 种子={seed}",
              *battle.get("rules", BATTLE_RULES)]
     trainers = battle.get("trainer_names") or []
     if len(trainers) == 2:
@@ -189,13 +189,20 @@ def parse_battle_max_turns(text: str) -> int:
 
 
 def split_battle_text(text: str, limit: int = 1800) -> list[str]:
-    """按完整行拆分聊天结果，避免长战报超过平台单条消息限制。"""
+    """优先按完整行拆分；超长单行也分片，确保每条消息均不超过限制。"""
+    if limit < 1:
+        raise ValueError("消息长度限制必须大于 0。")
     parts, current = [], ""
-    for line in text.splitlines():
-        if current and len(current) + len(line) + 1 > limit:
+    for line in text.splitlines(keepends=True):
+        if current and len(current) + len(line) > limit:
             parts.append(current)
             current = ""
-        current += ("\n" if current else "") + line
+        if len(line) > limit:
+            chunks = [line[index:index + limit] for index in range(0, len(line), limit)]
+            parts.extend(chunks[:-1])
+            current = chunks[-1]
+            continue
+        current += line
     if current:
         parts.append(current)
     return parts

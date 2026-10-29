@@ -318,10 +318,14 @@ class GachaStore:
                 out[str(key)] = (normal, shiny)
         return out
 
+    def _active_owned(self, profile: Mapping[str, Any]) -> dict[str, tuple[int, int]]:
+        """Count the current pool while retaining temporarily excluded forms on disk."""
+        return {key: counts for key, counts in self._owned(profile).items() if key in self.by_key}
+
     def _grant_milestones(
         self, profile: dict[str, Any], today: str
     ) -> list[MilestoneReward]:
-        collected = len(self._owned(profile))
+        collected = len(self._active_owned(profile))
         claimed = profile.setdefault("milestones", {})
         if not isinstance(claimed, dict):
             claimed = {}
@@ -368,7 +372,7 @@ class GachaStore:
             today = today or today_key()
             used = self._used(profile, today)
             limit = self.rules.daily_limit + self._bonus(profile, today)
-            owned = self._owned(profile)
+            owned = self._active_owned(profile)
             return ProfileSummary(
                 nickname=str(profile.get("nickname") or nickname or "训练家"),
                 collected=len(owned),
@@ -382,7 +386,8 @@ class GachaStore:
                 pity_new=max(0, _as_int(profile.get("pity_new"), 0)),
                 total_draws=max(0, _as_int(profile.get("total_draws"), 0)),
                 next_milestone=next(
-                    (t for t in sorted(MILESTONE_REWARDS) if t > len(owned)), None
+                    (t for t in sorted(MILESTONE_REWARDS)
+                     if t > len(owned) and str(t) not in profile.get("milestones", {})), None
                 ),
             )
 
@@ -448,7 +453,7 @@ class GachaStore:
         for user_id, profile in users.items():
             if not isinstance(profile, Mapping):
                 continue
-            owned = self._owned(profile)
+            owned = self._active_owned(profile)
             if not owned:
                 continue
             rows.append((
@@ -504,15 +509,18 @@ class GachaStore:
             return None
         return "SSR"
 
-    def _roll_rarity(self, profile: Mapping[str, Any]) -> str:
+    def _ssr_due(self, profile: Mapping[str, Any]) -> bool:
         pity_target = self.pity_rarity()
         pity = max(0, _as_int(profile.get("pity_ssr"), 0))
-        if (
+        return bool(
             pity_target
             and self.rules.ssr_pity_after > 0
             and pity >= self.rules.ssr_pity_after - 1
-        ):
-            return pity_target
+        )
+
+    def _roll_rarity(self, profile: Mapping[str, Any]) -> str:
+        if self._ssr_due(profile):
+            return "SSR"
         weights = self.effective_weights()
         rarities = list(weights)
         return self.rng.choices(
@@ -520,17 +528,14 @@ class GachaStore:
         )[0]
 
     def _choose(
-        self, rarity: str, *, force_new: bool, owned: Mapping[str, tuple[int, int]]
+        self, rarity: str, *, force_new: bool, owned: Mapping[str, tuple[int, int]],
+        preserve_rarity: bool = False,
     ) -> Partner:
         pool = self.by_rarity.get(rarity) or list(self.partners)
-        if force_new:
+        if force_new or not self.rules.allow_duplicate_draw:
             new_pool = [p for p in pool if p.key not in owned]
-            if not new_pool:
+            if not new_pool and not preserve_rarity:
                 new_pool = [p for p in self.partners if p.key not in owned]
-            if new_pool:
-                return self.rng.choice(new_pool)
-        if self.rules.allow_duplicate_draw is False:
-            new_pool = [p for p in pool if p.key not in owned]
             if new_pool:
                 return self.rng.choice(new_pool)
         return self.rng.choice(pool)
@@ -544,7 +549,10 @@ class GachaStore:
             >= self.rules.new_pity_after
         )
         rarity = self._roll_rarity(profile)
-        partner = self._choose(rarity, force_new=force_new, owned=self._owned(profile))
+        # When both guarantees are due, an available new SSR satisfies both.
+        # Otherwise keep the SSR guarantee and retain the new-pity counter.
+        partner = self._choose(rarity, force_new=force_new, owned=self._owned(profile),
+                               preserve_rarity=self._ssr_due(profile))
         shiny = (
             self.rules.shiny_chance_percent > 0
             and self.rng.random() * 100.0 < self.rules.shiny_chance_percent
@@ -776,6 +784,17 @@ class GachaStore:
                 return 0
             if user_id:
                 removed = int(users.pop(str(user_id), None) is not None)
+                if removed:
+                    duels = data.get("duels", {})
+                    pending = duels.get("pending", {}) if isinstance(duels, dict) else {}
+                    if isinstance(pending, dict):
+                        for match_id, match in list(pending.items()):
+                            if not isinstance(match, Mapping):
+                                continue
+                            participants = (match.get("challenger", {}), match.get("target", {}))
+                            if any(isinstance(side, Mapping) and str(side.get("user_id", "")) == str(user_id)
+                                   for side in participants):
+                                pending.pop(match_id)
             else:
                 removed = len(users)
                 users.clear()

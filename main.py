@@ -198,7 +198,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.3.1",
+    "v1.3.2",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -379,7 +379,13 @@ class PokemonPartnerPlugin(Star):
         return "\n".join(lines)
 
     async def _send_draw_card(self, event, outcome, nickname: str):
-        service = self._partner_or_error()
+        try:
+            service = self._partner_or_error()
+        except GachaError:
+            # The draw was already committed. Disabling the system while its
+            # response is pending must still deliver that same result.
+            yield event.plain_result(self._draw_text(outcome, nickname))
+            return
         notice = service.recovery_notice()
         if not self._card_enabled():
             text = self._draw_text(outcome, nickname)

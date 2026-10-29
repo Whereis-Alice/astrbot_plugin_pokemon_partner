@@ -93,6 +93,18 @@ class DailyCardSendTests(unittest.TestCase):
         self.assertIn("闪光", results[0])
         self.assertIn("今日剩余 2/3", results[0])
 
+    def test_disabling_collection_before_delivery_still_sends_committed_result(self):
+        self.plugin.partner_service = None
+        self.plugin._partner_init_error = "宝可梦系统已关闭"
+        with patch.object(main, "render_draw_card") as render:
+            results = self.send()
+        self.assertEqual(len(results), 1)
+        self.assertIn("0151", results[0])
+        self.assertIn("闪光", results[0])
+        self.assertIn("今日剩余 2/3", results[0])
+        render.assert_not_called()
+        self.plugin._ensure_artwork.assert_not_awaited()
+
 
 class CardSettingsTests(unittest.TestCase):
     def setUp(self):

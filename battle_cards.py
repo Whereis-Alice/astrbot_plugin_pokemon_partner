@@ -9,6 +9,7 @@ from __future__ import annotations
 import io
 import re
 from dataclasses import dataclass
+from functools import lru_cache
 from typing import Callable
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -37,6 +38,11 @@ MINT = (126, 225, 183)
 ImageLoader = Callable[[dict], Image.Image | bytes | None]
 
 
+@lru_cache(maxsize=48)
+def _font(size: int):
+    return load_font(size)
+
+
 @dataclass(frozen=True)
 class _Line:
     text: str
@@ -62,7 +68,7 @@ def _color(row: dict):
 
 
 def _wrap(draw, text: str, size: int, width: int) -> list[str]:
-    font = load_font(size)
+    font = _font(size)
     output, current = [], ""
     for char in str(text):
         if char == "\n":
@@ -91,26 +97,26 @@ def _wrap(draw, text: str, size: int, width: int) -> list[str]:
 
 
 def _text(draw, xy, text, size=26, color=TEXT):
-    draw.text(xy, str(text), font=load_font(size), fill=color, anchor="lt")
+    draw.text(xy, str(text), font=_font(size), fill=color, anchor="lt")
 
 
 def _fitted(draw, text, width, max_size=52, min_size=30):
     for size in range(max_size, min_size - 1, -2):
-        if draw.textlength(text, font=load_font(size)) <= width:
+        if draw.textlength(text, font=_font(size)) <= width:
             return size, [text]
     lines = _wrap(draw, text, min_size, width)
     if len(lines) > 3:
         lines = lines[:3]
-        while draw.textlength(lines[-1] + "…", font=load_font(min_size)) > width:
+        while draw.textlength(lines[-1] + "…", font=_font(min_size)) > width:
             lines[-1] = lines[-1][:-1]
         lines[-1] += "…"
     return min_size, lines
 
 
 def _single_line(draw, text, size, width):
-    if draw.textlength(text, font=load_font(size)) <= width:
+    if draw.textlength(text, font=_font(size)) <= width:
         return text
-    while text and draw.textlength(text + "…", font=load_font(size)) > width:
+    while text and draw.textlength(text + "…", font=_font(size)) > width:
         text = text[:-1]
     return text + "…"
 

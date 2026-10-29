@@ -27,6 +27,11 @@ from typing import Any, Iterable, Mapping
 from PIL import Image
 
 try:
+    from .image_download import read_image_body
+except ImportError:
+    from image_download import read_image_body
+
+try:
     from astrbot.api import logger
 except ImportError:  # 脱离 AstrBot 环境单测
     import logging
@@ -298,11 +303,8 @@ class ArtworkCache:
                             f"宝可梦立绘 #{dex} 返回非图片内容: {content_type}"
                         )
                         continue
-                    declared = int(resp.headers.get("Content-Length") or 0)
-                    if declared > 8 * 1024 * 1024:
-                        continue
-                    data = await resp.read()
-                    if len(data) > 8 * 1024 * 1024:
+                    data = await read_image_body(resp)
+                    if data is None:
                         continue
                 with Image.open(io.BytesIO(data)) as image:
                     image.verify()

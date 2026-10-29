@@ -106,6 +106,30 @@ class BattleRulesTests(unittest.TestCase):
         self.assertEqual(report["winner"], "平局")
         self.assertTrue(all(s["fainted"] for s in report["final"].values()))
 
+    def test_last_opponent_knockout_ends_before_residual_status_damage(self):
+        for status in ("中毒", "灼伤", "剧毒"):
+            with self.subTest(status=status):
+                attacker = pokemon("甲", move("撞击"), hp=16, speed=200)
+                attacker.current_hp, attacker.status = 1, status
+                defender = pokemon("乙", move("撞击"), hp=1, speed=1)
+                report = self.sim.simulate(attacker, defender)
+                self.assertEqual(report["winner"], "甲")
+                self.assertEqual(report["final"]["甲"]["hp"], 1)
+                self.assertTrue(report["final"]["乙"]["fainted"])
+                self.assertEqual(report["turns"], 1)
+                self.assertFalse(any(f"受到{status}伤害" in line for line in report["log"]))
+                self.assertIn("乙 倒下了！", report["turn_log"][0])
+
+    def test_immediate_recoil_double_knockout_still_draws(self):
+        attacker = pokemon("甲", move("舍身撞击", recoil=1 / 3), hp=16, speed=200)
+        attacker.current_hp, attacker.status = 1, "中毒"
+        defender = pokemon("乙", move("撞击"), hp=1, speed=1)
+        report = self.sim.simulate(attacker, defender)
+        self.assertEqual(report["winner"], "平局")
+        self.assertTrue(all(item["fainted"] for item in report["final"].values()))
+        self.assertTrue(any("反作用力 1 点伤害" in line for line in report["turn_log"][0]))
+        self.assertFalse(any("受到中毒伤害" in line for line in report["log"]))
+
     def test_charge_uses_one_pp_and_recharge_skips_action(self):
         charging = make_move(self.db.move_index()["日光束"])
         p1, p2 = pokemon("甲", charging), pokemon("乙", move("撞击"))
@@ -283,6 +307,36 @@ class BattleRulesTests(unittest.TestCase):
         expected = format_battle_report(self.db, row1, row2, 50, seed=7, detailed=True)
         with patch.object(BattleSimulator, "simulate", side_effect=AssertionError("must reuse snapshot")):
             self.assertEqual(format_battle_report_data(battle), expected)
+
+    def test_forms_keep_their_names_in_setup_process_and_results(self):
+        form, ordinary = self.db.pokemon("超级喷火龙Ｘ"), self.db.pokemon("喷火龙")
+        battle = build_battle_report(self.db, form, ordinary, 50, seed=7, detailed=True, max_turns=1)
+        self.assertEqual([setup["name"] for setup in battle["result"]["setup"]], ["超级喷火龙Ｘ", "喷火龙"])
+        self.assertEqual(set(battle["result"]["final"]), {"超级喷火龙Ｘ", "喷火龙"})
+        text = format_battle_report_data(battle)
+        self.assertTrue(text.startswith("【超级喷火龙Ｘ vs 喷火龙】"))
+        self.assertIn("超级喷火龙Ｘ", "\n".join(battle["result"]["turn_log"][0]))
+        self.assertNotIn("喷火龙（甲）", text)
+        mirror = build_battle_report(self.db, form, form, 50, seed=7, max_turns=1)
+        self.assertEqual(set(mirror["result"]["final"]), {"超级喷火龙Ｘ（甲）", "超级喷火龙Ｘ（乙）"})
+
+    def test_mirror_status_logs_keep_the_side_label(self):
+        wave = move("状态招", None, "变化", status="麻痹")
+        first, second = pokemon("镜像", wave, types=["电"]), pokemon("镜像", move("状态招", None, "变化", status="麻痹"), types=["电"])
+        report = BattleSimulator(self.db.type_chart(), random.Random(7), max_turns=1).simulate(first, second)
+        immune = [line for line in report["log"] if "免受麻痹" in line]
+        self.assertEqual(len(immune), 2)
+        self.assertTrue(all("（甲）" in line or "（乙）" in line for line in immune))
+
+    def test_text_split_bounds_long_lines_and_keeps_all_content(self):
+        for limit in (1, 40, 1800):
+            with self.subTest(limit=limit):
+                text = "战报开场\r\n\n" + "招式效果完整保留" * 260 + "\n对战结束\n"
+                parts = split_battle_text(text, limit)
+                self.assertTrue(all(0 < len(part) <= limit for part in parts))
+                self.assertEqual("".join(parts), text)
+        with self.assertRaises(ValueError):
+            split_battle_text("战报", 0)
 
     def test_configured_turn_limit_is_enforced_and_disclosed(self):
         row = self.db.pokemon("梦幻")

@@ -8,6 +8,11 @@ from collections import OrderedDict
 
 import aiohttp
 
+try:
+    from .image_download import read_image_body
+except ImportError:
+    from image_download import read_image_body
+
 BASE = "https://pokeapi.co/api/v2"
 
 TYPE_ZH = {
@@ -102,10 +107,7 @@ class PokeAPIClient:
             content_type = resp.headers.get("Content-Type", "")
             if content_type and "image" not in content_type.lower():
                 return None
-            if int(resp.headers.get("Content-Length") or 0) > 8 * 1024 * 1024:
-                return None
-            data = await resp.read()
-        return data if data and len(data) <= 8 * 1024 * 1024 else None
+            return await read_image_body(resp)
 
     # ---------- 对应 pokeapi_get_pokemon ----------
     async def get_pokemon(self, name_or_id: str) -> dict | None:

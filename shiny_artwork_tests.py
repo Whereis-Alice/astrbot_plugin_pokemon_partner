@@ -3,6 +3,7 @@
 import ast
 import asyncio
 import io
+import logging
 import os
 import tempfile
 import unittest
@@ -35,6 +36,11 @@ class Response:
         self.data = data
         self.status = status if status is not None else (200 if data else 404)
         self.headers = {"Content-Type": "image/png"}
+        self.content = SimpleNamespace(iter_chunked=self.chunks)
+
+    async def chunks(self, size):
+        for start in range(0, len(self.data or b""), size):
+            yield self.data[start:start + size]
 
     async def __aenter__(self):
         return self
@@ -252,6 +258,7 @@ class ShinyArtworkTests(unittest.TestCase):
         )
         namespace = {
             "asyncio": asyncio,
+            "logger": logging.getLogger(__name__),
             "render_draw_card": lambda *args, **kwargs: b"rendered",
             "PLUGIN_ID": "test",
             "Comp": SimpleNamespace(
@@ -278,6 +285,7 @@ class ShinyArtworkTests(unittest.TestCase):
         )
         ensure = AsyncMock()
         instance = SimpleNamespace(
+            config={},
             _partner_or_error=lambda: service,
             _card_enabled=lambda: True,
             _ensure_artwork=ensure,
