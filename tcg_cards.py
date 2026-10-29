@@ -188,17 +188,21 @@ def _paste_art(base, item, loader, box, kind):
     if isinstance(image, bytes):
         with Image.open(io.BytesIO(image)) as opened:
             image = opened.convert("RGBA")
+    if image is not None:
+        image = image.convert("RGBA")
+        bounds = image.getchannel("A").getbbox()
+        image = image.crop(bounds) if bounds else None
     if image is None:
         draw = ImageDraw.Draw(base)
         icon = render_energy_icon(_types(item)[0], 118)
         base.alpha_composite(icon, (x + (width - 118) // 2, y + (height - 118) // 2 - 28))
         _line(draw, x, y + height / 2 + 58, "立绘暂未缓存", 27, MUTED, width, center=True)
         return
-    image = image.convert("RGBA")
-    bounds = image.getchannel("A").getbbox()
-    if bounds:
-        image = image.crop(bounds)
-    image.thumbnail((width, height), Image.Resampling.LANCZOS)
+    # Fill the portrait box after trimming alpha padding, including official
+    # artwork smaller than the box. Limit enlargement of tiny fallback sprites.
+    scale = min(3.0, width / image.width, height / image.height)
+    image = image.resize((max(1, round(image.width * scale)), max(1, round(image.height * scale))),
+                         Image.Resampling.LANCZOS)
     tx, ty = x + (width - image.width) // 2, y + (height - image.height) // 2
     padding = 30
     alpha = Image.new("L", (image.width + padding * 2, image.height + padding * 2))

@@ -80,7 +80,8 @@ async function refreshView() {
   button.disabled = true;
   button.classList.add("loading");
   try {
-    await (view.refresh ?? view.load)();
+    const refreshed = await (view.refresh ?? view.load)();
+    if (refreshed === false) return;
     state.loaded.add(state.view);
     document.getElementById("pageNotice").hidden = true;
     toast("已更新当前页面", "success");
@@ -961,6 +962,87 @@ function setPath(target, path, value) {
   cursor[parts.at(-1)] = value;
 }
 
+function dailyCardStylePicker(input, field) {
+  if (!field.options.some(([key]) => key === input.value)) input.value = field.default;
+  let saved = input.value;
+  const options = [
+    { key: "classic", title: "现有稀有度卡面", detail: "场景立绘 · 主题边饰 · 稀有度光效" },
+    { key: "tcg", title: "TCG 收藏卡面", detail: "实体卡比例 · 金属包边 · 五档印刷材质" },
+  ];
+  const hintId = `${input.id}-hint`;
+  const picker = el("fieldset", { class: "card-style-picker", "aria-describedby": hintId });
+  const choices = [];
+  const dialogImage = el("img", { alt: "", decoding: "async" });
+  const dialogTitle = el("h2", { id: `${input.id}-preview-title` });
+  const closeButton = el("button", { type: "button", class: "icon-button", "aria-label": "关闭卡面预览", text: "×" });
+  const dialog = el("dialog", { class: "card-style-dialog", "aria-labelledby": dialogTitle.id }, [
+    el("div", { class: "card-style-dialog-head" }, [dialogTitle, closeButton]),
+    dialogImage,
+    el("p", { class: "card-style-dialog-note", text: "五档依次为普通、稀有、史诗、传说与闪光。实际卡面随宝可梦属性、立绘与抽取结果变化。" }),
+  ]);
+  closeButton.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("click", (event) => {
+    const bounds = dialog.getBoundingClientRect();
+    if (event.target === dialog && (event.clientX < bounds.left || event.clientX > bounds.right || event.clientY < bounds.top || event.clientY > bounds.bottom)) dialog.close();
+  });
+  const sync = () => {
+    for (const { key, radio, choice, badge } of choices) {
+      radio.checked = key === input.value;
+      choice.classList.toggle("selected", radio.checked);
+      const active = key === saved;
+      badge.textContent = active ? "使用中" : radio.checked ? "待保存" : "";
+      badge.hidden = !active && !radio.checked;
+      badge.classList.toggle("pending", radio.checked && !active);
+    }
+  };
+  input.hidden = true;
+  picker.append(el("legend", { text: field.label }), input);
+  const gallery = el("div", { class: "card-style-options" });
+  for (const option of options) {
+    const radio = el("input", { type: "radio", name: `${input.id}-preview`, value: option.key, "aria-describedby": `${input.id}-${option.key}-detail` });
+    const badge = el("span", { class: "card-style-badge" });
+    const image = el("img", {
+      src: `./assets/card-styles/${option.key}.jpg`,
+      alt: `${option.title}的普通、稀有、史诗、传说、闪光五种卡面预览`,
+      loading: "lazy", decoding: "async",
+    });
+    const fallback = el("span", { class: "card-style-fallback", hidden: true, text: "预览暂不可用，仍可选择此样式" });
+    const openButton = el("button", { type: "button", class: "card-style-zoom", text: "查看大图", "aria-label": `查看${option.title}大图` });
+    image.addEventListener("error", () => {
+      image.hidden = true;
+      fallback.hidden = false;
+      openButton.dataset.previewUnavailable = "true";
+      openButton.disabled = true;
+    });
+    const label = el("label", { class: "card-style-label" }, [
+      el("span", { class: "card-style-heading" }, [radio, el("strong", { text: option.title }), badge]),
+      el("span", { class: "card-style-art" }, [image, fallback]),
+      el("span", { class: "card-style-description", id: `${input.id}-${option.key}-detail`, text: option.detail }),
+    ]);
+    const choice = el("div", { class: "card-style-option" }, [label, el("div", { class: "card-style-footer" }, [
+      el("span", { text: "普通 / 稀有 / 史诗 / 传说 / 闪光" }), openButton,
+    ])]);
+    radio.addEventListener("input", () => {
+      input.value = radio.value;
+      sync();
+    });
+    openButton.addEventListener("click", () => {
+      dialogTitle.textContent = option.title;
+      dialogImage.src = image.src;
+      dialogImage.alt = image.alt;
+      if (typeof dialog.showModal === "function") dialog.showModal();
+      else window.open(image.src, "_blank", "noopener");
+    });
+    choices.push({ key: option.key, radio, choice, badge });
+    gallery.append(choice);
+  }
+  input.addEventListener("input", sync);
+  input.addEventListener("change", sync);
+  picker.append(gallery, el("p", { id: hintId, class: "card-style-hint", text: `${field.hint} 选择后点击下方「保存配置」生效。` }), dialog);
+  sync();
+  return { element: picker, saved: () => { saved = input.value; sync(); } };
+}
+
 function setupSettings() {
   const form = document.getElementById("settingsForm");
   const grid = document.getElementById("settingsGrid");
@@ -969,8 +1051,11 @@ function setupSettings() {
   const inputs = new Map();
   let saving = false;
   let dirty = false;
-  const saveButton = form.querySelector('[type="submit"]');
+  let cardStylePicker = null;
+  let edits = 0;
+  let loadSequence = 0;
   form.addEventListener("input", () => {
+    edits += 1;
     dirty = true;
     status.textContent = "有尚未保存的修改";
     status.className = "form-status";
@@ -979,6 +1064,7 @@ function setupSettings() {
   const build = (config) => {
     clear(grid);
     inputs.clear();
+    cardStylePicker = null;
     for (const group of SETTINGS_FIELDS) {
       grid.append(el("div", { class: "group-title", text: group.group }));
       for (const field of group.fields) {
@@ -1001,6 +1087,11 @@ function setupSettings() {
         }
         input.id = `setting-${field.key.replaceAll(".", "-")}`;
         inputs.set(field.key, { field, input });
+        if (field.key === "daily_card_style") {
+          cardStylePicker = dailyCardStylePicker(input, field);
+          grid.append(cardStylePicker.element);
+          continue;
+        }
         grid.append(
           el("div", { class: `form-field${field.wide ? " wide" : ""}` }, [
             el("label", { text: field.label, for: input.id }),
@@ -1013,9 +1104,16 @@ function setupSettings() {
   };
 
   const load = async () => {
+    if (saving) return false;
+    if (dirty && !(await confirmAction({ title: "放弃尚未保存的修改？", message: "重新读取已保存的设置，当前修改会被丢弃。", confirmLabel: "放弃修改" }))) return false;
+    if (saving) return false;
+    const sequence = ++loadSequence;
+    const revision = edits;
     status.textContent = "";
     status.className = "form-status";
     const data = await api("/settings");
+    // A slow read must not replace newer edits or a save that started later.
+    if (saving || sequence !== loadSequence || edits !== revision) return false;
     build(data.config ?? {});
     dirty = false;
   };
@@ -1024,8 +1122,12 @@ function setupSettings() {
     event.preventDefault();
     if (saving || !form.reportValidity()) return;
     saving = true;
-    saveButton.disabled = true;
-    reload.disabled = true;
+    loadSequence += 1;
+    // Freeze the submitted values until the response arrives, including preview
+    // radios, so later edits cannot be mistaken for the saved configuration.
+    const disabled = new Map(Array.from(form.querySelectorAll("input, select, button"), (control) => [control, control.disabled]));
+    for (const control of disabled.keys()) control.disabled = true;
+    form.setAttribute("aria-busy", "true");
     const patch = {};
     for (const [key, { field, input }] of inputs) {
       let value;
@@ -1039,6 +1141,7 @@ function setupSettings() {
     try {
       await apiPost("/settings/save", { config: patch });
       dirty = false;
+      cardStylePicker?.saved();
       state.loaded.delete("overview");
       state.loaded.delete("rules");
       status.textContent = "已保存并重新加载抽卡规则。";
@@ -1050,13 +1153,12 @@ function setupSettings() {
       toast(error.message, "error", 6000);
     } finally {
       saving = false;
-      saveButton.disabled = false;
-      reload.disabled = false;
+      for (const [control, wasDisabled] of disabled) control.disabled = wasDisabled || control.dataset.previewUnavailable === "true";
+      form.removeAttribute("aria-busy");
     }
   });
 
-  reload.addEventListener("click", async () => {
-    if (dirty && !(await confirmAction({ title: "放弃尚未保存的修改？", message: "重新读取已保存的设置，当前修改会被丢弃。", confirmLabel: "放弃修改" }))) return;
+  reload.addEventListener("click", () => {
     load().catch((error) => toast(error.message, "error"));
   });
 
@@ -1174,7 +1276,7 @@ async function boot() {
   for (const button of document.querySelectorAll("[data-go]")) button.addEventListener("click", () => showView(button.dataset.go));
   window.addEventListener("hashchange", () => showView(location.hash.slice(1)));
   document.addEventListener("keydown", (event) => {
-    if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || document.body.classList.contains("drawer-open")) return;
+    if (event.key !== "/" || event.ctrlKey || event.metaKey || event.altKey || document.body.classList.contains("drawer-open") || document.querySelector(".card-style-dialog[open]")) return;
     if (["INPUT", "TEXTAREA", "SELECT"].includes(document.activeElement?.tagName)) return;
     event.preventDefault();
     showView("dex");

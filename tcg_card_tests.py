@@ -13,7 +13,7 @@ os.environ.setdefault("ASTRBOT_ROOT", _runtime.name)
 from PIL import Image, ImageDraw
 from gacha import DrawItem, GachaRules, build_partners
 from pokedex_db import PokedexDB
-from tcg_cards import render_tcg_draw
+from tcg_cards import _paste_art, render_tcg_draw
 from tcg_materials import render_print_surface
 from tcg_symbols import render_energy_icon
 
@@ -53,6 +53,42 @@ class TcgCardTests(unittest.TestCase):
         self.assertTrue(calls[0]['_artwork_shiny'])
         self.assertIsNot(calls[0],value.row)
         self.assertNotIn('_artwork_shiny',value.row)
+
+    def test_portraits_trim_transparency_and_scale_inside_the_existing_box(self):
+        # Different aspect ratios expose both clipping and off-centre placement.
+        box = (40, 50, 600, 420)
+        for content in ((100, 75, 450, 225), (100, 75, 250, 425), (100, 75, 400, 425)):
+            with self.subTest(content=content):
+                source = Image.new('RGBA', (500, 500))
+                source.paste((230, 40, 175, 255), content)
+                before = source.tobytes()
+                composites = []
+                original = Image.Image.alpha_composite
+
+                def record(base, image, dest=(0, 0), source=(0, 0)):
+                    composites.append((image.copy(), dest))
+                    return original(base, image, dest, source)
+
+                with patch.object(Image.Image, 'alpha_composite', record):
+                    _paste_art(Image.new('RGBA', (700, 550)), self.item(), lambda row: source, box, 'R')
+                portrait, (x, y) = composites[-1]
+                self.assertEqual(source.tobytes(), before)
+                self.assertEqual(portrait.getchannel('A').getbbox(), (0, 0, *portrait.size))
+                self.assertLessEqual(portrait.width, box[2])
+                self.assertLessEqual(portrait.height, box[3])
+                self.assertTrue(portrait.width == box[2] or portrait.height == box[3])
+                self.assertEqual(x, box[0] + (box[2] - portrait.width) // 2)
+                self.assertEqual(y, box[1] + (box[3] - portrait.height) // 2)
+                aspect = (content[2] - content[0]) / (content[3] - content[1])
+                self.assertAlmostEqual(portrait.width / portrait.height, aspect, delta=.01)
+
+    def test_fully_transparent_art_shows_the_missing_art_placeholder(self):
+        source = Image.new('RGBA', (475, 475), (200, 80, 40, 0))
+        missing, transparent = (Image.new('RGBA', (900, 800), (245, 239, 225, 255)) for _ in range(2))
+        _paste_art(missing, self.item(), lambda row: None, (87, 199, 726, 437), 'R')
+        _paste_art(transparent, self.item(), lambda row: source, (87, 199, 726, 437), 'R')
+        self.assertEqual(transparent.tobytes(), missing.tobytes())
+        self.assertIsNone(source.getchannel('A').getbbox())
 
     def test_long_form_names_and_visible_text_stay_on_their_canvas(self):
         value = self.item('555:伽勒尔达摩狒狒（达摩模式）','SR')
