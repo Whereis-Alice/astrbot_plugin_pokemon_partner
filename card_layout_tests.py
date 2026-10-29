@@ -56,7 +56,7 @@ def main():
     short = DrawItem("25", 25, "0025", "皮卡丘", "电", 320, "C", False, True, 0, 1, row)
     image, bounds = render_with_text_bounds(short)
     assert_text_is_separate(image, bounds)
-    assert image.size == (1080, 1512), ("纯卡牌不是固定比例", image.size)
+    assert image.size == (1080, 1800), ("纯卡牌不是固定比例", image.size)
     texts = "".join(text for text, _ in bounds)
     for removed in ("今日宝可梦", "布局验证训练家", "星尘", "保底", "NEW", "新宝可梦已加入"):
         assert removed not in texts, ("状态提示未移出卡牌", removed)
@@ -90,7 +90,7 @@ def main():
             candidate_image, candidate_bounds = render_with_text_bounds(candidate)
             assert_text_is_separate(candidate_image, candidate_bounds)
             assert candidate_image.width == 1080
-            assert candidate_image.height == 1512
+            assert candidate_image.height == 1800
             heights[(rarity, fixture.name == short.name, bool(fixture.row))] = candidate_image.height
     print(f"15 layouts passed: short={image.height}, long={long_image.height}, empty={empty_image.height}; editions={heights}")
 

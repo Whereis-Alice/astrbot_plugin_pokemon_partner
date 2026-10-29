@@ -138,7 +138,7 @@ class ShinyArtworkTests(unittest.TestCase):
                     [],
                 )
 
-    def test_forms_require_local_exact_art_and_do_not_use_national_number_cache(self):
+    def test_forms_require_exact_local_or_form_cache_and_never_use_base_number_cache(self):
         form = {
             "id": "26",
             "id_raw": "0026",
@@ -153,7 +153,10 @@ class ShinyArtworkTests(unittest.TestCase):
         self.write(self.cache.images_dir / "shiny" / "0026.png", LOCAL)
         self.assertIsNone(self.cache.load(form))
         self.assertIsNone(self.cache.load(shiny))
-        self.assertEqual(self.cache.missing([form, shiny]), [])
+        self.assertEqual(self.cache.missing([form, shiny]), [
+            (10100, self.cache.cache_dir / "forms" / "10100.png"),
+            (10100, self.cache.cache_dir / "shiny/forms" / "10100.png"),
+        ])
         self.write(
             self.cache.images_dir / "home" / "0026-雷丘-阿罗拉的样子-shiny.png", SHINY
         )

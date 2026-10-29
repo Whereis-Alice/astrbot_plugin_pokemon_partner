@@ -145,7 +145,7 @@ def main():
             )
         for removed in ("今日宝可梦", "训练家·", "今日剩余", "星尘", "保底", "NEW", "新宝可梦已加入"):
             assert removed not in text, ("抽卡状态未移出卡面", removed)
-        assert image.size == (1080, 1512)
+        assert image.size == (1080, 1800)
         assert ("闪光" in texts) == shiny
         for value, _, size in records:
             if any(
@@ -225,7 +225,7 @@ def main():
     image, records = render(editions, art=False)
     assert_text_is_separate(image, [(text, box) for text, box, _ in records])
     # Two columns keep each complete card; bounds are checked after scaling.
-    assert image.size == (1080, 3668)
+    assert image.size == (1080, 4343)
     texts = [text for text, _, _ in records]
     assert sum(value.startswith("#0025") for value in texts) == 10
     assert not any("NEW" in value or "星尘" in value for value in texts)

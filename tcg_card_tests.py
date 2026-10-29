@@ -176,8 +176,8 @@ class TcgCardTests(unittest.TestCase):
         visible = ''.join(texts)
         self.assertIn('岩石 ×4', visible)
         self.assertIn('地面 ×0', visible)
-        self.assertIn(('岩石', 29), icons)
-        self.assertIn(('地面', 29), icons)
+        self.assertIn(('岩石', 32), icons)
+        self.assertIn(('地面', 32), icons)
         self.assertIn('弱点', visible)
         self.assertIn('抗性', visible)
         self.assertIn('免疫', visible)
@@ -232,6 +232,36 @@ class TcgCardTests(unittest.TestCase):
         for left, top, right, bottom in bounds:
             self.assertGreaterEqual(left, 50)
             self.assertLess(right, 602)
+
+    def test_form_name_shrinks_before_using_a_second_title_line(self):
+        measure = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+        size, lines = tcg_cards._name_layout(measure, '猫老大（阿罗拉的样子）')
+        self.assertEqual(len(lines), 1)
+        self.assertGreaterEqual(size, 36)
+        self.assertLessEqual(measure.textlength(lines[0], font=tcg_cards._font(size)), 530)
+
+    def test_tall_card_preserves_portrait_space_for_long_form_names(self):
+        value = self.item('555:伽勒尔达摩狒狒（达摩模式）', 'SR')
+        with patch.object(tcg_cards, '_paste_art', wraps=tcg_cards._paste_art) as paste:
+            self.render([value])
+        box = paste.call_args.args[3]
+        self.assertGreaterEqual(box[3], 390)
+        self.assertEqual((CARD_W, CARD_H), (900, 1500))
+
+    def test_practical_body_text_remains_at_least_twenty_four_pixels(self):
+        for kind, shiny in (('C', False), ('R', False), ('SR', False), ('SSR', False), ('SSR', True)):
+            value = self.item('857', kind, shiny)
+            small = []
+            original = ImageDraw.ImageDraw.text
+            def record(draw, xy, text, *args, **kwargs):
+                size = getattr(kwargs.get('font'), 'size', 0)
+                auxiliary = str(text) in {'攻击', '防御', '特攻', '特防', '速度', '总和'} or str(text).isdigit()
+                if 744 < xy[1] < CARD_H - 84 and not auxiliary and size < 24:
+                    small.append((text, size))
+                return original(draw, xy, text, *args, **kwargs)
+            with self.subTest(kind=kind, shiny=shiny), patch.object(ImageDraw.ImageDraw, 'text', record):
+                self.render([value])
+                self.assertFalse(small, small)
 
 
 if __name__=='__main__':

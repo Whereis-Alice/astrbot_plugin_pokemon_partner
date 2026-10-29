@@ -31,6 +31,7 @@ python -m pip install -r requirements.txt
 | TCG 实卡比例、文字边界、闪光请求与十连 | `python tcg_card_tests.py` |
 | 场景、精灵球圆盘与闪光图片缓存 | `python rarity_scene_tests.py`、`python rarity_emblem_tests.py`、`python shiny_artwork_tests.py` |
 | 图片下载大小限制与备用图源 | `python image_download_tests.py` |
+| 形态立绘匹配、独立缓存与缺图日志 | `python artwork_form_tests.py` |
 | 管理台操作、设置保存与招式查询 | `python webui_action_tests.py`、`python webui_learnset_tests.py` |
 | 前端招式搜索与展开 | `node --test pages/partner-console/js/learnset.test.mjs` |
 

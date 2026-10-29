@@ -75,6 +75,8 @@ def _field(kind, type_name, width, height, art=False):
     pixels = []
     for y in range(size[1]):
         v = y / max(1, size[1] - 1)
+        reading = max(0.0, min(1.0, (v - .38) / .14))
+        reading = reading * reading * (3 - 2 * reading)
         for x in range(size[0]):
             u = x / max(1, size[0] - 1)
             grain = rng.uniform(-1.0, 1.0)
@@ -102,6 +104,8 @@ def _field(kind, type_name, width, height, art=False):
                 band = math.exp(-((u - .75 + .18 * math.sin(v * 5)) / .055) ** 2)
                 band += .65 * math.exp(-((u - .17 + v * .22) / .035) ** 2)
                 colour = _mix(colour, _spectrum(u * 2.7 + v * .8), band * (.21 if art else .20))
+                if not art:
+                    colour = _mix(colour, (201, 215, 220), reading * .16)
                 noise = grain * 2.2 + brushed * 1.3
             elif kind == "SR":
                 wave = u * .83 + v * .56 + .125 * math.sin(v * 7 + u * 4)
@@ -111,13 +115,21 @@ def _field(kind, type_name, width, height, art=False):
                 ridge = math.exp(-((u - .72 + v * .36 + .06 * math.sin(v * 9)) / .095) ** 2)
                 colour = _mix(colour, (248, 232, 199), ridge * .46 + glow * .18)
                 colour = _mix(colour, (18, 29, 69), edge * .20)
+                if not art:
+                    night = _mix((20, 21, 47), type_colour, .065)
+                    # The lower print is the same foil under a smoky ink glaze,
+                    # not an opaque white or differently coloured panel.
+                    colour = _mix(colour, night, reading * .92)
                 noise = grain * 3.0
             elif kind == "SSR":
                 gold = .5 + .5 * math.sin(u * 5.5 + v * 2.8)
-                streak = math.exp(-((u - .27 + v * .27) / .13) ** 2)
-                colour = _mix((153, 99, 23), (238, 195, 80), .28 + gold * .34 + glow * .18)
-                colour = _mix(colour, (255, 243, 170), streak * (.51 if art else .64))
-                colour = _mix(colour, (91, 62, 17), edge * .16)
+                streak = math.exp(-((u - .18 + v * .20) / .046) ** 2)
+                streak += .62 * math.exp(-((u - .88 + v * .15) / .035) ** 2)
+                colour = _mix((17, 22, 29), (58, 44, 23), gold * .39 + glow * .10)
+                colour = _mix(colour, (220, 170, 69), streak * (.43 if art else .32))
+                colour = _mix(colour, (14, 18, 23), edge * .13)
+                if not art:
+                    colour = _mix(colour, (21, 22, 25), reading * .35)
                 noise = grain * 2.6
             else:
                 phase = u * 1.4 - v * .8 + .12 * math.sin(v * 9 + u * 6)
@@ -125,6 +137,8 @@ def _field(kind, type_name, width, height, art=False):
                 colour = _mix(pearl, (255, 252, 227), glow * .48)
                 band = math.exp(-((u - .65 + v * .38 + .05 * math.sin(v * 8)) / .055) ** 2)
                 colour = _mix(colour, _spectrum(phase + .2), band * .24)
+                if not art:
+                    colour = _mix(colour, (228, 230, 240), reading * .14)
                 noise = grain * 2.0
             pixels.append(_rgb(*(channel + noise for channel in colour)) + (255,))
     field = Image.new("RGBA", size)
@@ -182,6 +196,10 @@ def _stars(image, seed, count, shiny=False, gold=False, muted=False):
             x, y = rng.random(), rng.random()
             radius = rng.uniform(.0008, .0028)
             alpha = rng.randrange(40, 116) if muted else rng.randrange(92, 212)
+            if muted and y >= .50:
+                # Pinpoints on the lower reading stock remain a foil grain,
+                # rather than bright dots that interrupt thin text strokes.
+                alpha = min(alpha, 32)
             colour = (239, 194, 98, alpha) if gold else (246, 249, 255, alpha)
             if shiny and index % 4 == 0:
                 radius = rng.uniform(.008, .018)
@@ -208,10 +226,9 @@ def _paper_fibres(image, seed, art=False):
     _layer(image, paint)
 
 
-def _type_underprint(image, type_name):
+def _type_underprint(image, type_name, tone=(22, 44, 55, 21)):
     """Small dispersed line glyphs imitate the reverse-foil underprint sheet."""
     def paint(ink):
-        tone = (22, 44, 55, 21)
         step = .145
         for row in range(-1, 11):
             for col in range(-1, 9):
@@ -580,6 +597,7 @@ def _render_cached(which, kind, type_name, width, height):
             _pearl_highlights(image)
     elif kind == "C":
         _paper_fibres(image, seed)
+        _type_underprint(image, type_name, tone=(111, 86, 42, 12))
     elif kind == "R":
         _type_underprint(image, type_name)
         _silver_brush(image, seed)
@@ -590,6 +608,7 @@ def _render_cached(which, kind, type_name, width, height):
     elif kind == "SSR":
         _gold_etch(image)
         _gold_granules(image, seed)
+        _stars(image, seed + 51, 73, gold=True, muted=True)
     else:
         _pearl_contours(image)
         _pearl_highlights(image)

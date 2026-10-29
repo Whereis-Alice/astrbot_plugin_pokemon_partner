@@ -291,8 +291,9 @@ def write_real_previews(folder, art_dir):
 
     partners = build_partners(PokedexDB(), GachaRules.from_config({"include_alternate_forms": True}))
     selections = []
+    review = {}
     folder.mkdir(parents=True, exist_ok=True)
-    for dex, (rarity, shiny) in zip((1, 25, 448, 384, 151), EDITIONS):
+    for dex, (rarity, shiny) in zip((1, 2, 786, 384, 151), EDITIONS):
         partner = next(p for p in partners if p.dex == dex and not p.row.get("form_name"))
         item = DrawItem(partner.key, partner.dex, partner.dex_raw, partner.name, partner.types,
                         partner.bst, rarity, shiny, True, 0, 1, partner.row)
@@ -305,7 +306,8 @@ def write_real_previews(folder, art_dir):
             with Image.open(path) as image:
                 return image.convert("RGBA")
         image, records = capture_render([item], loader)
-        assert_text(image, records, single=True)
+        key = rarity if not shiny else "SHINY"
+        review[key] = {**assert_text(image, records, single=True), "size": image.size}
         image.save(folder / f"real-{rarity if not shiny else 'SHINY'}.jpg", quality=94)
     mixed = selections + [replace(item, is_new=False, dust=120) for item in selections]
     data = render_draw_card(mixed, image_loader=loader, **CONTEXT)
@@ -320,6 +322,7 @@ def write_real_previews(folder, art_dir):
     for index, image in enumerate(thumbs):
         sheet.paste(image, (index*384+12, 12))
     sheet.save(folder / "real-editions-360px.png")
+    (folder / "real-visual-regression.json").write_text(json.dumps(review, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def main():
@@ -328,18 +331,27 @@ def main():
     parser.add_argument("--art-dir", type=Path)
     args = parser.parse_args()
     from rarity_cards import PALETTES, PANEL_ALPHA, _panel
-    for palette in PALETTES.values():
+    for kind, palette in PALETTES.items():
         results = []
         for background in ((0, 0, 0), (255, 255, 255)):
             surface = Image.new("RGBA", (100, 100), (*background, 255))
             _panel(ImageDraw.Draw(surface), (10, 10, 90, 90), palette)
             actual = surface.getpixel((50, 50))
-            amount = PANEL_ALPHA[palette.panel] / 255
-            expected = tuple(round(foreground * amount + before * (1 - amount))
-                             for foreground, before in zip(palette.panel, background))
-            assert max(abs(a - b) for a, b in zip(actual[:3], expected)) <= 1, "面板没有按 alpha 与底图混合"
             assert actual[3] == 255 and surface.getpixel((5, 5)) == (*background, 255)
             results.append(actual)
+        if kind in {"C", "SHINY"}:
+            # These light materials lift and diffuse the local backdrop before
+            # alpha blending. Both extreme scenes must remain perceptible and
+            # the dark printed ink must remain readable on either surface.
+            assert all(12 <= white - black <= 96
+                       for black, white in zip(results[0][:3], results[1][:3])), "浅色材质未保留受控的场景光色"
+            for actual in results:
+                for ink in (palette.ink, palette.muted):
+                    assert contrast_ratio(ink, actual) >= 4.5, ("浅色材质极端背景不可读", kind, ink, actual)
+        else:
+            difference = 255 - PANEL_ALPHA[palette.panel]
+            assert max(abs((white - black) - difference)
+                       for black, white in zip(results[0][:3], results[1][:3])) <= 1, "材质面板没有保留真实 alpha 混合"
         assert results[0] != results[1], "半透明面板丢掉了场景背景"
     sprite = portrait()
     report, structures = {}, {}
@@ -356,7 +368,7 @@ def main():
         joined = "".join(record.value for record in records).replace(" ", "")
         for value in ("皮卡丘", "0025", "静电", "避雷针", "190", "地面×2", "电×0.5", "陆上", "性别", "皮丘", "性格温顺"):
             assert value in joined, ("卡片遗漏资料", key, value)
-        assert image.size == (1080, 1512), ("实体卡片尺寸异常", key, image.size)
+        assert image.size == (1080, 1800), ("实体卡片尺寸异常", key, image.size)
         for removed in ("今日宝可梦", "训练家·", "今日剩余", "星尘", "保底", "NEW", "新宝可梦已加入"):
             assert removed not in joined, ("抽卡状态仍出现在纯卡面", key, removed)
         if args.output:
@@ -386,7 +398,7 @@ def main():
         items = (editions + [replace(item, is_new=False, dust=120) for item in editions])[:count]
         image, records = capture_render(items, lambda _: sprite.copy())
         report[f"multi-{count}"] = assert_text(image, records, single=False)
-        assert image.width == 1080 and image.height < 4000
+        assert image.width == 1080 and image.height < 4500
         values = [record.value for record in records]
         assert not any(any(word in value for word in ("NEW", "新伙伴", "星尘", "保底", "今日剩余")) for value in values), "多抽卡牌仍含状态提示"
         assert sum(value.startswith("#0025") for value in values) == count, ("多抽卡牌数量遗漏", count)

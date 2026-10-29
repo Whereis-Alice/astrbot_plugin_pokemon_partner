@@ -14,7 +14,7 @@
 
 [查看五张卡片大图](docs/CARDS.md)
 
-在配置中可选择现有卡面或 TCG 风格卡面，详见[卡面设置](docs/CONFIGURATION.md)。
+在配置中可选择基础卡面或 TCG 风格卡面，详见[卡面设置](docs/CONFIGURATION.md)。
 
 ## 安装
 
