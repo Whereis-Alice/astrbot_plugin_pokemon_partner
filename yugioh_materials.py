@@ -74,9 +74,56 @@ def _seed(kind, layer, type_name):
     return _SEEDS[kind] + sum((i + 7) * ord(c) for i, c in enumerate(layer + type_name))
 
 
+def _print_relief(colour, kind, layer, u, v):
+    """Mesoscopic print relief survives the card's usual 360px chat preview.
+
+    This is coherent warped stock, not amplified random noise: each finish has
+    its own veins, rolled-metal ridges or optical cell structure. Reading stock
+    retains the same forms with a restricted luminance excursion.
+    """
+    reading = layer == "reading"
+    cloud = .5 + .25 * math.sin(u * 17 + 2 * math.sin(v * 9))
+    cloud += .25 * math.sin(v * 23 - u * 8 + math.sin(u * 11))
+    if kind == "C":
+        phase = u * 38 + v * 27 + 4 * math.sin(v * 12 - u * 7) + 2 * math.sin(u * 23 + v * 8)
+        vein = (.5 + .5 * math.sin(phase)) ** 6
+        mica = (.5 + .5 * math.sin(phase + .85)) ** 5
+        colour = _mix(colour, (113, 76, 32), vein * (.095 if reading else .24))
+        colour = _mix(colour, (245, 225, 172), mica * (.14 if reading else .31))
+        return _mix(colour, (170, 132, 69), cloud * (.075 if reading else .13))
+    if kind == "R":
+        phase = u * 53 + v * 19 + 3.5 * math.sin(v * 15 + u * 11)
+        ridge = (.5 + .5 * math.sin(phase)) ** 7
+        glint = (.5 + .5 * math.sin(phase + .55)) ** 9
+        colour = _mix(colour, (87, 43, 27), ridge * (.095 if reading else .27))
+        colour = _mix(colour, (252, 211, 158), glint * (.13 if reading else .32))
+        return _mix(colour, (174, 110, 71), cloud * (.05 if reading else .13))
+    if kind == "SR":
+        phase = u * 39 - v * 28 + 2.5 * math.sin(v * 12 + u * 9)
+        crack = (.5 + .5 * math.sin(phase)) ** 14
+        colour = _mix(colour, (17, 39, 74), crack * (.075 if reading else .30))
+        frost = (.5 + .5 * math.sin(phase + .37)) ** 12
+        colour = _mix(colour, (191, 230, 245), frost * (.15 if reading else .32))
+        return _mix(colour, (106, 158, 195), cloud * (.06 if reading else .17))
+    if kind == "SSR":
+        phase = u * 41 + v * 31 + 4.2 * math.sin(v * 10 - u * 8)
+        fracture = (.5 + .5 * math.sin(phase)) ** 16
+        colour = _mix(colour, (0, 4, 10), cloud * (.22 if reading else .43))
+        colour = _mix(colour, (194, 148, 59), fracture * (.095 if reading else .27))
+        gold = (.5 + .5 * math.sin(phase + .50)) ** 16
+        return _mix(colour, (102, 79, 39), gold * (.13 if reading else .27))
+    phase = u * 21 - v * 15 + .33 * math.sin(v * 23)
+    prism = _spectrum(phase / math.tau)
+    cell = .5 + .5 * math.sin(u * 53) * math.sin(v * 49)
+    colour = _mix(colour, prism, cell * (.07 if reading else .19))
+    reflection = (.5 + .5 * math.sin(u * 45 + v * 39)) ** 10
+    return _mix(colour, (255, 251, 243), reflection * (.12 if reading else .32))
+
+
 def _field(kind, layer, width, height, type_name):
-    # At most 33k pixels are sampled, including full 1080x1800 stocks.
-    scale = min(1.0, 174 / width, 224 / height)
+    # Sampling resolves 30-180px physical material forms without a full-size
+    # Python pixel loop; at most 91k pixels are sampled per cached finish.
+    scale = min(1.0, 252 / width, 360 / height)
     sw, sh = max(1, round(width * scale)), max(1, round(height * scale))
     rng = random.Random(_seed(kind, layer, type_name))
     tc = TYPE_COLORS[type_name]
@@ -169,6 +216,7 @@ def _field(kind, layer, width, height, type_name):
                     colour = _mix(colour, _spectrum(phase), .10 + band * .26)
                     colour = _mix(colour, (252, 243, 222), centre * .18)
                     grain = noise * .8
+            colour = _print_relief(colour, kind, layer, u, v)
             values.append((*_rgb(c + grain for c in colour), 255))
     im = Image.new("RGBA", (sw, sh))
     im.putdata(values)
@@ -187,6 +235,205 @@ def _spark(draw, x, y, radius, fill, *, diamond=False):
         draw.line((x - radius, y, x + radius, y), fill=fill, width=1)
         draw.line((x, y - radius, x, y + radius), fill=fill, width=1)
         draw.ellipse((x - 1, y - 1, x + 1, y + 1), fill=fill)
+
+
+def _curve(a, b, c, d, steps=24):
+    points = []
+    for i in range(steps + 1):
+        t = i / steps
+        q = 1 - t
+        points.append((q ** 3 * a[0] + 3 * q * q * t * b[0] + 3 * q * t * t * c[0] + t ** 3 * d[0],
+                       q ** 3 * a[1] + 3 * q * q * t * b[1] + 3 * q * t * t * c[1] + t ** 3 * d[1]))
+    return points
+
+
+def _relief_detail(base, kind, layer, type_name):
+    """A second engraving scale: paper swirls, copper scrolls and foil facets.
+
+    Geometry is tens of physical pixels wide. It remains visible after JPEG
+    encoding and chat downscaling; fine grain from the original engraving pass
+    sits above this relief. The reading pass uses the same geometry with softer
+    ink and compressed contrast rather than replacing it with a blank panel.
+    """
+    width, height = base.size
+    s = width / 1080
+    # Keep sensible drawing geometry for the supported tiny-size edge case.
+    if width < 12 or height < 12:
+        return base
+    rng = random.Random(_seed(kind, layer, type_name) + 1423)
+    reading = layer == "reading"
+    overlay = Image.new("RGBA", base.size)
+    d = ImageDraw.Draw(overlay)
+    if kind == "C":
+        # Widely spaced knots and distorted mica contours emulate the swirled
+        # paper of a classic Normal Monster instead of a flat yellow gradient.
+        pitch = max(30, round(178 * s))
+        for yy in range(-pitch, height + pitch, pitch):
+            for xx in range(-pitch, width + pitch, pitch):
+                cx = xx + rng.uniform(.12, .82) * pitch
+                cy = yy + rng.uniform(.12, .92) * pitch
+                phase = rng.uniform(0, math.tau)
+                skew = rng.uniform(.65, 1.55)
+                for ring in range(2):
+                    r = pitch * (.22 + ring * .13)
+                    points = []
+                    for step in range(65):
+                        a = step * math.tau / 64
+                        rr = r * (1 + .12 * math.sin(a * 3 + phase) + .07 * math.sin(a * 5 - phase))
+                        points.append((cx + math.cos(a) * rr * skew,
+                                       cy + math.sin(a) * rr / skew))
+                    shade = (99, 64, 27, 18 if reading else 38)
+                    light = (252, 225, 158, 27 if reading else 66)
+                    d.line(points, fill=shade, width=max(1, round((2 if reading else 3) * s)), joint="curve")
+                    d.line([(x + 2 * s, y - 2 * s) for x, y in points], fill=light,
+                           width=max(1, round((2 if reading else 3) * s)), joint="curve")
+        # Long fibres look pressed into the mottled stock at full resolution.
+        for _ in range(round(width * height / 3600)):
+            x, y = rng.uniform(0, width), rng.uniform(0, height)
+            span = rng.uniform(18, 64) * s
+            bend = rng.uniform(-3, 3) * s
+            d.line(_curve((x, y), (x + span * .3, y + bend),
+                          (x + span * .7, y - bend), (x + span, y)),
+                   fill=(103, 70, 32, 23 if reading else 42), width=max(1, round(s)))
+    elif kind == "R":
+        # Embossed acanthus-like scrollwork is sunk into rolled copper. This
+        # introduces real repeat geometry and directional raised highlights.
+        pitch = max(42, round(226 * s))
+        for row, yy in enumerate(range(-pitch // 2, height + pitch, pitch)):
+            for xx in range(-pitch, width + pitch, pitch):
+                # Real engraved stock has broken repeats and uneven polish;
+                # jitter, size and direction keep the plate from wallpapering.
+                if rng.random() < .19:
+                    continue
+                cx = xx + pitch * ((.65 if row % 2 else .15) + rng.uniform(-.15, .15))
+                cy = yy + pitch * rng.uniform(.37, .64)
+                flip = rng.choice((-1, 1))
+                turn = rng.uniform(-.30, .65)
+                sweep = rng.uniform(.84, 1.18)
+                radius = rng.uniform(.27, .37)
+                points = []
+                for i in range(61):
+                    a = turn + i * math.tau * sweep / 60
+                    r = pitch * (radius - (radius - .07) * i / 60)
+                    points.append((cx + flip * math.cos(a) * r, cy + math.sin(a) * r))
+                stroke = max(1, round((3 if reading else 5) * s))
+                d.line([(x + 2 * s, y + 2 * s) for x, y in points],
+                       fill=(54, 29, 18, 28 if reading else 101), width=stroke, joint="curve")
+                d.line(points, fill=(251, 199, 130, 51 if reading else 136), width=stroke, joint="curve")
+                for sign in (-1, 1):
+                    stem = _curve((cx - flip * pitch * .08, cy + sign * pitch * .15),
+                                  (cx - flip * pitch * .23, cy + sign * pitch * .38),
+                                  (cx + flip * pitch * .20, cy + sign * pitch * .47),
+                                  (cx + flip * pitch * .36, cy + sign * pitch * .31))
+                    d.line(stem, fill=(250, 194, 118, 37 if reading else 106),
+                           width=max(1, round((2 if reading else 4) * s)), joint="curve")
+                    for offset in (.33, .60):
+                        p = stem[round(offset * 24)]
+                        leaf = _curve(p, (p[0] + pitch * .02, p[1] - sign * pitch * .11),
+                                      (p[0] + pitch * .15, p[1] - sign * pitch * .13),
+                                      (p[0] + pitch * .14, p[1] - sign * pitch * .02))
+                        leaf += _curve(leaf[-1], (p[0] + pitch * .08, p[1] + sign * pitch * .05),
+                                       (p[0] + pitch * .02, p[1] + sign * pitch * .03), p)
+                        d.polygon(leaf, fill=(230, 155, 83, 21 if reading else 45))
+                        d.line(leaf, fill=(249, 194, 125, 38 if reading else 95),
+                               width=max(1, round((2 if reading else 3) * s)), joint="curve")
+        # Dense paired lines provide satin grain underneath the larger relief.
+        for y in range(0, height, max(3, round(9 * s))):
+            d.line((0, y, width, y), fill=(61, 31, 20, 10 if reading else 23), width=max(1, round(s)))
+            d.line((0, y + 2 * s, width, y + 2 * s), fill=(255, 221, 171, 13 if reading else 30), width=max(1, round(s)))
+    elif kind in {"SR", "SSR"}:
+        # An irregular triangular tessellation gives cut crystal / polished
+        # obsidian actual faces; it is deliberately separate from orbit decor.
+        pitch = max(35, round((155 if kind == "SR" else 190) * s))
+        columns = math.ceil(width / pitch) + 3
+        rows = math.ceil(height / pitch) + 3
+        vertices = {}
+        for row in range(rows):
+            for col in range(columns):
+                vertices[row, col] = ((col - 1 + rng.uniform(-.21, .21)) * pitch,
+                                      (row - 1 + rng.uniform(-.22, .22)) * pitch)
+        for row in range(rows - 1):
+            for col in range(columns - 1):
+                a, b, c, e = (vertices[row, col], vertices[row, col + 1],
+                              vertices[row + 1, col], vertices[row + 1, col + 1])
+                triangles = ((a, b, e), (a, e, c)) if (row + col) % 2 else ((a, b, c), (b, e, c))
+                for triangle in triangles:
+                    if kind == "SR":
+                        bright = rng.random() > .5
+                        tint = (195, 230, 245) if bright else (11, 35, 82)
+                        alpha = rng.randint(7, 17) if reading else rng.randint(17, 45)
+                        d.polygon(triangle, fill=(*tint, alpha))
+                        d.line((*triangle, triangle[0]), fill=(13, 37, 79, 20 if reading else 84),
+                               width=max(1, round((2 if reading else 4) * s)), joint="curve")
+                        d.line([(x - s, y - s) for x, y in (*triangle, triangle[0])],
+                               fill=(215, 247, 252, 40 if reading else 111),
+                               width=max(1, round((2 if reading else 3) * s)), joint="curve")
+                    else:
+                        tint = (0, 2, 10) if rng.random() > .43 else (95, 76, 41)
+                        d.polygon(triangle, fill=(*tint, rng.randint(16, 30) if reading else rng.randint(20, 65)))
+                        d.line((*triangle, triangle[0]), fill=(229, 187, 94, 20 if reading else 86),
+                               width=max(1, round((2 if reading else 3) * s)), joint="curve")
+                        d.line([(x + 2 * s, y + 2 * s) for x, y in (*triangle, triangle[0])],
+                               fill=(0, 0, 6, 69 if reading else 146),
+                               width=max(1, round((2 if reading else 4) * s)), joint="curve")
+                    # Short engraved hatch fans follow one crystal/stone face.
+                    if rng.random() < .33:
+                        first, second, third = triangle
+                        for n in range(4):
+                            t = .18 + n * .09
+                            start = (first[0] * (1 - t) + second[0] * t,
+                                     first[1] * (1 - t) + second[1] * t)
+                            end = (first[0] * (1 - t) + third[0] * t,
+                                   first[1] * (1 - t) + third[1] * t)
+                            colour = (208, 243, 249) if kind == "SR" else (204, 165, 82)
+                            d.line((start, end), fill=(*colour, 18 if reading else 58), width=max(1, round(s)))
+        if kind == "SSR":
+            # Torn metallic leaf islands are 25-100px wide, not isolated dots.
+            for _ in range(round(width * height / 33000)):
+                x, y = rng.uniform(0, width), rng.uniform(0, height)
+                radius = rng.uniform(15, 47) * s
+                points = []
+                for i in range(13):
+                    angle = i * math.tau / 12
+                    r = radius * rng.uniform(.38, 1)
+                    points.append((x + math.cos(angle) * r, y + math.sin(angle) * r * .48))
+                d.polygon(points, fill=(204, 159, 66, 12 if reading else 54))
+                d.line(points, fill=(251, 213, 126, 17 if reading else 97), width=max(1, round(2 * s)))
+    else:
+        # Crisp crossed prismatic cells, mirrored facets and many small diamond
+        # reflections reproduce foil rather than a smooth rainbow background.
+        pitch = max(12, round(51 * s))
+        for row, y in enumerate(range(-pitch, height + pitch, pitch)):
+            for col, x in enumerate(range(-pitch, width + pitch, pitch)):
+                phase = col * .11 + row * .16
+                tint = _spectrum(phase)
+                alpha = 18 if reading else 41
+                d.polygon(((x, y), (x + pitch, y), (x, y + pitch)), fill=(*tint, alpha))
+                d.polygon(((x + pitch, y), (x + pitch, y + pitch), (x, y + pitch)),
+                          fill=(252, 250, 245, 24 if reading else 74))
+                dark_alpha = 17 if reading else 55
+                d.line((x, y, x + pitch, y + pitch), fill=(106, 91, 157, dark_alpha),
+                       width=max(1, round((1.5 if reading else 2.5) * s)))
+                d.line((x + pitch, y, x, y + pitch), fill=(247, 251, 255, 35 if reading else 116),
+                       width=max(1, round((2 if reading else 3) * s)))
+                if (row + col * 3) % 4 == 0:
+                    cx, cy = x + pitch / 2, y + pitch / 2
+                    r = pitch * .22
+                    diamond = ((cx, cy - r), (cx + r * .67, cy), (cx, cy + r), (cx - r * .67, cy))
+                    d.polygon(diamond, fill=(248, 250, 255, 33 if reading else 128))
+                    d.line((diamond[0], diamond[2]), fill=(*tint, 34 if reading else 96),
+                           width=max(1, round((1.5 if reading else 2) * s)))
+        for x in range(0, width, pitch):
+            d.line((x, 0, x, height), fill=(80, 84, 130, 24 if reading else 75),
+                   width=max(1, round((1.5 if reading else 2) * s)))
+            d.line((x + 2 * s, 0, x + 2 * s, height), fill=(253, 254, 250, 55 if reading else 162),
+                   width=max(1, round(2 * s)))
+        for y in range(0, height, pitch):
+            d.line((0, y, width, y), fill=(97, 81, 142, 24 if reading else 70),
+                   width=max(1, round((1.5 if reading else 2) * s)))
+            d.line((0, y + 2 * s, width, y + 2 * s), fill=(247, 252, 255, 55 if reading else 161),
+                   width=max(1, round(2 * s)))
+    return Image.alpha_composite(base, overlay)
 
 
 def _engraving(base, kind, layer, type_name):
@@ -297,7 +544,9 @@ def _engraving(base, kind, layer, type_name):
 
 @lru_cache(maxsize=15)
 def _material(kind, layer, width, height, type_name):
-    return _engraving(_field(kind, layer, width, height, type_name), kind, layer, type_name)
+    stock = _field(kind, layer, width, height, type_name)
+    stock = _relief_detail(stock, kind, layer, type_name)
+    return _engraving(stock, kind, layer, type_name)
 
 
 def render_stock(kind: str, width: int, height: int) -> Image.Image:

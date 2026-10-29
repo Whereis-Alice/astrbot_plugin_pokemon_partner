@@ -96,6 +96,44 @@ class YugiohCardTests(unittest.TestCase):
                 stock.append(image.crop((12, 260, 46, 890)).tobytes())
         self.assertEqual(len(set(stock)), len(EDITIONS))
 
+    def test_rarity_stars_are_two_four_six_eight_ten_and_do_not_cover_text(self):
+        expected = (2, 4, 6, 8, 10)
+        original_star = yugioh_cards._rarity_star
+        original_composite = Image.Image.alpha_composite
+        for (kind, shiny), count in zip(EDITIONS, expected):
+            with self.subTest(rarity=kind, shiny=shiny):
+                boxes, drawing_star = [], False
+
+                def star(*args, **kwargs):
+                    nonlocal drawing_star
+                    drawing_star = True
+                    try:
+                        return original_star(*args, **kwargs)
+                    finally:
+                        drawing_star = False
+
+                def composite(target, source_image, dest=(0, 0), **kwargs):
+                    if drawing_star:
+                        bounds = source_image.getchannel("A").getbbox()
+                        self.assertIsNotNone(bounds)
+                        boxes.append(tuple(value + dest[axis % 2]
+                                           for axis, value in enumerate(bounds)))
+                    return original_composite(target, source_image, dest=dest, **kwargs)
+
+                with patch.object(yugioh_cards, "_rarity_star", star), \
+                     patch.object(Image.Image, "alpha_composite", composite):
+                    image, records = capture_render([self.item("151", kind, shiny)],
+                                                    lambda row: portrait(), style="yugioh")
+                self.assertEqual(len(boxes), count)
+                content = [r for r in coalesce_shadows(records) if meaningful(r) and r.value.strip()]
+                for left, top, right, bottom in boxes:
+                    self.assertTrue(18 <= left < right <= image.width - 18)
+                    self.assertTrue(18 <= top < bottom <= image.height - 12)
+                    for record in content:
+                        overlap = max(left, record.box[0]) < min(right, record.box[2]) and \
+                                  max(top, record.box[1]) < min(bottom, record.box[3])
+                        self.assertFalse(overlap, ("Star covers card text", kind, record.value))
+
     def test_pure_card_ignores_transient_collection_state(self):
         item = self.item()
         first, values = self.texts(item)

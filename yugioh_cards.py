@@ -15,17 +15,19 @@ from functools import lru_cache
 from PIL import Image, ImageDraw, ImageFilter
 
 try:
-    from .card_renderer import load_font, _split_top_level
+    from .card_renderer import _split_top_level
     from .card_matchups import matchup_groups, TYPE_ORDER
     from .gacha import DrawItem, rarity_label
     from .tcg_symbols import render_energy_icon
     from .yugioh_materials import render_stock, render_art_scene, render_reading_stock
+    from .yugioh_fonts import load_card_font
 except ImportError:
-    from card_renderer import load_font, _split_top_level
+    from card_renderer import _split_top_level
     from card_matchups import matchup_groups, TYPE_ORDER
     from gacha import DrawItem, rarity_label
     from tcg_symbols import render_energy_icon
     from yugioh_materials import render_stock, render_art_scene, render_reading_stock
+    from yugioh_fonts import load_card_font
 
 
 CARD_W, CARD_H = 1080, 1800
@@ -52,7 +54,12 @@ METALS = {
 
 @lru_cache(maxsize=32)
 def _font(size: int):
-    return load_font(size)
+    return load_card_font(size, "body")
+
+
+@lru_cache(maxsize=24)
+def _title_font(size: int):
+    return load_card_font(size, "title")
 
 
 def _kind(item: DrawItem) -> str:
@@ -71,25 +78,27 @@ def _stats(item: DrawItem) -> dict[str, int]:
     return dict(zip(STAT_NAMES, map(int, found.groups()))) if found else {}
 
 
-def _text(draw, x, y, value, size=26, fill=(49, 33, 17), *, bold=False, width=None):
+def _text(draw, x, y, value, size=26, fill=(49, 33, 17), *, bold=False, width=None, font=None):
     text = str(value)
+    face = font if font is not None else _font(size)
     if width is not None:
-        while text and draw.textlength(text, font=_font(size)) > width:
+        while text and draw.textlength(text, font=face) > width:
             text = text[:-2] + "…" if len(text) > 2 else ""
-    draw.text((round(x), round(y)), text, font=_font(size), anchor="lt", fill=fill,
+    draw.text((round(x), round(y)), text, font=face, anchor="lt", fill=fill,
               stroke_width=1 if bold else 0, stroke_fill=fill)
 
 
-def _wrap(draw, value: str, size: int, width: int, limit: int | None = None):
+def _wrap(draw, value: str, size: int, width: int, limit: int | None = None, *, font=None):
     """Measure only the visible prefix; return continuation without losing it."""
     text, lines, current = str(value or ""), [], ""
+    face = font if font is not None else _font(size)
     for index, char in enumerate(text):
         if char == "\n":
             lines.append(current)
             current = ""
             if limit is not None and len(lines) == limit:
                 return tuple(lines), text[index + 1:]
-        elif current and draw.textlength(current + char, font=_font(size)) > width:
+        elif current and draw.textlength(current + char, font=face) > width:
             tail = ""
             if char in "，。；：、！？）)]":
                 tail, current = current[-1:], current[:-1]
@@ -216,10 +225,11 @@ def _portrait(base: Image.Image, item: DrawItem, loader: Callable | None, box):
 
 def _name_layout(draw, name: str):
     for size in range(66, 35, -2):
-        if draw.textlength(name, font=_font(size)) <= 776:
+        if draw.textlength(name, font=_title_font(size)) <= 776:
             return size, (name,)
     for size in range(38, 27, -2):
-        lines, rest = _wrap(draw, name, size, 776, 2)
+        # Long names keep the same title face at every size and on both lines.
+        lines, rest = _wrap(draw, name, size, 776, 2, font=_title_font(size))
         if not rest:
             return size, lines
     raise ValueError("完整宝可梦名称超出卡片的标题空间，请使用文本。")
@@ -281,9 +291,10 @@ def _stats_band(base, item, kind):
         _text(draw, x, 1671, name, 24, muted)
         _text(draw, x + 79, 1668, stats.get(name, "—"), 31, ink, bold=True)
     draw.line((91, 1704, 989, 1704), fill=rule, width=1)
-    _text(draw, 100, 1711, f"攻击 ATK / {stats.get('攻击', '—')}", 31, ink, bold=True)
+    _text(draw, 100, 1711, f"攻击 ATK / {stats.get('攻击', '—')}", 31, ink, font=_title_font(31))
     defense = f"防御 DEF / {stats.get('防御', '—')}"
-    _text(draw, 986 - draw.textlength(defense, font=_font(31)), 1711, defense, 31, ink, bold=True)
+    _text(draw, 986 - draw.textlength(defense, font=_title_font(31)), 1711, defense, 31, ink,
+          font=_title_font(31))
 
 
 def _seal(base, kind):
@@ -313,15 +324,21 @@ def _card(item: DrawItem, loader: Callable | None):
         glaze = Image.new("RGBA", title.size, (25, 19, 28, 180 if kind == "R" else 108))
         title.alpha_composite(glaze)
     base.alpha_composite(title, (66, 65))
-    if kind == "R":
-        # Thin dark copper ink under the small silver lettering controls glare.
+    if kind in {"C", "R", "SR", "SSR"}:
+        # A stock-coloured ink glaze quiets local relief behind small lettering;
+        # the material is still visible underneath rather than a flat textbox.
+        glaze_color = {
+            "C": (242, 221, 171, 120), "R": (37, 22, 18, 155),
+            "SR": (18, 33, 63, 150), "SSR": (19, 20, 23, 120),
+        }[kind]
         for y, height in ((165, 58), (975, 39)):
-            base.alpha_composite(Image.new("RGBA", (950, height), (37, 22, 18, 155)), (65, y))
+            base.alpha_composite(Image.new("RGBA", (950, height), glaze_color), (65, y))
     draw = ImageDraw.Draw(base)
     size, lines = _name_layout(draw, item.name)
     text_top = 65 + (85 - len(lines) * (size + 4)) // 2 + 4
     for index, line in enumerate(lines):
-        _text(draw, 83, text_top + index * (size + 4), line, size, TITLE_INKS[kind], bold=True)
+        _text(draw, 83, text_top + index * (size + 4), line, size, TITLE_INKS[kind],
+              font=_title_font(size))
     # The attribute jewel uses the species' real Pokémon energy symbol.
     dark, metal, light = METALS[kind]
     draw.ellipse((917, 66, 1007, 156), fill=dark, outline=light, width=2)
@@ -333,7 +350,7 @@ def _card(item: DrawItem, loader: Callable | None):
     if item.shiny:
         label = "闪光 · " + label
     _text(ImageDraw.Draw(base), 77, 178, label, 27, TITLE_INKS[kind], bold=True)
-    stars = {"C": 1, "R": 2, "SR": 3, "SSR": 4, "SHINY": 5}[kind]
+    stars = {"C": 2, "R": 4, "SR": 6, "SSR": 8, "SHINY": 10}[kind]
     for index in range(stars):
         _rarity_star(base, 952 - index * 51, 171, kind)
     draw = ImageDraw.Draw(base)
