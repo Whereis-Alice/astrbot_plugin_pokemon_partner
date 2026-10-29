@@ -198,7 +198,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.3.3",
+    "v1.3.4",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -345,8 +345,13 @@ class PokemonPartnerPlugin(Star):
         return bool(self.config.get("enable_image_card", True))
 
     @staticmethod
-    def _draw_text(outcome, nickname: str, ssr_pity_after: int | None = None) -> str:
-        lines = [f"【今日宝可梦】{nickname}"]
+    def _draw_text(
+        outcome, nickname: str, ssr_pity_after: int | None = None,
+        *, details: list[str] | None = None,
+    ) -> str:
+        nickname = nickname or "训练家"
+        multiple = len(outcome.items) > 1
+        lines = [f"{nickname}的今日宝可梦是："] if multiple else []
         for index, item in enumerate(outcome.items, 1):
             tags = []
             if item.shiny:
@@ -356,28 +361,30 @@ class PokemonPartnerPlugin(Star):
             elif item.dust:
                 tags.append(f"+{item.dust}星尘")
             tail = f"（{'、'.join(tags)}）" if tags else ""
-            lines.append(
-                f"{index}. #{item.dex_raw} {item.name}"
-                f"｜{item.rarity}·{item.rarity_name}{tail}"
-            )
+            prefix = f"{index}. " if multiple else f"{nickname}的今日宝可梦是 "
+            lines.append(f"{prefix}{item.name}｜{item.rarity}·{item.rarity_name}{tail}")
         if outcome.capped:
             lines.append(
                 f"注意：本次请求 {outcome.requested} 次，"
                 f"但今日只剩 {len(outcome.items)} 次。"
             )
-        lines.append(
+        status = (
             f"今日剩余 {outcome.remaining}/{outcome.daily_limit} 次"
-            f"｜星尘 {outcome.dust}"
+            f"｜星尘{outcome.dust}"
         )
         if ssr_pity_after and ssr_pity_after > 0:
-            lines.append(f"SSR 保底进度 {outcome.pity_ssr}/{ssr_pity_after}")
+            status += f"｜SSR 保底进度 {outcome.pity_ssr}/{ssr_pity_after}"
         elif ssr_pity_after is None and outcome.pity_ssr:
-            lines.append(f"SSR 保底进度 {outcome.pity_ssr}")
+            status += f"｜SSR 保底进度 {outcome.pity_ssr}"
+        lines.append(status)
         for reward in outcome.milestones:
             bonus = f"，额外 {reward.bonus} 次" if reward.bonus else ""
             lines.append(
                 f"🎉 收集达到 {reward.threshold} 位：获得 {reward.dust} 星尘{bonus}"
             )
+        if details:
+            lines.extend(dict.fromkeys(details))
+        lines.append("重复宝可梦自动折算星尘；使用“兑换宝可梦 名称”可定向获得。")
         return "\n".join(lines)
 
     async def _send_draw_card(self, event, outcome, nickname: str):
@@ -426,12 +433,10 @@ class PokemonPartnerPlugin(Star):
             for part in split_battle_text(text, 1800):
                 yield event.plain_result(part)
             return
-        if any(item.is_new for item in outcome.items):
-            text += "\n新宝可梦已加入图鉴。"
         if details:
-            text += "\n" + "\n".join(dict.fromkeys(details))
-        text += "\n弱点、抗性和免疫按属性计算，特性可能改变实际效果。"
-        text += "\n重复宝可梦自动折算星尘；使用“兑换宝可梦 名称”可定向获得。"
+            text = self._draw_text(outcome, nickname, service.store.rules.ssr_pity_after, details=details)
+            if notice:
+                text = f"{notice}\n{text}"
         parts = split_battle_text(text, 1799)
         for part in parts[:-1]:
             yield event.plain_result(part)

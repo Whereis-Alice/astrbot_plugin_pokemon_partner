@@ -73,9 +73,9 @@ class DailyCardSendTests(unittest.TestCase):
             dust=10, pity_ssr=1, capped=False, requested=1, milestones=())
         self.event = SimpleNamespace(chain_result=lambda chain: chain, plain_result=lambda text: text)
 
-    def send(self):
+    def send(self, nickname="小智"):
         async def run():
-            return [result async for result in self.plugin._send_draw_card(self.event, self.outcome, "小智")]
+            return [result async for result in self.plugin._send_draw_card(self.event, self.outcome, nickname)]
         return asyncio.run(run())
 
     def test_style_is_read_again_for_the_next_card(self):
@@ -96,7 +96,7 @@ class DailyCardSendTests(unittest.TestCase):
             results = self.send()
         render.assert_called_once()
         self.assertEqual(len(results), 1)
-        self.assertIn("0151", results[0])
+        self.assertIn("梦幻", results[0])
         self.assertIn("闪光", results[0])
         self.assertIn("今日剩余 2/3", results[0])
 
@@ -110,9 +110,47 @@ class DailyCardSendTests(unittest.TestCase):
                 notice, image = results[0]
                 self.assertIsInstance(notice, main.Comp.Plain)
                 self.assertIsInstance(image, main.Comp.Image)
-                for value in ("今日宝可梦", "小智", "0151", "梦幻", "闪光", "今日剩余 2/3", "星尘 10", "SSR 保底进度 1/30", "新宝可梦已加入图鉴"):
+                for value in ("今日宝可梦", "小智", "梦幻", "闪光", "今日剩余 2/3", "星尘10", "SSR 保底进度 1/30", "NEW"):
                     self.assertIn(value, notice.text)
+                for value in ("【今日宝可梦】", "1.", "0151", "新宝可梦已加入图鉴", "按属性计算"):
+                    self.assertNotIn(value, notice.text)
                 self.assertIn("base64://", image.file)
+
+    def test_single_new_draw_matches_the_users_three_line_format(self):
+        item = self.outcome.items[0]
+        item.name, item.dex_raw, item.shiny = "炎帝", "0244", False
+        self.outcome.dust, self.outcome.pity_ssr = 0, 0
+        with patch.object(main, "render_draw_card", return_value=b"card"):
+            results = self.send("爱丽丝的巧克力蛋糕")
+        expected = (
+            "爱丽丝的巧克力蛋糕的今日宝可梦是 炎帝｜SSR·传说（NEW）\n"
+            "今日剩余 2/3 次｜星尘0｜SSR 保底进度 0/30\n"
+            "重复宝可梦自动折算星尘；使用“兑换宝可梦 名称”可定向获得。\n"
+        )
+        self.assertEqual(results[0][0].text, expected)
+
+    def test_multiple_draws_keep_item_markers_with_one_status_and_one_guide(self):
+        first = self.outcome.items[0]
+        second = SimpleNamespace(row={}, shiny=False, is_new=False, dust=120,
+                                 dex_raw="0244", name="炎帝", rarity="SSR", rarity_name="传说")
+        self.outcome.items = (first, second)
+        with patch.object(main, "render_draw_card", return_value=b"card"):
+            results = self.send()
+        text = results[0][0].text
+        self.assertIn("小智的今日宝可梦是：\n1. 梦幻｜SSR·传说（✦闪光、NEW）", text)
+        self.assertIn("2. 炎帝｜SSR·传说（+120星尘）", text)
+        self.assertEqual(text.count("今日剩余"), 1)
+        self.assertEqual(text.count("重复宝可梦自动折算星尘"), 1)
+        self.assertNotIn("新宝可梦已加入图鉴", text)
+
+    def test_images_disabled_keep_the_same_compact_text_format(self):
+        self.plugin.config["enable_image_card"] = False
+        with patch.object(main, "render_draw_card") as render:
+            results = self.send()
+        self.assertEqual(results, [self.plugin._draw_text(self.outcome, "小智", 30)])
+        self.assertIn("星尘10｜SSR 保底进度 1/30", results[0])
+        self.assertTrue(results[0].endswith("使用“兑换宝可梦 名称”可定向获得。"))
+        render.assert_not_called()
 
     def test_missing_card_details_are_added_once_without_repeating_the_draw(self):
         value = "#0151 梦幻：进化：完整的长进化资料。"
@@ -172,7 +210,7 @@ class DailyCardSendTests(unittest.TestCase):
         with patch.object(main, "render_draw_card") as render:
             results = self.send()
         self.assertEqual(len(results), 1)
-        self.assertIn("0151", results[0])
+        self.assertIn("梦幻", results[0])
         self.assertIn("闪光", results[0])
         self.assertIn("今日剩余 2/3", results[0])
         render.assert_not_called()
