@@ -883,6 +883,12 @@ function setupRules() {
 
 const SETTINGS_FIELDS = [
   {
+    group: "今日宝可梦卡面",
+    fields: [
+      { key: "daily_card_style", label: "今日宝可梦卡面风格", type: "select", default: "classic", options: [["classic", "现有稀有度卡面"], ["tcg", "TCG 收藏卡面"]], hint: "仅切换今日宝可梦的单抽和多抽图片；收藏、图鉴和对战卡保持原样。关闭图片卡片时使用文本。" },
+    ],
+  },
+  {
     group: "对战战报",
     fields: [
       { key: "battle_output_mode", label: "对战发送方式", type: "select", default: "card", options: [["card", "精美卡片（封面 + 两张长图）"], ["card_forward", "图片合并转发（QQ / OneBot）"], ["forward", "文字合并转发（QQ / OneBot）"], ["text", "文本战报"]], hint: "命令末尾可加「卡片 / 图片转发 / 转发 / 文本」覆盖本次选择。图片转发失败或平台不支持时改发普通卡片；图片生成失败时发送文本。" },

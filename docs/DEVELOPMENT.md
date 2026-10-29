@@ -25,6 +25,8 @@ python -m pip install -r requirements.txt
 | 群友挑战、收藏与指令解析 | `python owned_duels_tests.py`、`python owned_duel_command_tests.py`、`python duel_commands_tests.py` |
 | 收藏卡片的图鉴编号与分页显示 | `python dex_collection_card_tests.py` |
 | 卡片排版与稀有度样式 | `python card_layout_tests.py`、`python rarity_card_tests.py`、`python rarity_visual_tests.py` |
+| 今日卡面切换、配置保存与发送分流 | `python tcg_render_integration_tests.py` |
+| TCG 实卡比例、文字边界、闪光请求与十连 | `python tcg_card_tests.py` |
 | 场景、精灵球圆盘与闪光图片缓存 | `python rarity_scene_tests.py`、`python rarity_emblem_tests.py`、`python shiny_artwork_tests.py` |
 | 管理台操作、设置保存与招式查询 | `python webui_action_tests.py`、`python webui_learnset_tests.py` |
 | 前端招式搜索与展开 | `node --test pages/partner-console/js/learnset.test.mjs` |
@@ -52,8 +54,9 @@ python rarity_visual_tests.py --output /path/to/review --art-dir /path/to/review
 | `gacha_store.py` | 收藏、次数、星尘和战绩的存储 |
 | `partner_service.py` | 卡池、存储与素材的业务编排 |
 | `owned_duels.py`、`duel_commands.py` | 群友挑战事务与指令解析 |
-| `partner_cards.py`、`rarity_cards.py` | 收藏及抽卡卡片的内容排版 |
+| `partner_cards.py`、`rarity_cards.py`、`tcg_cards.py` | 收藏及抽卡卡片排版，现有卡面与 TCG 卡面分流 |
 | `rarity_scenes.py`、`rarity_emblems.py` | 稀有度场景与精灵球圆盘材质 |
+| `tcg_materials.py`、`tcg_symbols.py` | TCG 纸面、彩箔、雕纹与 18 种属性能量图标 |
 | `artwork.py` | 普通与闪光立绘的查找、预取和缓存 |
 | `webui.py`、`pages/` | 管理台接口、页面与样式 |
 | `pokedex_db.py`、`data/*.tsv` | 本地中文图鉴数据查询 |
@@ -65,6 +68,8 @@ python rarity_visual_tests.py --output /path/to/review --art-dir /path/to/review
 | `logo.png`、`logo.svg` | 插件图标 |
 
 卡片渲染接收普通数据，只读图片缓存；网络下载在异步预取阶段完成。
+`daily_card_style` 只影响今日宝可梦单抽和多抽，默认 `classic`；`tcg` 使用独立渲染模块。
+消息入口每次读取当前配置，切换样式不会重新抽取、迁移收藏或改变闪光判定。
 修改玩法时保持群聊/私聊的数据隔离，修改消息输出时保留图片或转发失败后的文本回退。
 
 ## 数据来源与许可

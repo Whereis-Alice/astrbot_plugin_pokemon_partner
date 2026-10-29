@@ -591,13 +591,20 @@ def render_draw_card(
     pity_ssr: int,
     ssr_pity_after: int,
     image_loader: ImageLoader | None = None,
+    style: str = "classic",
 ) -> bytes:
-    """按稀有度与闪光使用独立构图，收藏和训练家卡片保留原有接口。"""
-    try:
-        from .rarity_cards import render_rarity_draw
-    except ImportError:
-        from rarity_cards import render_rarity_draw
-    return render_rarity_draw(
+    """切换今日卡面；未指定或未知样式时保留现有稀有度卡面。"""
+    if style == "tcg":
+        try:
+            from .tcg_cards import render_tcg_draw as render
+        except ImportError:
+            from tcg_cards import render_tcg_draw as render
+    else:
+        try:
+            from .rarity_cards import render_rarity_draw as render
+        except ImportError:
+            from rarity_cards import render_rarity_draw as render
+    return render(
         items, nickname=nickname, remaining=remaining, daily_limit=daily_limit,
         dust=dust, pity_ssr=pity_ssr, ssr_pity_after=ssr_pity_after,
         image_loader=image_loader,

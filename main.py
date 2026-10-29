@@ -198,7 +198,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.2.9",
+    "v1.3.0",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -403,6 +403,7 @@ class PokemonPartnerPlugin(Star):
                 pity_ssr=outcome.pity_ssr,
                 ssr_pity_after=service.store.rules.ssr_pity_after,
                 image_loader=service.artwork,
+                style=self.config.get("daily_card_style", "classic"),
             )
         except Exception as exc:
             logger.warning(f"[{PLUGIN_ID}] 抽卡卡片渲染失败: {exc}")

@@ -149,6 +149,13 @@
     "default": true,
     "hint": "宝可梦指令以图片卡片返回；关闭后返回纯文本，也会将对战卡片与图片合并转发改为文本。今日宝可梦及对战卡片渲染失败时自动回退文本。"
   },
+  "daily_card_style": {
+    "description": "今日宝可梦卡面风格",
+    "type": "string",
+    "default": "classic",
+    "options": ["classic", "tcg"],
+    "hint": "classic=现有稀有度卡面（默认）；tcg=参考 Pokémon TCG 的收藏卡面。仅切换今日宝可梦的单抽和多抽图片，收藏卡、图鉴卡与对战卡不受影响。关闭图片卡片时使用文本。"
+  },
   "battle_output_mode": {
     "description": "对战战报发送方式",
     "type": "string",
