@@ -52,7 +52,7 @@
 | SSR · 传说 | [金箔、蚀刻与金属颗粒](images/tcg/legendary.jpg) |
 | 闪光 | [珍珠银、虹彩星面与真实异色立绘](images/tcg/shiny.jpg) |
 
-单抽附带宝可梦资料；多抽把每张实体卡排成两列，逐张显示新获得或重复转化的结果。
+单抽发送文字提示与一张纯卡牌，多抽将实体卡排成两列。次数、星尘、新获得或重复转化的结果统一显示在消息文字中，卡牌内不放抽卡状态或图鉴摘要续文。弱点、抗性和免疫使用属性能量图标与本篇游戏倍率，特性可能改变实际效果。
 
 视觉参考取自公开的 Pokémon TCG 实卡图：经典[皮卡丘](https://api.tcgdex.net/v2/en/cards/base1-58)、现代[红莲铠骑](https://api.tcgdex.net/v2/en/cards/sv01-041)、[喷火龙 ex 全图](https://api.tcgdex.net/v2/en/cards/sv03-215)、[金色高稀有卡](https://api.tcgdex.net/v2/en/cards/sv03-228)与[异色皮卡丘](https://api.tcgdex.net/v2/en/cards/sv04.5-131)。卡面边框、图标、场景和印刷材质由插件本地绘制，参考实卡扫描没有加入插件。
 

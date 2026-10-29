@@ -49,6 +49,13 @@ class CardRoutingTests(unittest.TestCase):
         self.assertEqual(partner_cards.render_draw_card(self.items, style="unavailable", **self.options), b"classic")
         self.tcg.assert_not_called()
 
+    def test_both_styles_share_the_same_overflow_collection(self):
+        for style, renderer in (("classic", self.classic), ("tcg", self.tcg)):
+            with self.subTest(style=style):
+                notes = []
+                partner_cards.render_draw_card(self.items, style=style, details_out=notes, **self.options)
+                self.assertIs(renderer.call_args.kwargs["details_out"], notes)
+
 
 class DailyCardSendTests(unittest.TestCase):
     def setUp(self):
@@ -92,6 +99,72 @@ class DailyCardSendTests(unittest.TestCase):
         self.assertIn("0151", results[0])
         self.assertIn("闪光", results[0])
         self.assertIn("今日剩余 2/3", results[0])
+
+    def test_success_sends_notice_then_one_pure_card_for_either_style(self):
+        for style in ("classic", "tcg"):
+            with self.subTest(style=style), patch.object(main, "render_draw_card", return_value=b"card"):
+                self.plugin.config["daily_card_style"] = style
+                results = self.send()
+                self.assertEqual(len(results), 1)
+                self.assertEqual(len(results[0]), 2)
+                notice, image = results[0]
+                self.assertIsInstance(notice, main.Comp.Plain)
+                self.assertIsInstance(image, main.Comp.Image)
+                for value in ("今日宝可梦", "小智", "0151", "梦幻", "闪光", "今日剩余 2/3", "星尘 10", "SSR 保底进度 1/30", "新宝可梦已加入图鉴"):
+                    self.assertIn(value, notice.text)
+                self.assertIn("base64://", image.file)
+
+    def test_missing_card_details_are_added_once_without_repeating_the_draw(self):
+        value = "#0151 梦幻：进化：完整的长进化资料。"
+        def render(*args, **kwargs):
+            kwargs["details_out"].extend((value, value))
+            return b"card"
+        with patch.object(main, "render_draw_card", side_effect=render):
+            results = self.send()
+        text = results[0][0].text
+        self.assertEqual(text.count(value), 1)
+        self.assertEqual(text.count("今日剩余 2/3"), 1)
+        self.assertNotIn("图鉴摘要（续）", text)
+
+    def test_capped_draw_and_milestone_are_reported_once_in_text(self):
+        self.outcome.capped, self.outcome.requested = True, 10
+        self.outcome.milestones = (SimpleNamespace(threshold=10, dust=100, bonus=1),)
+        with patch.object(main, "render_draw_card", return_value=b"card"):
+            results = self.send()
+        text = results[0][0].text
+        self.assertEqual(text.count("本次请求 10 次"), 1)
+        self.assertEqual(text.count("收集达到 10 位"), 1)
+        self.assertIn("额外 1 次", text)
+
+    def test_duplicate_dust_is_text_and_does_not_claim_a_new_entry(self):
+        self.outcome.items[0].is_new = False
+        self.outcome.items[0].dust = 120
+        with patch.object(main, "render_draw_card", return_value=b"card"):
+            results = self.send()
+        self.assertIn("+120星尘", results[0][0].text)
+        self.assertNotIn("新宝可梦已加入图鉴", results[0][0].text)
+
+    def test_disabled_ssr_pity_does_not_show_old_pity_progress(self):
+        self.plugin.partner_service.store.rules.ssr_pity_after = 0
+        with patch.object(main, "render_draw_card", return_value=b"card"):
+            results = self.send()
+        self.assertNotIn("SSR 保底进度", results[0][0].text)
+
+    def test_long_extra_details_keep_the_image_and_all_text_within_message_limit(self):
+        tail = "完整进化资料末尾"
+        value = "进化：" + "长进化条件，" * 400 + tail
+        def render(*args, **kwargs):
+            kwargs["details_out"].append(value)
+            return b"card"
+        with patch.object(main, "render_draw_card", side_effect=render):
+            results = self.send()
+        self.assertGreater(len(results), 1)
+        self.assertTrue(all(isinstance(part, str) and len(part) <= 1800 for part in results[:-1]))
+        self.assertIsInstance(results[-1][1], main.Comp.Image)
+        self.assertLessEqual(len(results[-1][0].text), 1800)
+        all_text = "".join(results[:-1]) + results[-1][0].text
+        self.assertIn(value, all_text)
+        self.assertIn(tail, all_text)
 
     def test_disabling_collection_before_delivery_still_sends_committed_result(self):
         self.plugin.partner_service = None

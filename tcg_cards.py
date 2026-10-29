@@ -20,11 +20,13 @@ try:
     from .gacha import DrawItem, rarity_label
     from .tcg_materials import render_art_backdrop, render_print_surface
     from .tcg_symbols import render_energy_icon
+    from .card_matchups import matchup_groups
 except ImportError:
     from card_renderer import load_font
     from gacha import DrawItem, rarity_label
     from tcg_materials import render_art_backdrop, render_print_surface
     from tcg_symbols import render_energy_icon
+    from card_matchups import matchup_groups
 
 
 WIDTH = 1080
@@ -196,7 +198,13 @@ def _paste_art(base, item, loader, box, kind):
         draw = ImageDraw.Draw(base)
         icon = render_energy_icon(_types(item)[0], 118)
         base.alpha_composite(icon, (x + (width - 118) // 2, y + (height - 118) // 2 - 28))
-        _line(draw, x, y + height / 2 + 58, "立绘暂未缓存", 27, MUTED, width, center=True)
+        caption_y = round(y + height / 2 + 58)
+        caption = Image.new("RGBA", base.size)
+        cx = x + (width - 230) // 2
+        ImageDraw.Draw(caption).rounded_rectangle((cx, caption_y - 9, cx + 230, caption_y + 35),
+                                                  radius=11, fill=(255, 250, 232, 230))
+        base.alpha_composite(caption)
+        _line(ImageDraw.Draw(base), x, caption_y, "立绘暂未缓存", 27, INK, width, center=True)
         return
     # Fill the portrait box after trimming alpha padding, including official
     # artwork smaller than the box. Limit enlargement of tiny fallback sprites.
@@ -239,10 +247,58 @@ def _rarity_mark(draw, x, y, kind, color=INK):
 
 def _name_layout(draw, name):
     for size in range(62, 31, -2):
-        lines = _wrap(draw, name, size, 572)
+        lines = _wrap(draw, name, size, 530)
         if len(lines) <= 2:
             return size, lines
-    return 32, _wrap(draw, name, 32, 572)
+    return 32, _wrap(draw, name, 32, 530)
+
+
+def _matchup_layout(draw, groups):
+    """Measure icon/name/multiplier tokens; no type is lost to fixed row caps."""
+    output = []
+    for key, label in (("weak", "弱点"), ("resist", "抗性"), ("immune", "免疫")):
+        entries = groups.get(key, ())
+        if key == "immune" and not entries:
+            continue
+        rows, current, used = [], [], 0
+        for name, multiplier in entries:
+            text = f"{name} ×{multiplier:g}"
+            width = 34 + round(draw.textlength(text, font=_font(22))) + 17
+            if current and used + width > 685:
+                rows.append(tuple(current))
+                current, used = [], 0
+            current.append((name, text, width))
+            used += width
+        rows.append(tuple(current))
+        output.append((key, label, tuple(rows)))
+    return tuple(output)
+
+
+def _draw_matchups(base, layout, top):
+    draw = ImageDraw.Draw(base)
+    y = top
+    for key, label, rows in layout:
+        height = len(rows) * 35 + 9
+        fill = (255, 248, 235, 245) if key == "weak" else (240, 247, 242, 243) if key == "resist" else (243, 239, 250, 243)
+        overlay = Image.new("RGBA", base.size)
+        ImageDraw.Draw(overlay).rounded_rectangle((57, y, 843, y + height), radius=9, fill=fill)
+        base.alpha_composite(overlay)
+        draw = ImageDraw.Draw(base)
+        _line(draw, 67, y + 10, label, 23, INK, bold=True)
+        for index, row in enumerate(rows):
+            yy, x = y + 5 + index * 35, 150
+            if not row:
+                _line(draw, x + 2, yy + 5, "无", 22, MUTED)
+            for name, text, width in row:
+                base.alpha_composite(render_energy_icon(name, 29), (x, yy + 1))
+                _line(draw, x + 35, yy + 5, text, 22, INK)
+                x += width
+        y += height + 7
+
+
+def _gender(value):
+    value = str(value or "").strip()
+    return {"♂0%♀0%": "无性别", "♂0%♀100%": "仅雌性", "♂100%♀0%": "仅雄性"}.get(value.replace(" ", ""), value)
 
 
 def _card(item, loader):
@@ -251,9 +307,10 @@ def _card(item, loader):
     base = render_print_surface(kind, types[0], CARD_W, CARD_H)
     draw = ImageDraw.Draw(base)
     name_size, name_lines = _name_layout(draw, item.name)
-    title_end = 89 + len(name_lines) * (name_size + 7)
-    art_top = max(184, title_end + 17)
-    art_bottom = 698 if full else 650
+    name_y = 65
+    title_end = name_y + len(name_lines) * (name_size + 7)
+    art_top = max(160, title_end + 17)
+    art_bottom = 628 if full else 602
     if art_top >= art_bottom - 160:
         raise ValueError("宝可梦名字超出实体卡片的标题空间")
 
@@ -268,171 +325,122 @@ def _card(item, loader):
             draw.rectangle((58, art_top + 1, 842, art_bottom - 1), outline=(255, 249, 219), width=2)
         _paste_art(base, item, loader, (87, art_top + 15, 726, art_bottom - art_top - 29), kind)
     else:
-        backdrop = render_art_backdrop(kind, types[0], 830, art_bottom - 125)
+        backdrop = render_art_backdrop(kind, types[0], 830, art_bottom - 106)
         mask = Image.new("L", backdrop.size)
-        m = ImageDraw.Draw(mask)
-        m.rectangle((0, 40, mask.width, mask.height - 30), fill=240)
-        mask = mask.filter(ImageFilter.GaussianBlur(30))
-        backdrop.putalpha(mask)
-        base.alpha_composite(backdrop, (35, 125))
+        ImageDraw.Draw(mask).rectangle((0, 40, mask.width, mask.height - 30), fill=240)
+        backdrop.putalpha(mask.filter(ImageFilter.GaussianBlur(30)))
+        base.alpha_composite(backdrop, (35, 106))
         _paste_art(base, item, loader, (52, art_top - 4, 796, art_bottom - art_top + 7), kind)
 
-    data_y = 766 if full else 714
-    # A translucent print layer keeps the foil visible but isolates small text.
-    print_layer = Image.new("RGBA", base.size)
-    layer_draw = ImageDraw.Draw(print_layer)
+    # The information stays on the physical card, on a translucent print layer.
     fill = (255, 248, 203, 229) if kind == "SSR" else (255, 254, 248, 231) if kind == "SHINY" else (255, 253, 230, 235)
     if kind == "C":
         fill = (255, 251, 209, 217)
-    if kind == "R":
+    elif kind == "R":
         fill = (245, 251, 249, 218)
-    layer_draw.rounded_rectangle((46, data_y - 59, 854, 1183), radius=15, fill=fill)
+    print_layer = Image.new("RGBA", base.size)
+    ImageDraw.Draw(print_layer).rounded_rectangle((46, art_bottom + 5, 854, 1183), radius=15, fill=fill)
     base.alpha_composite(print_layer)
-    draw = ImageDraw.Draw(base)
     _frame(base, kind)
-
-    # Name, species HP and energy remain above the illustration, including long forms.
     draw = ImageDraw.Draw(base)
-    draw.rounded_rectangle((54, 43, 186, 74), radius=13, fill=(240, 238, 225), outline=(134, 127, 109), width=1)
-    _line(draw, 63, 47, "全国图鉴", 23, INK)
-    if item.is_new:
-        draw.rounded_rectangle((201, 43, 275, 74), radius=13, fill=(29, 125, 82))
-        _line(draw, 214, 47, "NEW", 22, (255, 255, 241), bold=True)
-    if item.shiny:
-        draw.rounded_rectangle((287, 43, 372, 74), radius=13, fill=(245, 235, 252), outline=(154, 112, 179), width=1)
-        _line(draw, 301, 47, "闪光", 22, (103, 57, 132))
     title_ink = (255, 251, 226) if full else INK
     title_edge = (47, 36, 21) if full else INK
     for index, name_line in enumerate(name_lines):
-        draw.text((54, 89 + index * (name_size + 7)), name_line, font=_font(name_size),
+        draw.text((54, name_y + index * (name_size + 7)), name_line, font=_font(name_size),
                   fill=title_ink, anchor="lt", stroke_width=3 if full else 1, stroke_fill=title_edge)
     stats = _stats(item)
-    _line(draw, 646, 48, "种族HP", 23, title_ink)
+    _line(draw, 605, 47, "种族HP", 22, title_ink)
     hp = str(stats.get("HP", "—"))
-    hp_x = 642 + (124 - draw.textlength(hp, font=_font(57))) / 2
+    hp_x = 602 + (110 - draw.textlength(hp, font=_font(57))) / 2
     draw.text((round(hp_x), 81), hp, font=_font(57), fill=title_ink, anchor="lt",
               stroke_width=2 if full else 1, stroke_fill=title_edge)
-    base.alpha_composite(render_energy_icon(types[0], 76), (775, 53))
+    icon_size = 76 if len(types) == 1 else 61
+    for index, type_name in enumerate(types[:2]):
+        icon_x = 775 if len(types) == 1 else 713 + index * 68
+        base.alpha_composite(render_energy_icon(type_name, icon_size), (icon_x, 55 if len(types) == 1 else 61))
 
+    missing = []
     metadata = " · ".join(str(item.row.get(key) or "").strip()
                           for key in ("category", "height", "weight") if item.row.get(key))
-    _line(draw, 61, data_y - 43, metadata or "宝可梦资料", 24, MUTED, 778, center=True)
-    draw.line((61, data_y - 4, 839, data_y - 4), fill=(161, 151, 120), width=1)
+    _line(draw, 61, art_bottom + 19, metadata or "宝可梦资料", 23, MUTED, 778, center=True)
+    if metadata and draw.textlength(metadata, font=_font(23)) > 778:
+        missing.append(metadata)
+    ability_y = art_bottom + 61
     abilities = str(item.row.get("abilities") or "—")
     hidden = str(item.row.get("hidden_abilities") or "")
     if hidden:
         abilities += f"（隐藏：{hidden}）"
-    ability_lines = _wrap(draw, abilities, 26, 648)
+    ability_lines = _wrap(draw, abilities, 25, 650)
     ability_cap = min(3, len(ability_lines))
-    shown_ability = ability_lines[:ability_cap]
-    draw.rounded_rectangle((61, data_y + 2, 160, data_y + 35), radius=16, fill=(176, 44, 42))
-    _line(draw, 82, data_y + 7, "特性", 25, (255, 250, 231), bold=True)
-    _paragraph(draw, 178, data_y + 3, shown_ability, 26, INK, 34)
-    stat_y = data_y + ability_cap * 34 + 29
-    draw.line((61, stat_y - 13, 839, stat_y - 13), fill=(142, 128, 98), width=1)
+    shown = _limited(draw, ability_lines, ability_cap, 25, 650)
+    draw.rounded_rectangle((61, ability_y, 157, ability_y + 33), radius=16, fill=(176, 44, 42))
+    _line(draw, 80, ability_y + 6, "特性", 24, (255, 250, 231), bold=True)
+    _paragraph(draw, 176, ability_y + 2, shown, 25, INK, 32)
+    if len(ability_lines) > ability_cap:
+        missing.append(f"特性：{abilities}")
+    stat_y = ability_y + ability_cap * 32 + 19
+    draw.line((61, stat_y - 9, 839, stat_y - 9), fill=(163, 151, 121), width=1)
     entries = [(name, stats.get(name, "—")) for name in STAT_NAMES[1:]] + [("总和", item.bst)]
     for index, (name, value) in enumerate(entries):
-        row, column = divmod(index, 3)
-        x, y = 63 + column * 264, stat_y + row * 77
-        _line(draw, x, y + 4, name, 25, INK)
-        _line(draw, x + 123, y, value, 36, INK, 105, bold=True, center=True)
-        draw.line((x, y + 49, x + 231, y + 49), fill=(201, 195, 169), width=3)
+        x = 62 + index * 132
+        if index:
+            draw.line((x - 9, stat_y + 3, x - 9, stat_y + 70), fill=(205, 198, 174), width=1)
+        _line(draw, x, stat_y + 2, name, 22, MUTED, 110, center=True)
+        _line(draw, x, stat_y + 30, value, 35, INK, 110, center=True, bold=True)
+        draw.line((x + 9, stat_y + 74, x + 100, stat_y + 74), fill=(206, 197, 164), width=3)
         maximum = 750 if name == "总和" else 180
-        amount = min(1, max(0, float(value) / maximum)) if isinstance(value, (int, float)) else 0
-        if amount:
-            draw.line((x, y + 49, x + max(8, 231 * amount), y + 49), fill=STAT_INKS[index], width=4)
+        ratio = min(1, max(0, float(value) / maximum)) if isinstance(value, (int, float)) else 0
+        if ratio:
+            draw.line((x + 9, stat_y + 74, x + 9 + max(6, 91 * ratio), stat_y + 74), fill=STAT_INKS[index], width=4)
 
-    profile_y = stat_y + 167
-    _line(draw, 63, profile_y, "图鉴摘要", 23, MUTED)
-    profile_y += 33
-    profile = str(item.row.get("profile") or "暂无图鉴摘要")
-    capacity = max(1, (1166 - profile_y) // 33)
-    profile_lines, overflow = _take_lines(draw, profile, 25, 773, capacity)
-    _paragraph(draw, 63, profile_y, profile_lines, 25, INK, 33)
-    if len(ability_lines) > ability_cap:
-        overflow = f"特性：{abilities}\n" + overflow
-    draw.line((58, 1180, 842, 1180), fill=(119, 105, 76), width=1)
-    _line(draw, 58, 1196, f"#{item.dex_raw}", 25, INK, bold=True)
-    tx = 213
-    for name in types:
-        icon = render_energy_icon(name, 28)
-        base.alpha_composite(icon, (tx, 1194))
-        _line(draw, tx + 34, 1197, name, 23, INK)
-        tx += 48 + round(draw.textlength(name, font=_font(23)))
+    layout = _matchup_layout(draw, matchup_groups(item.row, item.types))
+    matchup_height = sum(len(rows) * 35 + 16 for _key, _label, rows in layout) - 7
+    matchup_top = 1173 - matchup_height
+    # Practical species data takes priority over the intentionally short flavour text.
+    basic = " · ".join(part for part in (
+        f"捕获度：{item.row['catch_rate']}" if item.row.get("catch_rate") else "",
+        f"蛋群：{item.row['egg_groups']}" if item.row.get("egg_groups") else "",
+        f"性别：{_gender(item.row['gender_ratio'])}" if item.row.get("gender_ratio") else "",
+    ) if part)
+    basic_y = stat_y + 94
+    basic_lines = _wrap(draw, basic, 22, 775) if basic else ()
+    basic_cap = max(0, min(3, (matchup_top - basic_y - 17) // 29))
+    if basic_lines and basic_cap:
+        _paragraph(draw, 63, basic_y, _limited(draw, basic_lines, basic_cap, 22, 775), 22, INK, 29)
+    if len(basic_lines) > basic_cap:
+        missing.append(basic)
+    cursor = basic_y + min(len(basic_lines), basic_cap) * 29 + 14
+    evolution = str(item.row.get("evolution") or "").strip()
+    if evolution and evolution not in {item.name, str(item.row.get("name_zh") or "")}:
+        evolution_lines = _wrap(draw, f"进化：{evolution}", 22, 775)
+        if len(evolution_lines) <= 2 and cursor + len(evolution_lines) * 29 + 59 <= matchup_top:
+            cursor = _paragraph(draw, 63, cursor, evolution_lines, 22, INK, 29) + 11
+        else:
+            missing.append(f"进化：{evolution}")
+    profile_capacity = max(0, (matchup_top - cursor - 16) // 29)
+    if profile_capacity:
+        profile = str(item.row.get("profile") or "暂无图鉴摘要")
+        profile_lines, rest = _take_lines(draw, profile, 22, 773, min(5, profile_capacity))
+        if rest:
+            profile_lines = _limited(draw, (*profile_lines, ""), len(profile_lines), 22, 773)
+        _paragraph(draw, 63, cursor, profile_lines, 22, MUTED, 29)
+    _draw_matchups(base, layout, matchup_top)
+
+    draw = ImageDraw.Draw(base)
+    draw.line((58, 1186, 842, 1186), fill=(119, 105, 76), width=1)
+    _line(draw, 58, 1201, f"#{item.dex_raw}", 25, INK, bold=True)
     label = f"{item.rarity} · {rarity_label(item.rarity)}"
+    if item.shiny:
+        label = f"闪光 · {label}"
     label_width = round(draw.textlength(label, font=_font(23)))
     mark_width = 72 if kind == "SSR" else 48 if kind == "SR" else 28
     mark_x = 843 - mark_width
-    _line(draw, mark_x - label_width - 12, 1197, label, 23, INK)
-    _rarity_mark(draw, mark_x, 1197, kind)
+    _line(draw, mark_x - label_width - 12, 1202, label, 23, INK)
+    _rarity_mark(draw, mark_x, 1200, kind)
     mask = Image.new("L", base.size)
     ImageDraw.Draw(mask).rounded_rectangle((0, 0, CARD_W - 1, CARD_H - 1), radius=42, fill=255)
     base.putalpha(mask)
-    return base, overflow
-
-
-def _details(item):
-    row, entries = item.row, []
-    for key, label in (("catch_rate", "捕获度"), ("weak_to", "弱点"),
-                       ("resist_to", "抗性"), ("immune_to", "免疫")):
-        if row.get(key):
-            entries.append((f"{label}：{row[key]}", 3))
-    gender = str(row.get("gender_ratio") or "")
-    gender = {"♂0%♀0%": "无性别", "♂0%♀100%": "仅雌性", "♂100%♀0%": "仅雄性"}.get(gender.replace(" ", ""), gender)
-    extra = " · ".join(value for value in (
-        f"蛋群：{row['egg_groups']}" if row.get("egg_groups") else "",
-        f"性别：{gender}" if gender else "") if value)
-    if extra:
-        entries.append((extra, 3))
-    if row.get("evolution"):
-        entries.append((f"进化：{row['evolution']}", 5))
-    return entries
-
-
-def _page(height):
-    base = _gradient(WIDTH, height, ((0, (20, 32, 45, 255)), (.55, (32, 46, 58, 255)),
-                                     (1, (12, 22, 33, 255))))
-    draw = ImageDraw.Draw(base)
-    for y in range(0, height, 7):
-        draw.line((0, y, WIDTH, y + 60), fill=(45, 59, 72, 32), width=1)
-    return base
-
-
-def _header(base, context):
-    draw = ImageDraw.Draw(base)
-    draw.rounded_rectangle((40, 28, 1040, 179), radius=22, fill=(18, 30, 42), outline=(116, 135, 147), width=1)
-    draw.rounded_rectangle((59, 28, 1021, 34), radius=3, fill=(208, 58, 51))
-    _line(draw, 64, 53, "今日宝可梦", 46, (248, 246, 232), bold=True)
-    _line(draw, 66, 116, f"训练家 · {context['nickname']}", 24, (187, 206, 217), 497)
-    for x, label, value in ((601, "今日剩余次数", f"{context['remaining']} / {context['daily_limit']}"),
-                            (826, "星尘余额", str(context['dust']))):
-        _line(draw, x, 53, label, 24, (208, 218, 215))
-        size = 34
-        while size > 22 and draw.textlength(value, font=_font(size)) > 167:
-            size -= 2
-        _line(draw, x, 88, value, size, (255, 242, 203), 167, bold=True)
-    after = context['ssr_pity_after']
-    label = f"SSR 保底 {context['pity_ssr']}/{after}" if after else "SSR 保底关闭"
-    _line(draw, 602, 135, label, 23, (180, 200, 208), 392)
-
-
-def _place_card(base, card, x, y):
-    padding = 25
-    mask = Image.new("L", (card.width + padding * 2, card.height + padding * 2))
-    mask.paste(card.getchannel("A"), (padding, padding))
-    shadow = Image.new("RGBA", mask.size, (0, 0, 0, 0))
-    shadow.putalpha(mask.filter(ImageFilter.GaussianBlur(14)).point(lambda value: round(value * .7)))
-    base.alpha_composite(shadow, (x - padding + 3, y - padding + 13))
-    base.alpha_composite(card, (x, y))
-
-
-def _result(base, item, x, y, width, *, small=False):
-    draw = ImageDraw.Draw(base)
-    note = "新宝可梦已加入图鉴" if item.is_new else f"重复获得 · 转化为 {item.dust} 星尘"
-    fill, ink = ((224, 242, 230), (15, 87, 61)) if item.is_new else ((251, 239, 207), (110, 71, 14))
-    height, size = (44, 22) if small else (56, 28)
-    draw.rounded_rectangle((x, y, x + width, y + height), radius=9, fill=fill)
-    _line(draw, x + 16, y + 12, note, size, ink, width - 32, center=small)
+    return base, tuple(missing)
 
 
 def _finish(base):
@@ -441,67 +449,37 @@ def _finish(base):
     return output.getvalue()
 
 
-def _single(item, context, loader):
-    card, overflow = _card(item, loader)
-    measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    detail_width = 922 if not overflow else 445
-    details = []
-    for entry, cap in _details(item):
-        details.extend(_limited(measure, _wrap(measure, entry, 28, detail_width), cap, 28, detail_width))
-    continuation, rest = _take_lines(measure, overflow, 28, 435, 12) if overflow else ((), "")
-    if rest:
-        continuation = _limited(measure, (*continuation, ""), 12, 28, 435)
-    has_details = bool(details or continuation)
-    info_y = 208 + CARD_H + 87
-    info_height = 90 + max(len(details), len(continuation)) * 39 if has_details else 0
-    footer_y = info_y + info_height + (30 if has_details else 0)
-    base = _page(footer_y + 62)
-    _header(base, context)
-    _place_card(base, card, 90, 208)
-    _result(base, item, 90, 208 + CARD_H + 19, 900)
-    draw = ImageDraw.Draw(base)
-    if has_details:
-        draw.rounded_rectangle((58, info_y, 1022, info_y + info_height), radius=15,
-                               fill=(247, 245, 231), outline=(150, 143, 119), width=1)
-        _line(draw, 79, info_y + 20, "宝可梦资料", 28, INK, bold=True)
-        _paragraph(draw, 80, info_y + 64, details, 28, INK, 39)
-        if continuation:
-            draw.line((562, info_y + 22, 562, info_y + info_height - 22), fill=(185, 174, 148), width=1)
-            _line(draw, 584, info_y + 20, "图鉴摘要（续）", 28, INK, bold=True)
-            _paragraph(draw, 584, info_y + 64, continuation, 28, INK, 39)
-    _line(draw, 58, footer_y, "重复宝可梦自动折算星尘 · 兑换宝可梦 <名称> 可定向获得", 24,
-          (187, 202, 208), 964, center=True)
-    return _finish(base)
+def _collect_details(item, missing, details_out):
+    if details_out is not None and missing:
+        details_out.append(f"#{item.dex_raw} {item.name}：" + "；".join(missing))
 
 
-def _grid(items, context, loader):
-    tile_width, gap, left = 464, 34, 59
+def _single(item, loader, details_out):
+    card, missing = _card(item, loader)
+    _collect_details(item, missing, details_out)
+    return _finish(card)
+
+
+def _grid(items, loader, details_out):
+    tile_width, gap, left = 506, 22, 23
     tile_height = round(CARD_H * tile_width / CARD_W)
-    step = tile_height + 82
     rows = math.ceil(len(items) / 2)
-    footer_y = 214 + rows * step + 7
-    base = _page(footer_y + 62)
-    _header(base, context)
+    base = Image.new("RGBA", (WIDTH, rows * (tile_height + gap) + gap), (237, 236, 229, 255))
     for index, item in enumerate(items):
         row, column = divmod(index, 2)
-        x, y = left + column * (tile_width + gap), 212 + row * step
-        card, _ = _card(item, loader)
-        card = card.resize((tile_width, tile_height), Image.Resampling.LANCZOS)
-        _place_card(base, card, x, y)
-        _result(base, item, x, y + tile_height + 12, tile_width, small=True)
-    draw = ImageDraw.Draw(base)
-    _line(draw, 58, footer_y, "重复宝可梦自动折算星尘 · 兑换宝可梦 <名称> 可定向获得", 24,
-          (187, 202, 208), 964, center=True)
+        x, y = left + column * (tile_width + gap), gap + row * (tile_height + gap)
+        card, missing = _card(item, loader)
+        _collect_details(item, missing, details_out)
+        base.alpha_composite(card.resize((tile_width, tile_height), Image.Resampling.LANCZOS), (x, y))
     return _finish(base)
 
 
 def render_tcg_draw(
     items: Sequence[DrawItem], *, nickname: str, remaining: int, daily_limit: int,
     dust: int, pity_ssr: int, ssr_pity_after: int, image_loader: Callable | None = None,
+    details_out: list[str] | None = None,
 ) -> bytes:
-    """Draw one physical card or a two-column spread without accessing live state."""
+    """Return a physical card or card spread; transient draw notices belong to chat."""
     if not items:
         raise ValueError("抽卡卡片至少需要一个结果")
-    context = dict(nickname=nickname, remaining=remaining, daily_limit=daily_limit,
-                   dust=dust, pity_ssr=pity_ssr, ssr_pity_after=ssr_pity_after)
-    return _single(items[0], context, image_loader) if len(items) == 1 else _grid(items, context, image_loader)
+    return _single(items[0], image_loader, details_out) if len(items) == 1 else _grid(items, image_loader, details_out)

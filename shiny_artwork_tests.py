@@ -260,9 +260,11 @@ class ShinyArtworkTests(unittest.TestCase):
             "asyncio": asyncio,
             "logger": logging.getLogger(__name__),
             "render_draw_card": lambda *args, **kwargs: b"rendered",
+            "split_battle_text": lambda value, limit: [value],
             "PLUGIN_ID": "test",
             "Comp": SimpleNamespace(
-                Image=SimpleNamespace(fromBytes=lambda value: value)
+                Image=SimpleNamespace(fromBytes=lambda value: value),
+                Plain=lambda value: value,
             ),
         }
         exec(
@@ -275,8 +277,8 @@ class ShinyArtworkTests(unittest.TestCase):
         )
         regular = {"id": "25", "name_zh": "皮卡丘"}
         items = [
-            SimpleNamespace(row=ROW, shiny=True),
-            SimpleNamespace(row=regular, shiny=False),
+            SimpleNamespace(row=ROW, shiny=True, is_new=False),
+            SimpleNamespace(row=regular, shiny=False, is_new=False),
         ]
         service = SimpleNamespace(
             recovery_notice=lambda: "",
@@ -289,6 +291,7 @@ class ShinyArtworkTests(unittest.TestCase):
             _partner_or_error=lambda: service,
             _card_enabled=lambda: True,
             _ensure_artwork=ensure,
+            _draw_text=lambda *args: "抽卡结果",
         )
         event = SimpleNamespace(chain_result=lambda chain: chain)
         outcome = SimpleNamespace(
@@ -309,7 +312,10 @@ class ShinyArtworkTests(unittest.TestCase):
                 )
             ]
 
-        self.assertEqual(asyncio.run(collect()), [[b"rendered"]])
+        messages = asyncio.run(collect())
+        self.assertEqual(len(messages), 1)
+        self.assertIn("抽卡结果", messages[0][0])
+        self.assertEqual(messages[0][1], b"rendered")
         requests = ensure.await_args.args[0]
         self.assertEqual(requests, [self.shiny_row, ROW, regular])
         self.assertIsNot(requests[0], ROW)

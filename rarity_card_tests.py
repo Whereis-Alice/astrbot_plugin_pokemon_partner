@@ -132,14 +132,10 @@ def main():
             "190",
             "地面×2",
             "电×0.5",
-            "测试免疫",
             "陆上/妖精",
             "性别",
             "皮丘",
             "性格温顺",
-            "1280",
-            "24/30",
-            "2/3",
         ):
             assert expected in text.replace(" ", ""), (
                 "资料遗漏",
@@ -147,7 +143,9 @@ def main():
                 shiny,
                 expected,
             )
-        assert "新宝可梦已加入图鉴" in texts
+        for removed in ("今日宝可梦", "训练家·", "今日剩余", "星尘", "保底", "NEW", "新宝可梦已加入"):
+            assert removed not in text, ("抽卡状态未移出卡面", removed)
+        assert image.size == (1080, 1512)
         assert ("闪光" in texts) == shiny
         for value, _, size in records:
             if any(
@@ -196,8 +194,17 @@ def main():
         repeat_image, [(text, box) for text, box, _ in repeat_records]
     )
     texts = [text for text, _, _ in repeat_records]
-    assert "重复获得 · 转化为 80 星尘" in texts and "SSR 保底关闭" in texts
+    assert not any("星尘" in value or "保底" in value or "重复" in value for value in texts)
     assert "立绘暂未缓存" in texts
+
+    reference, _ = render([BASE])
+    different_context, _ = render([replace(BASE, is_new=False, dust=120)],
+                                  nickname="其他训练家", remaining=0, daily_limit=999,
+                                  dust=987654, pity_ssr=888, ssr_pity_after=0)
+    assert reference.tobytes() == different_context.tobytes(), "抽取上下文改变了纯卡牌"
+    missing, _ = capture_render([BASE], None, **CONTEXT)
+    transparent, _ = capture_render([BASE], lambda _: Image.new("RGBA", (128, 256)), **CONTEXT)
+    assert missing.tobytes() == transparent.tobytes(), "透明立绘没有按缺图处理"
 
     editions = [
         replace(BASE, rarity=rarity, shiny=shiny)
@@ -217,14 +224,19 @@ def main():
     ]
     image, records = render(editions, art=False)
     assert_text_is_separate(image, [(text, box) for text, box, _ in records])
-    # Four rows with two readable 28px name lines need 2632px; text bounds
-    # remain the crop/overlap check, and the canvas must still stay compact.
-    assert image.width == 1080 and image.height < 2800
+    # Two columns keep each complete card; bounds are checked after scaling.
+    assert image.size == (1080, 3668)
     texts = [text for text, _, _ in records]
-    assert sum(value == "NEW · 新伙伴" for value in texts) == 5
-    assert sum(value == "重复 · +120星尘" for value in texts) == 5
+    assert sum(value.startswith("#0025") for value in texts) == 10
+    assert not any("NEW" in value or "星尘" in value for value in texts)
     assert sum("…" in value for value in texts) >= 5, "长名称应明确显示截断"
-    assert "2 / 3" in texts and "1280" in texts
+    assert "2 / 3" not in texts and "1280" not in texts
+    for required in ("宝可梦资料", "图鉴摘要", "弱点", "抗性", "免疫", "HP", "攻击", "速度"):
+        assert texts.count(required) == 10, ("十连缺少完整卡片", required)
+    overflow_item = replace(BASE, row=dict(ROW, evolution="皮丘 → 皮卡丘 → 雷丘；" * 30))
+    notes = []
+    capture_render([overflow_item, BASE], None, details_out=notes, **CONTEXT)
+    assert any(overflow_item.row["evolution"] in note for note in notes), "多抽未收集完整溢出资料"
     print(
         f"5 editions + repeat/missing-art + mixed 10 draws passed; mixed={image.size}"
     )

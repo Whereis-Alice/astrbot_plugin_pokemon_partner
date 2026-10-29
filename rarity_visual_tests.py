@@ -104,6 +104,7 @@ def capture_render(items, loader, *, record_composites=None, **context):
     original = ImageDraw.ImageDraw.text
     original_composite = Image.Image.alpha_composite
     original_paste = Image.Image.paste
+    original_resize = Image.Image.resize
 
     def transfer(source, target, offset):
         if not isinstance(source, Image.Image):
@@ -132,6 +133,22 @@ def capture_render(items, loader, *, record_composites=None, **context):
             transfer(source_image, target, box[:2])
         return result
 
+    def resize(source, size, resample=None, box=None, reducing_gap=None):
+        result = original_resize(source, size, resample=resample, box=box,
+                                 reducing_gap=reducing_gap)
+        region = box or (0, 0, source.width, source.height)
+        scale_x = result.width / (region[2] - region[0])
+        scale_y = result.height / (region[3] - region[1])
+        for index, owner in enumerate(owners):
+            if owner == id(source):
+                record = records[index]
+                record.box = tuple((value - region[axis % 2]) *
+                                   (scale_x if axis % 2 == 0 else scale_y)
+                                   for axis, value in enumerate(record.box))
+                record.size = round(record.size * min(scale_x, scale_y))
+                owners[index] = id(result)
+        return result
+
     def capture(draw, xy, value, *args, **kwargs):
         text = str(value)
         font, anchor = kwargs.get("font"), kwargs.get("anchor")
@@ -157,7 +174,8 @@ def capture_render(items, loader, *, record_composites=None, **context):
 
     with patch.object(ImageDraw.ImageDraw, "text", capture), \
          patch.object(Image.Image, "alpha_composite", composite), \
-         patch.object(Image.Image, "paste", paste):
+         patch.object(Image.Image, "paste", paste), \
+         patch.object(Image.Image, "resize", resize):
         encoded = render_draw_card(items, image_loader=loader, **dict(CONTEXT, **context))
     return Image.open(io.BytesIO(encoded)).convert("RGB"), records
 
@@ -187,7 +205,8 @@ def assert_text(image, records, *, single):
         left, top, right, bottom = record.box
         assert 24 <= left < right <= image.width - 24, ("文字越过左右边界", record)
         assert 18 <= top < bottom <= image.height - 12, ("文字被画布裁切", record)
-        assert record.size >= 24, ("中文或状态字过小", record)
+        minimum = 24 if single else 11  # Complete cards are scaled to 506px in a two-column sheet.
+        assert record.size >= minimum, ("中文或状态字过小", record)
         # Large names/titles can use the large-text contrast threshold.
         required = 3 if record.size >= 48 else 4.5
         assert record.contrast >= required - .03, ("文字与实际背景对比不足", round(record.contrast, 2), required, record)
@@ -240,14 +259,14 @@ def scene_edges(image, records, portrait_box):
 
 
 def assert_original_elements(image, records, circular_assets):
-    """Retain the user's Poké Ball disc, red rule, stat bars and lower columns."""
+    """Retain the user's Poké Ball disc, stat bars, lower columns and card edge."""
     pixels = image.load()
     red_rule = max(sum(pixels[x, y][0] > 150 and pixels[x, y][1] < 105 and pixels[x, y][2] < 105
                        for x in range(40, image.width-40)) for y in range(24, 66))
-    assert red_rule >= image.width*.65, "原版顶部红细线缺失"
+    assert red_rule < image.width*.65, "用户要求移除的顶部红线仍在卡面"
     for x, y in ((20, 20), (image.width-20, 20), (20, image.height-20), (image.width-20, image.height-20)):
         assert max(abs(a-b) for a, b in zip(pixels[x, y], (238, 237, 231))) <= 12, "原版外框圆角缺失"
-    assert any(x+size/2 < image.width*.45 and 210 <= y <= 400 for x, y, size in circular_assets), "左侧独立精灵球圆盘缺失"
+    assert any(x+size/2 < image.width*.45 and 45 <= y <= 240 for x, y, size in circular_assets), "左侧独立精灵球圆盘缺失"
     labels = ("HP", "攻击", "防御", "特攻", "特防", "速度")
     colors = ((239, 93, 105), (247, 158, 76), (239, 197, 62),
               (91, 162, 238), (67, 190, 148), (177, 119, 235))
@@ -308,6 +327,20 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--art-dir", type=Path)
     args = parser.parse_args()
+    from rarity_cards import PALETTES, PANEL_ALPHA, _panel
+    for palette in PALETTES.values():
+        results = []
+        for background in ((0, 0, 0), (255, 255, 255)):
+            surface = Image.new("RGBA", (100, 100), (*background, 255))
+            _panel(ImageDraw.Draw(surface), (10, 10, 90, 90), palette)
+            actual = surface.getpixel((50, 50))
+            amount = PANEL_ALPHA[palette.panel] / 255
+            expected = tuple(round(foreground * amount + before * (1 - amount))
+                             for foreground, before in zip(palette.panel, background))
+            assert max(abs(a - b) for a, b in zip(actual[:3], expected)) <= 1, "面板没有按 alpha 与底图混合"
+            assert actual[3] == 255 and surface.getpixel((5, 5)) == (*background, 255)
+            results.append(actual)
+        assert results[0] != results[1], "半透明面板丢掉了场景背景"
     sprite = portrait()
     report, structures = {}, {}
     editions = [replace(BASE, rarity=rarity, shiny=shiny) for rarity, shiny in EDITIONS]
@@ -321,9 +354,11 @@ def main():
         report[key]["original_frame_elements"] = True
         structures[key] = scene_edges(image, records, bounds)
         joined = "".join(record.value for record in records).replace(" ", "")
-        for value in ("皮卡丘", "0025", "静电", "避雷针", "190", "地面×2", "电×0.5", "陆上", "性别", "皮丘", "性格温顺", "1280", "24/30", "2/3"):
+        for value in ("皮卡丘", "0025", "静电", "避雷针", "190", "地面×2", "电×0.5", "陆上", "性别", "皮丘", "性格温顺"):
             assert value in joined, ("卡片遗漏资料", key, value)
-        assert image.width == 1080 and image.height < 3200, ("画布异常", key, image.size)
+        assert image.size == (1080, 1512), ("实体卡片尺寸异常", key, image.size)
+        for removed in ("今日宝可梦", "训练家·", "今日剩余", "星尘", "保底", "NEW", "新宝可梦已加入"):
+            assert removed not in joined, ("抽卡状态仍出现在纯卡面", key, removed)
         if args.output:
             args.output.mkdir(parents=True, exist_ok=True)
             image.save(args.output / f"fixture-{key}.jpg", quality=94)
@@ -336,7 +371,7 @@ def main():
             assert ratio >= .015, ("去色后场景轮廓相同，可能只是换色", a, b, ratio)
     report["scene_outline_differences"] = differences
     long = replace(BASE, name="超级长名称宝可梦（特别地区与额外形态）"*3,
-                   types="草/毒/飞行/龙/恶", row=dict(ROW, profile=ROW["profile"]*20,
+                   types="草/毒", row=dict(ROW, profile=ROW["profile"]*20,
                        evolution="皮丘 →（亲密度提升）皮卡丘 →（雷之石）雷丘；"*8,
                        abilities="静电、避雷针、发光、同步"*5))
     for item in editions:
@@ -351,14 +386,18 @@ def main():
         items = (editions + [replace(item, is_new=False, dust=120) for item in editions])[:count]
         image, records = capture_render(items, lambda _: sprite.copy())
         report[f"multi-{count}"] = assert_text(image, records, single=False)
-        assert image.width == 1080 and image.height < 3400
+        assert image.width == 1080 and image.height < 4000
         values = [record.value for record in records]
-        assert sum("新伙伴" in value for value in values) == min(count, 5), ("多抽NEW状态缺失", count)
-        assert sum("120" in value and "星尘" in value for value in values) == max(0, count-5), ("多抽重复奖励缺失", count)
+        assert not any(any(word in value for word in ("NEW", "新伙伴", "星尘", "保底", "今日剩余")) for value in values), "多抽卡牌仍含状态提示"
+        assert sum(value.startswith("#0025") for value in values) == count, ("多抽卡牌数量遗漏", count)
+        for required in ("宝可梦资料", "图鉴摘要", "弱点", "抗性", "免疫", "HP", "攻击", "速度"):
+            assert values.count(required) == count, ("多抽缺少完整单卡内容", count, required)
+        if count == 10 and args.output:
+            image.save(args.output / "ten.jpg", quality=94)
     image, records = capture_render([replace(BASE, shiny=True, is_new=False, dust=80, row={})], None)
     report["missing-art-data"] = assert_text(image, records, single=True)
     assert any("暂无" in record.value or "未缓存" in record.value for record in records)
-    assert any("80" in record.value and "星尘" in record.value for record in records)
+    assert not any("星尘" in record.value or "保底" in record.value for record in records)
     if args.output:
         (args.output / "visual-regression.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
         if args.art_dir:

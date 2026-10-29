@@ -592,6 +592,7 @@ def render_draw_card(
     ssr_pity_after: int,
     image_loader: ImageLoader | None = None,
     style: str = "classic",
+    details_out: list[str] | None = None,
 ) -> bytes:
     """切换今日卡面；未指定或未知样式时保留现有稀有度卡面。"""
     if style == "tcg":
@@ -604,10 +605,15 @@ def render_draw_card(
             from .rarity_cards import render_rarity_draw as render
         except ImportError:
             from rarity_cards import render_rarity_draw as render
-    return render(
-        items, nickname=nickname, remaining=remaining, daily_limit=daily_limit,
+    options = dict(
+        nickname=nickname, remaining=remaining, daily_limit=daily_limit,
         dust=dust, pity_ssr=pity_ssr, ssr_pity_after=ssr_pity_after,
         image_loader=image_loader,
+    )
+    if details_out is not None:
+        options["details_out"] = details_out
+    return render(
+        items, **options,
     )
 
 

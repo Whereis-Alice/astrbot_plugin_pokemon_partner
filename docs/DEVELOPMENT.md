@@ -27,6 +27,7 @@ python -m pip install -r requirements.txt
 | 收藏卡片的图鉴编号与分页显示 | `python dex_collection_card_tests.py` |
 | 卡片排版与稀有度样式 | `python card_layout_tests.py`、`python rarity_card_tests.py`、`python rarity_visual_tests.py` |
 | 今日卡面切换、配置保存与发送分流 | `python tcg_render_integration_tests.py` |
+| 卡内基础属性相性、双属性倍率与免疫 | `python card_matchups_tests.py` |
 | TCG 实卡比例、文字边界、闪光请求与十连 | `python tcg_card_tests.py` |
 | 场景、精灵球圆盘与闪光图片缓存 | `python rarity_scene_tests.py`、`python rarity_emblem_tests.py`、`python shiny_artwork_tests.py` |
 | 图片下载大小限制与备用图源 | `python image_download_tests.py` |

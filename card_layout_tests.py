@@ -1,4 +1,4 @@
-"""单抽卡片的布局回归：真实文本边界、长名称和内容自适应画布。"""
+"""单抽卡片的布局回归：真实文本边界、固定纯卡牌、长名称和文字补充。"""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from gacha import DrawItem
 from partner_cards import PAD, W, render_draw_card
 
 
-def render_with_text_bounds(item: DrawItem):
+def render_with_text_bounds(item: DrawItem, *, details_out=None):
     bounds = []
     original = ImageDraw.ImageDraw.text
 
@@ -30,13 +30,13 @@ def render_with_text_bounds(item: DrawItem):
     with patch.object(ImageDraw.ImageDraw, "text", record):
         data = render_draw_card(
             [item], nickname="布局验证训练家", remaining=1, daily_limit=3,
-            dust=1200, pity_ssr=28, ssr_pity_after=30,
+            dust=1200, pity_ssr=28, ssr_pity_after=30, details_out=details_out,
         )
     return Image.open(io.BytesIO(data)), bounds
 
 
 def assert_text_is_separate(image, bounds):
-    hero = [(text, box) for text, box in bounds if box[1] >= 214]
+    hero = [(text, box) for text, box in bounds if text.strip()]
     for text, (left, top, right, bottom) in hero:
         assert PAD <= left < right <= W - PAD, ("文本越过卡片边界", text)
         assert top < bottom < image.height - 12, ("文本被画布裁切", text)
@@ -56,7 +56,10 @@ def main():
     short = DrawItem("25", 25, "0025", "皮卡丘", "电", 320, "C", False, True, 0, 1, row)
     image, bounds = render_with_text_bounds(short)
     assert_text_is_separate(image, bounds)
-    assert image.height < 1400, ("短资料仍有大幅留白", image.height)
+    assert image.size == (1080, 1512), ("纯卡牌不是固定比例", image.size)
+    texts = "".join(text for text, _ in bounds)
+    for removed in ("今日宝可梦", "布局验证训练家", "星尘", "保底", "NEW", "新宝可梦已加入"):
+        assert removed not in texts, ("状态提示未移出卡牌", removed)
 
     long_row = dict(row, category="鼠宝可梦" * 10, abilities="静电、避雷针、发光、同步" * 4,
                     weak_to="地面×2、火×2、冰×2、格斗×2" * 3,
@@ -65,12 +68,15 @@ def main():
                     evolution="皮丘 →（亲密度提升等级）皮卡丘 →（雷之石）雷丘；" * 5,
                     profile="皮卡丘是一只电气鼠，全身皮毛是黄色，喜欢在树林里活动。" * 20)
     long = replace(short, name="超级长名称宝可梦（特殊地区与额外形态）" * 3,
-                   types="草/毒/飞行/龙/恶", shiny=True, rarity="SSR", row=long_row)
-    long_image, long_bounds = render_with_text_bounds(long)
+                   types="草/毒", shiny=True, rarity="SSR", row=long_row)
+    overflow = []
+    long_image, long_bounds = render_with_text_bounds(long, details_out=overflow)
     assert_text_is_separate(long_image, long_bounds)
-    assert long_image.height > image.height, "长资料未扩展画布"
-    assert long_image.height < 3200, "摘要与进化链未按行数限制"
-    assert any("进化：" in text for text, _ in long_bounds), "进化链未绘制"
+    assert long_image.size == image.size, "长资料改变了实体卡牌比例"
+    assert any(long_row["abilities"] in value for value in overflow), "长特性未补入文字"
+    assert any(long_row["evolution"] in value for value in overflow), "长进化未补入文字"
+    assert not any(long_row["profile"] in value for value in overflow), "摘要续文不应补回输出"
+    assert any("…" in text for text, _ in long_bounds), "截断摘要缺少省略标记"
     assert any(text == "闪光" for text, _ in long_bounds), "闪光标记未绘制"
 
     empty = replace(short, row={})
@@ -84,7 +90,7 @@ def main():
             candidate_image, candidate_bounds = render_with_text_bounds(candidate)
             assert_text_is_separate(candidate_image, candidate_bounds)
             assert candidate_image.width == 1080
-            assert candidate_image.height < 3200
+            assert candidate_image.height == 1512
             heights[(rarity, fixture.name == short.name, bool(fixture.row))] = candidate_image.height
     print(f"15 layouts passed: short={image.height}, long={long_image.height}, empty={empty_image.height}; editions={heights}")
 

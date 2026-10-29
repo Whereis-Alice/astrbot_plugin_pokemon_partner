@@ -13,7 +13,9 @@ os.environ.setdefault("ASTRBOT_ROOT", _runtime.name)
 from PIL import Image, ImageDraw
 from gacha import DrawItem, GachaRules, build_partners
 from pokedex_db import PokedexDB
-from tcg_cards import _paste_art, render_tcg_draw
+import tcg_cards
+from tcg_cards import CARD_W, CARD_H, _paste_art, render_tcg_draw
+from card_matchups import matchup_groups
 from tcg_materials import render_print_surface
 from tcg_symbols import render_energy_icon
 
@@ -33,7 +35,9 @@ class TcgCardTests(unittest.TestCase):
                              pity_ssr=1,ssr_pity_after=30,image_loader=loader)
         self.assertEqual(items,before)
         image = Image.open(io.BytesIO(raw))
-        self.assertEqual(image.width,1080)
+        self.assertEqual(image.width, CARD_W if len(items) == 1 else 1080)
+        if len(items) == 1:
+            self.assertEqual(image.height, CARD_H)
         self.assertLess(image.height,5000)
         image.verify()
         return raw
@@ -139,6 +143,95 @@ class TcgCardTests(unittest.TestCase):
     def test_empty_results_are_rejected(self):
         with self.assertRaises(ValueError):
             self.render([])
+
+    def test_pure_card_does_not_include_transient_draw_state_or_continuation(self):
+        value = self.item('857', 'C')
+        texts = []
+        original = ImageDraw.ImageDraw.text
+        def record(draw, xy, text, *args, **kwargs):
+            texts.append(str(text))
+            return original(draw, xy, text, *args, **kwargs)
+        with patch.object(ImageDraw.ImageDraw, 'text', record):
+            first = self.render([value])
+        second = render_tcg_draw([replace(value, is_new=False, dust=999)], nickname='另一位训练家',
+            remaining=0, daily_limit=100, dust=99999, pity_ssr=29, ssr_pity_after=30)
+        self.assertEqual(first, second)
+        visible = ''.join(texts)
+        for removed in ('全国图鉴', 'NEW', '今日宝可梦', '今日剩余次数', '星尘', '加入图鉴', '图鉴摘要（续）'):
+            self.assertNotIn(removed, visible)
+
+    def test_defensive_type_icons_include_quadruple_weakness_and_immunity(self):
+        value = self.item('6', 'R')
+        texts, icons = [], []
+        original = ImageDraw.ImageDraw.text
+        render_icon = tcg_cards.render_energy_icon
+        def record(draw, xy, text, *args, **kwargs):
+            texts.append(str(text))
+            return original(draw, xy, text, *args, **kwargs)
+        def icon(name, size):
+            icons.append((name, size))
+            return render_icon(name, size)
+        with patch.object(ImageDraw.ImageDraw, 'text', record), patch.object(tcg_cards, 'render_energy_icon', icon):
+            self.render([value])
+        visible = ''.join(texts)
+        self.assertIn('岩石 ×4', visible)
+        self.assertIn('地面 ×0', visible)
+        self.assertIn(('岩石', 29), icons)
+        self.assertIn(('地面', 29), icons)
+        self.assertIn('弱点', visible)
+        self.assertIn('抗性', visible)
+        self.assertIn('免疫', visible)
+
+    def test_many_resistances_keep_all_tokens_inside_the_physical_card(self):
+        value = self.item('82', 'SSR')
+        texts, bad = [], []
+        original = ImageDraw.ImageDraw.text
+        def record(draw, xy, text, *args, **kwargs):
+            texts.append(str(text))
+            bounds = draw.textbbox(xy, str(text), font=kwargs.get('font'), anchor=kwargs.get('anchor'),
+                                  stroke_width=kwargs.get('stroke_width', 0))
+            if bounds[0] < 0 or bounds[1] < 0 or bounds[2] > draw._image.width or bounds[3] > draw._image.height:
+                bad.append((text, bounds, draw._image.size))
+            return original(draw, xy, text, *args, **kwargs)
+        with patch.object(ImageDraw.ImageDraw, 'text', record):
+            self.render([value])
+        self.assertFalse(bad, bad)
+        visible = ''.join(texts)
+        for entries in matchup_groups(value.row, value.types).values():
+            for name, multiplier in entries:
+                self.assertIn(f'{name} ×{multiplier:g}', visible)
+
+    def test_missing_practical_data_goes_to_text_without_profile_continuation(self):
+        value = self.item('857', 'C')
+        value = replace(value, row={**value.row,
+            'abilities': '很长的特性名称、' * 45 + '特性末尾标记',
+            'evolution': '非常长的进化链 → ' * 12 + '進化末尾标记',
+            'profile': '图鉴摘要仅在卡面截取。' * 150 + '摘要末尾标记'})
+        missing = []
+        render_tcg_draw([value], nickname='训练家', remaining=2, daily_limit=3,
+            dust=0, pity_ssr=1, ssr_pity_after=30, details_out=missing)
+        self.assertIn('特性末尾标记', '\n'.join(missing))
+        self.assertIn('進化末尾标记', '\n'.join(missing))
+        self.assertNotIn('摘要末尾标记', '\n'.join(missing))
+        self.assertTrue(missing[0].startswith('#0857 提布莉姆：'))
+
+    def test_long_title_keeps_its_reserved_column_clear_of_hp_and_energy(self):
+        value = self.item('555:伽勒尔达摩狒狒（达摩模式）', 'SR')
+        measure = ImageDraw.Draw(Image.new('RGB', (1, 1)))
+        _size, title_lines = tcg_cards._name_layout(measure, value.name)
+        bounds = []
+        original = ImageDraw.ImageDraw.text
+        def record(draw, xy, text, *args, **kwargs):
+            if xy[0] == 54 and str(text) in title_lines:
+                bounds.append(draw.textbbox(xy, str(text), font=kwargs.get('font'),
+                    anchor=kwargs.get('anchor'), stroke_width=kwargs.get('stroke_width', 0)))
+            return original(draw, xy, text, *args, **kwargs)
+        with patch.object(ImageDraw.ImageDraw, 'text', record):
+            self.render([value])
+        self.assertEqual(len(bounds), len(title_lines))
+        for left, top, right, bottom in bounds:
+            self.assertGreaterEqual(left, 50)
+            self.assertLess(right, 602)
 
 
 if __name__=='__main__':

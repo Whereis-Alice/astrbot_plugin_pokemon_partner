@@ -14,19 +14,21 @@ from PIL import Image, ImageDraw, ImageFilter
 try:
     from .card_renderer import load_font
     from .gacha import DrawItem, rarity_label
-    from .partner_cards import TYPE_COLORS, _pokeball
     from .rarity_emblems import render_emblem
     from .rarity_scenes import render_scene
+    from .tcg_symbols import render_energy_icon
+    from .card_matchups import matchup_groups
 except ImportError:
     from card_renderer import load_font
     from gacha import DrawItem, rarity_label
-    from partner_cards import TYPE_COLORS, _pokeball
     from rarity_emblems import render_emblem
     from rarity_scenes import render_scene
+    from tcg_symbols import render_energy_icon
+    from card_matchups import matchup_groups
 
 WIDTH = 1080
+CARD_HEIGHT = 1512
 MARGIN = 48
-BODY_SIZE = 30
 STATS = ("HP", "攻击", "防御", "特攻", "特防", "速度")
 STAT_COLORS = (
     (239, 93, 105),
@@ -95,6 +97,11 @@ PALETTES = {
         (162, 150, 196),
         (217, 213, 233),
     ),
+}
+
+PANEL_ALPHA = {
+    PALETTES[kind].panel: alpha
+    for kind, alpha in (("C", 230), ("R", 232), ("SR", 232), ("SSR", 235), ("SHINY", 228))
 }
 
 
@@ -180,9 +187,22 @@ def _text(draw, x, y, text, size, color, *, width=None, maximum=None, center=Fal
 
 
 def _panel(draw, box, p, radius=22, fill=None):
-    draw.rounded_rectangle(
-        box, radius=radius, fill=fill or p.panel, outline=p.line, width=2
+    # Composite a translucent reading surface onto the scenery. RGBA fills
+    # alone replace its pixels and would discard the material underneath.
+    left, top = math.floor(box[0]), math.floor(box[1])
+    width, height = math.ceil(box[2] - left) + 1, math.ceil(box[3] - top) + 1
+    layer = Image.new("RGBA", (width, height))
+    ink = fill or p.panel
+    ImageDraw.Draw(layer).rounded_rectangle(
+        (box[0] - left, box[1] - top, box[2] - left, box[3] - top),
+        radius=radius, fill=(*ink[:3], PANEL_ALPHA[p.panel]), outline=(*p.line, 255), width=2,
     )
+    if draw._image.mode == "RGBA":
+        draw._image.alpha_composite(layer, (left, top))
+    else:
+        surface = draw._image.crop((left, top, left + width, top + height)).convert("RGBA")
+        surface.alpha_composite(layer)
+        draw._image.paste(surface.convert(draw._image.mode), (left, top))
 
 
 def _stats(item):
@@ -223,87 +243,18 @@ def _stat_bars(draw, item, x, y, width, p, *, step=40):
     return _text(draw, x, y + 6 * step, f"总和 {item.bst}", 26, p.muted, width=width)
 
 
-def _info(item, *, dex=False):
-    row = item.row
-    basic = " · ".join(
-        str(row.get(k) or "").strip()
-        for k in ("category", "height", "weight")
-        if row.get(k)
-    )
-    lines = [(f"全国图鉴 #{item.dex_raw}", 1)] if dex else []
-    if basic:
-        lines.append((basic, 2))
-    ability, hidden = (
-        str(row.get("abilities") or ""),
-        str(row.get("hidden_abilities") or ""),
-    )
-    if ability or hidden:
-        lines.append(
-            (f"特性：{ability or '—'}" + (f"（隐藏：{hidden}）" if hidden else ""), 3)
-        )
-    if row.get("catch_rate"):
-        lines.append((f"捕获度：{row['catch_rate']}", 2))
-    for key, label in (
-        ("weak_to", "弱点"),
-        ("resist_to", "抗性"),
-        ("immune_to", "免疫"),
-    ):
-        if row.get(key):
-            lines.append((f"{label}：{row[key]}", 3))
-    extra = []
-    if row.get("egg_groups"):
-        extra.append(f"蛋群：{row['egg_groups']}")
-    gender = str(row.get("gender_ratio") or "")
-    gender = {"♂0%♀0%": "无性别", "♂0%♀100%": "仅雌性", "♂100%♀0%": "仅雄性"}.get(
-        gender.replace(" ", ""), gender
-    )
-    if gender:
-        extra.append(f"性别：{gender}")
-    if extra:
-        lines.append((" · ".join(extra), 2))
-    if row.get("evolution"):
-        lines.append((f"进化：{row['evolution']}", 4))
-    return lines or [("暂无基础资料", 1)]
-
-
-def _block_lines(draw, texts, width):
-    out = []
-    for text, cap in texts:
-        out.extend(_wrap(draw, text, BODY_SIZE, width, cap))
-    return tuple(out)
-
-
-def _block_height(lines):
-    return 86 + len(lines) * (BODY_SIZE + 12)
-
-
-def _block(draw, x, y, width, title, lines, p, *, height=None, plain=False):
-    height = height or _block_height(lines)
-    if not plain:
-        _panel(draw, (x, y, x + width, y + height), p)
-    draw.text((x + 26, y + 19), title, font=_font(30), fill=p.ink, anchor="lt")
-    for index, line in enumerate(lines):
-        draw.text(
-            (x + 26, y + 72 + index * (BODY_SIZE + 12)),
-            line,
-            font=_font(BODY_SIZE),
-            fill=p.ink,
-            anchor="lt",
-        )
-    return y + height
-
-
 def _art(base, draw, item, loader, box, p):
     x, y, width, height = box
     art_row = dict(item.row, _artwork_shiny=True) if item.shiny else item.row
     image = loader(art_row) if loader else None
     if isinstance(image, bytes):
-        image = Image.open(io.BytesIO(image))
+        with Image.open(io.BytesIO(image)) as opened:
+            image = opened.convert("RGBA")
     if image is not None:
         image = image.convert("RGBA")
         bounds = image.getchannel("A").getbbox()
-        if bounds:
-            image = image.crop(bounds)
+        image = image.crop(bounds) if bounds else None
+    if image is not None:
         image.thumbnail((width, height), Image.Resampling.LANCZOS)
         tx, ty = (
             round(x + (width - image.width) / 2),
@@ -390,8 +341,6 @@ def _pill(draw, x, y, label, fill, ink, *, size=24, height=40):
 def _badges(draw, item, x, y, *, center=False, width=940):
     fill, ink = BADGES.get(item.rarity, BADGES["C"])
     entries = [(f"{item.rarity} · {rarity_label(item.rarity)}", fill, ink)]
-    if item.is_new:
-        entries.append(("NEW", (17, 105, 76), (255, 255, 255)))
     if item.shiny:
         entries.append(("闪光", (94, 47, 128), (255, 249, 255)))
     total = (
@@ -411,7 +360,7 @@ def _type_layout(draw, item, x, y, width, *, center=False):
     rows = [[]]
     used = 0
     for label in filter(None, item.types.split("/")):
-        size = math.ceil(draw.textlength(label, font=_font(24))) + 28
+        size = math.ceil(draw.textlength(label, font=_font(26))) + 72
         if used and used + size > width:
             rows.append([])
             used = 0
@@ -422,94 +371,37 @@ def _type_layout(draw, item, x, y, width, *, center=False):
         length = sum(size + 10 for _, size in row) - 10
         cursor = x + (width - length) / 2 if center else x
         for label, size in row:
-            positions.append((label, cursor, y + index * 48))
+            positions.append((label, cursor, y + index * 58))
             cursor += size + 10
-    return positions, y + 48 * len(rows) if positions else y
+    return positions, y + 58 * len(rows) if positions else y
 
 
-def _types(draw, positions):
+def _types(base, draw, positions, p):
     for label, x, y in positions:
-        color = TYPE_COLORS.get(label, (143, 151, 151))
-        rgb = [value / 255 for value in color]
-        luminance = sum(
-            coef
-            * (
-                channel / 12.92
-                if channel <= 0.04045
-                else ((channel + 0.055) / 1.055) ** 2.4
-            )
-            for coef, channel in zip((0.2126, 0.7152, 0.0722), rgb)
-        )
-        ink = (26, 30, 34) if luminance > 0.18 else (255, 255, 255)
-        _pill(draw, x, y, label, color, ink)
+        base.alpha_composite(render_energy_icon(label, 42), (round(x), round(y)))
+        draw.text((round(x + 51), round(y + 8)), label,
+                  font=_font(26), fill=p.ink, anchor="lt")
 
 
-def _header(draw, context, p, kind):
-    _panel(draw, (40, 40, 1040, 200), p, radius=24)
-    # The red rule and Poké Ball are the original card's shared identity.
-    draw.rounded_rectangle((58, 38, 1022, 46), radius=4, fill=(199, 53, 53))
-    _pokeball(draw, 82, 89, 24)
-    draw.text((120, 63), "今日宝可梦", font=_font(46), fill=p.ink, anchor="lt")
-    trainer = _wrap(draw, f"训练家 · {context['nickname']}", 24, 396, 1)[0]
-    draw.text((120, 123), trainer, font=_font(24), fill=p.muted, anchor="lt")
-    for x, label, value in (
-        (566, "今日剩余次数", f"{context['remaining']} / {context['daily_limit']}"),
-        (808, "星尘余额", str(context["dust"])),
-    ):
-        draw.rounded_rectangle((x, 61, x + 212, 144), radius=14, fill=p.track)
-        draw.text((x + 16, 70), label, font=_font(24), fill=p.ink, anchor="lt")
-        size = _fit(draw, value, 180, 34, 24)
-        draw.text((x + 16, 103), value, font=_font(size), fill=p.ink, anchor="lt")
-    after = context["ssr_pity_after"]
-    if after:
-        progress = max(0, min(1, context["pity_ssr"] / after))
-        draw.rounded_rectangle((566, 167, 734, 175), radius=4, fill=p.track)
-        if progress:
-            draw.rounded_rectangle(
-                (566, 167, 566 + max(8, 168 * progress), 175), radius=4, fill=p.accent
-            )
-        label = f"SSR 保底 {context['pity_ssr']}/{after}"
-    else:
-        label = "SSR 保底关闭"
-    draw.text((754, 156), label, font=_font(24), fill=p.muted, anchor="lt")
-
-
-def _footer(draw, item, y, p):
-    note = (
-        "新宝可梦已加入图鉴" if item.is_new else f"重复获得 · 转化为 {item.dust} 星尘"
-    )
-    fill = (224, 242, 230) if item.is_new else (251, 239, 207)
-    ink = (15, 87, 61) if item.is_new else (110, 71, 14)
-    draw.rounded_rectangle((48, y, 1032, y + 58), radius=14, fill=fill)
-    _text(draw, 68, y + 15, note, 28, ink, width=940)
-    _panel(draw, (40, y + 76, 1040, y + 124), p, radius=12)
-    _text(
-        draw,
-        58,
-        y + 88,
-        "重复宝可梦自动折算星尘 · 兑换宝可梦 <名称> 可定向获得",
-        24,
-        p.muted,
-        width=964,
-        maximum=1,
-    )
-
-
-def _finish(base):
+def _finish_image(base):
     mask = Image.new("L", base.size)
     ImageDraw.Draw(mask).rounded_rectangle(
         (16, 16, WIDTH - 16, base.height - 16), radius=30, fill=255
     )
     framed = Image.new("RGB", base.size, (238, 237, 231))
-    framed.paste(base.convert("RGB"), (0, 0), mask)
+    framed.paste(base, (0, 0), mask)
     ImageDraw.Draw(framed).rounded_rectangle(
         (16, 16, WIDTH - 16, base.height - 16),
         radius=30,
         outline=(188, 197, 187),
         width=1,
     )
+    return framed
+
+
+def _encode(image):
     stream = io.BytesIO()
-    framed.save(stream, "JPEG", quality=95, optimize=True)
+    image.save(stream, "JPEG", quality=95, optimize=True)
     return stream.getvalue()
 
 
@@ -534,209 +426,182 @@ HEROES = {
 }
 
 
-def _single(item, context, loader):
-    kind = edition(item)
-    p, hero = PALETTES[kind], HEROES[kind]
+def _compact_info(item):
+    row = item.row
+    values = []
+    basic = " · ".join(str(row.get(key) or "").strip()
+                       for key in ("category", "height", "weight") if row.get(key))
+    if basic:
+        values.append((basic, 2))
+    ability, hidden = str(row.get("abilities") or ""), str(row.get("hidden_abilities") or "")
+    if ability or hidden:
+        values.append((f"特性：{ability or '—'}" + (f"（隐藏：{hidden}）" if hidden else ""), 2))
+    if row.get("catch_rate"):
+        values.append((f"捕获度：{row['catch_rate']}", 1))
+    if row.get("egg_groups"):
+        values.append((f"蛋群：{row['egg_groups']}", 1))
+    gender = str(row.get("gender_ratio") or "").replace(" ", "")
+    gender = {"♂0%♀0%": "无性别", "♂0%♀100%": "仅雌性", "♂100%♀0%": "仅雄性"}.get(gender, gender)
+    if gender:
+        values.append((f"性别：{gender}", 1))
+    if row.get("evolution"):
+        values.append((f"进化：{row['evolution']}", 2))
+    return values or [("暂无基础资料", 1)]
+
+
+def _compact_lines(draw, item, width, available, details_out):
+    lines = []
+    for value, cap in _compact_info(item):
+        full = _wrap(draw, value, 28, width)
+        count = min(cap, max(0, available - len(lines)))
+        if len(full) > count and details_out is not None:
+            details_out.append(f"#{item.dex_raw} {item.name}：{value}")
+        if count:
+            lines.extend(_wrap(draw, value, 28, width, count))
+    return tuple(lines)
+
+
+def _matchup_layout(draw, item, width):
+    rows = []
+    for key, label in (("weak", "弱点"), ("resist", "抗性"), ("immune", "免疫")):
+        entries = matchup_groups(item.row, item.types)[key]
+        current, used = [], 0
+        for name, multiplier in entries:
+            text = f"{name}×{multiplier:g}"
+            cell_width = math.ceil(draw.textlength(text, font=_font(24))) + 60
+            if current and used + cell_width > width:
+                rows.append((label if not any(row[0] == label for row in rows) else "", tuple(current)))
+                current, used = [], 0
+            current.append((name, text, cell_width))
+            used += cell_width
+        shown = label if not any(row[0] == label for row in rows) else ""
+        rows.append((shown, tuple(current)))
+    return tuple(rows)
+
+
+def _matchup_band(base, rows, top, height, p):
+    draw = ImageDraw.Draw(base)
+    _panel(draw, (48, top, 1032, top + height), p, radius=18)
+    for index, (label, entries) in enumerate(rows):
+        y = top + 19 + index * 49
+        if label:
+            draw.text((73, y + 4), label, font=_font(28), fill=p.ink, anchor="lt")
+        x = 165
+        if not entries:
+            draw.text((x, y + 5), "无", font=_font(24), fill=p.muted, anchor="lt")
+        for name, text, cell_width in entries:
+            base.alpha_composite(render_energy_icon(name, 34), (round(x), round(y)))
+            draw.text((round(x + 43), y + 5), text, font=_font(24), fill=p.ink, anchor="lt")
+            x += cell_width
+    draw.text((73, top + height - 37), "属性相性 · 不计特性影响", font=_font(24), fill=p.muted, anchor="lt")
+
+
+def _print_mark(draw, kind, right, y, ink):
+    if kind == "C":
+        draw.ellipse((right - 17, y + 5, right - 3, y + 19), fill=ink)
+        return
+    if kind == "R":
+        draw.polygon(((right - 13, y), (right - 2, y + 12),
+                      (right - 13, y + 24), (right - 24, y + 12)), fill=ink)
+        return
+    count = 3 if kind == "SSR" else 2 if kind == "SR" else 1
+    for index in range(count):
+        cx, cy = right - 13 - index * 29, y + 12
+        points = []
+        for vertex in range(10):
+            angle = -math.pi / 2 + vertex * math.pi / 5
+            radius = 12 if vertex % 2 == 0 else 5
+            points.append((cx + math.cos(angle) * radius, cy + math.sin(angle) * radius))
+        draw.polygon(points, fill=ink)
+    if kind == "SHINY":
+        draw.line((right - 13, y - 4, right - 13, y + 28), fill=ink, width=2)
+        draw.line((right - 29, y + 12, right + 3, y + 12), fill=ink, width=2)
+
+
+def _single_image(item, context, loader, details_out=None):
+    kind, p = edition(item), PALETTES[edition(item)]
     measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    size = _fit(measure, item.name, hero.name_width, hero.name_size, 42)
-    name_lines = _wrap(measure, item.name, size, hero.name_width, 3)
-    name_end = hero.name_y + len(name_lines) * (size + 12)
-    type_positions, type_end = _type_layout(
-        measure, item, hero.name_x, name_end + 18, hero.name_width
-    )
-    stat_top = type_end + 22
-    hero_end = max(806, stat_top + 44 + 240 + 48)
-    fields = _info(item)
-    matchups = [
-        field for field in fields if field[0].startswith(("弱点：", "抗性：", "免疫："))
-    ]
-    fields = [field for field in fields if field not in matchups]
-    info_x, left_width = 48, hero.left_width
-    profile_x = info_x + left_width + 18
-    profile_width = 1032 - profile_x
-    info = _block_lines(measure, fields, left_width - 52)
-    profile = _wrap(
-        measure,
-        item.row.get("profile") or "暂无图鉴摘要",
-        BODY_SIZE,
-        profile_width - 52,
-        hero.profile_cap,
-    )
-    info_y = hero_end + 30
-    shared_height = max(_block_height(info), _block_height(profile))
-    content_end = info_y + shared_height
-    matchup_lines = _block_lines(measure, matchups, 932) if matchups else ()
-    band_height = 24 + len(matchup_lines) * (BODY_SIZE + 12) if matchup_lines else 0
-    footer_y = content_end + 24 + (band_height + 18 if matchup_lines else 0)
-    base = render_scene(kind, WIDTH, footer_y + 148)
+    name_x, name_y, name_width = 566, 128, 430
+    size = _fit(measure, item.name, name_width, HEROES[kind].name_size, 42)
+    name_lines = _wrap(measure, item.name, size, name_width, 3)
+    name_end = name_y + len(name_lines) * (size + 12)
+    type_positions, type_end = _type_layout(measure, item, name_x, name_end + 19, name_width)
+    stat_top = type_end + 15
+    hero_end = max(700, stat_top + 44 + 240 + 42)
+    rows = _matchup_layout(measure, item, 840)
+    band_height = 66 + len(rows) * 49
+    band_top = CARD_HEIGHT - 76 - band_height
+    info_y = hero_end + 24
+    info_height = band_top - info_y - 18
+    if info_height < 144:
+        raise ValueError("宝可梦名称与属性超出实体卡片的标题空间")
+    left_width = 490
+    profile_x = 560
+    available = max(1, (info_height - 90) // 40)
+    info = _compact_lines(measure, item, left_width - 52, available, details_out)
+    profile = _wrap(measure, item.row.get("profile") or "暂无图鉴摘要", 28, 446, min(9, available))
+    base = render_scene(kind, WIDTH, CARD_HEIGHT)
     if kind == "SR":
-        # Move the stage under the portrait while preserving the original left/right reading order.
         base = base.transpose(Image.Transpose.FLIP_LEFT_RIGHT)
     draw = ImageDraw.Draw(base)
-    _header(draw, context, p, kind)
-    draw.line((48, 214, 1032, 214), fill=p.line, width=1)
-    ex, ey, diameter = hero.emblem
+    # The card edge keeps the scene inside the same physical-card proportions.
+    draw.rounded_rectangle((17, 17, 1063, CARD_HEIGHT - 17), radius=30, outline=p.accent, width=5)
+    draw.rounded_rectangle((26, 26, 1054, CARD_HEIGHT - 26), radius=24, outline=p.line, width=1)
+    ex, old_y, diameter = HEROES[kind].emblem
+    ey = old_y - 158
     base.alpha_composite(render_emblem(kind, diameter), (ex, ey))
     draw = ImageDraw.Draw(base)
-    _panel(
-        draw,
-        (hero.name_x - 20, 230, hero.name_x + hero.name_width + 20, hero_end - 16),
-        p,
-        radius=24,
-    )
-    _badges(draw, item, hero.name_x, 248)
-    _art(base, ImageDraw.Draw(base), item, loader, hero.art, p)
+    _panel(draw, (name_x - 20, 64, name_x + name_width + 20, hero_end - 14), p, radius=24)
+    _badges(draw, item, name_x, 82)
+    art_x, old_art_y, art_w, art_h = HEROES[kind].art
+    art_y = old_art_y - 158
+    _art(base, ImageDraw.Draw(base), item, loader, (art_x, art_y, art_w, art_h), p)
     draw = ImageDraw.Draw(base)
-    _text(
-        draw,
-        hero.name_x,
-        hero.name_y,
-        item.name,
-        size,
-        p.ink,
-        width=hero.name_width,
-        maximum=3,
-    )
-    _types(draw, type_positions)
-    _stat_bars(draw, item, hero.name_x, stat_top, hero.name_width, p)
-    dex_y = max(760, hero.art[1] + hero.art[3] + 18)
+    _text(draw, name_x, name_y, item.name, size, p.ink, width=name_width, maximum=3)
+    _types(base, draw, type_positions, p)
+    _stat_bars(draw, item, name_x, stat_top, name_width, p)
+    dex_y = max(644, art_y + art_h + 18)
     _panel(draw, (66, dex_y - 5, 220, dex_y + 35), p, radius=10)
     _text(draw, 76, dex_y, f"#{item.dex_raw}", 24, p.muted, width=134, maximum=1)
-    # A continuous reading surface and fine rules retain the original lower two-column rhythm.
-    _panel(draw, (48, info_y, 1032, content_end), p, radius=20)
-    draw.line((74, info_y + 1, 1006, info_y + 1), fill=p.line, width=1)
-    _block(
-        draw,
-        info_x,
-        info_y,
-        left_width,
-        "宝可梦资料",
-        info,
-        p,
-        height=shared_height,
-        plain=True,
-    )
-    _block(
-        draw,
-        profile_x,
-        info_y,
-        profile_width,
-        "图鉴摘要",
-        profile,
-        p,
-        height=shared_height,
-        plain=True,
-    )
-    if matchup_lines:
-        yy = content_end + 18
-        _panel(draw, (48, yy, 1032, yy + band_height), p, radius=18)
-        for index, line in enumerate(matchup_lines):
-            _text(
-                draw,
-                74,
-                yy + 12 + index * (BODY_SIZE + 12),
-                line,
-                BODY_SIZE,
-                p.ink,
-                width=932,
-            )
-    _footer(draw, item, footer_y, p)
-    return _finish(base)
-
-
-def _tile(base, item, box, loader):
-    x, y, width, height = box
-    kind, p = edition(item), PALETTES[edition(item)]
-    tile = render_scene(kind, width, height)
-    draw = ImageDraw.Draw(tile)
-    _panel(draw, (12, 14, width - 12, 64), p, radius=12)
-    label = f"{item.rarity} · {rarity_label(item.rarity)}" + (
-        " · 闪光" if item.shiny else ""
-    )
-    _text(draw, 26, 27, label, 24, p.accent, width=width - 52, maximum=1)
-    art = (26, 83, width - 52, width - 52)
-    _art(tile, draw, item, loader, art, p)
-    draw = ImageDraw.Draw(tile)
-    name_y = width + 44
-    _panel(draw, (12, name_y - 12, width - 12, height - 12), p, radius=14)
-    name_size = 30 if width > 400 else 28
-    end = _text(
-        draw, 26, name_y, item.name, name_size, p.ink, width=width - 52, maximum=2
-    )
-    end = _text(
-        draw,
-        26,
-        end + 12,
-        f"{item.types} · 总和 {item.bst}",
-        24,
-        p.muted,
-        width=width - 52,
-        maximum=1,
-    )
-    fill, ink = (
-        ((224, 242, 230), (15, 87, 61))
-        if item.is_new
-        else ((251, 239, 207), (110, 71, 14))
-    )
-    draw.rounded_rectangle((23, end + 6, width - 23, end + 44), radius=10, fill=fill)
-    _text(
-        draw,
-        32,
-        end + 13,
-        "NEW · 新伙伴" if item.is_new else f"重复 · +{item.dust}星尘",
-        24,
-        ink,
-        width=width - 64,
-        maximum=1,
-    )
-    base.alpha_composite(tile, (x, y))
-
-
-def _grid(items, context, loader):
-    columns = 2 if len(items) <= 4 else 3
-    gap = 18
-    width = (WIDTH - 96 - gap * (columns - 1)) // columns
-    measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
-    size = 30 if width > 400 else 28
-    name_h = max(
-        len(_wrap(measure, item.name, size, width - 52, 2)) * (size + 12)
-        for item in items
-    )
-    height = width + 44 + name_h + 12 + 36 + 6 + 44 + 24
-    rows = math.ceil(len(items) / columns)
-    page_height = 224 + rows * (height + gap) + 88
-    base = Image.new("RGBA", (WIDTH, page_height), (233, 238, 231, 255))
+    _panel(draw, (48, info_y, 1032, info_y + info_height), p, radius=20)
+    draw.line((545, info_y + 24, 545, info_y + info_height - 24), fill=p.line, width=1)
+    for x, title in ((74, "宝可梦资料"), (profile_x + 26, "图鉴摘要")):
+        draw.text((x, info_y + 21), title, font=_font(30), fill=p.ink, anchor="lt")
+    for index, line in enumerate(info):
+        draw.text((74, info_y + 73 + index * 40), line, font=_font(28), fill=p.ink, anchor="lt")
+    for index, line in enumerate(profile):
+        draw.text((profile_x + 26, info_y + 73 + index * 40), line, font=_font(28), fill=p.ink, anchor="lt")
+    _matchup_band(base, rows, band_top, band_height, p)
     draw = ImageDraw.Draw(base)
-    _header(draw, context, PALETTES["C"], "C")
+    _panel(draw, (48, CARD_HEIGHT - 64, 1032, CARD_HEIGHT - 19), p, radius=12)
+    draw.line((62, CARD_HEIGHT - 67, 1018, CARD_HEIGHT - 67), fill=p.line, width=1)
+    draw.text((73, CARD_HEIGHT - 53), "POKÉMON PARTNER", font=_font(24), fill=p.muted, anchor="lt")
+    _print_mark(draw, kind, 1007, CARD_HEIGHT - 52, p.muted)
+    return _finish_image(base)
+
+
+def _single(item, context, loader, details_out=None):
+    return _encode(_single_image(item, context, loader, details_out))
+
+
+def _grid(items, context, loader, details_out=None):
+    # Every cell is the same complete physical card as a single draw. Scale
+    # only after its real layout has collected any fields that need text.
+    columns, margin, gap = 2, 24, 20
+    cell_width = (WIDTH - 2 * margin - gap) // columns
+    cell_height = round(CARD_HEIGHT * cell_width / WIDTH)
+    rows = math.ceil(len(items) / columns)
+    page_height = 2 * margin + rows * cell_height + (rows - 1) * gap
+    base = Image.new("RGB", (WIDTH, page_height), (238, 237, 231))
     for index, item in enumerate(items):
         row, column = divmod(index, columns)
         count = min(columns, len(items) - row * columns)
-        offset = (WIDTH - (count * width + (count - 1) * gap)) // 2
-        _tile(
-            base,
-            item,
-            (
-                offset + column * (width + gap),
-                224 + row * (height + gap),
-                width,
-                height,
-            ),
-            loader,
-        )
-    draw = ImageDraw.Draw(base)
-    p = PALETTES["C"]
-    _panel(draw, (40, page_height - 68, 1040, page_height - 20), p, radius=12)
-    _text(
-        draw,
-        58,
-        page_height - 56,
-        "重复宝可梦自动折算星尘 · 兑换宝可梦 <名称> 可定向获得",
-        24,
-        p.muted,
-        width=964,
-        maximum=1,
-    )
-    return _finish(base)
+        offset = (WIDTH - count * cell_width - (count - 1) * gap) // 2
+        card = _single_image(item, context, loader, details_out)
+        card = card.resize((cell_width, cell_height), Image.Resampling.LANCZOS)
+        base.paste(card, (offset + column * (cell_width + gap),
+                          margin + row * (cell_height + gap)))
+    return _encode(base)
 
 
 def render_rarity_draw(
@@ -749,6 +614,7 @@ def render_rarity_draw(
     pity_ssr: int,
     ssr_pity_after: int,
     image_loader: Callable | None = None,
+    details_out: list[str] | None = None,
 ) -> bytes:
     """Render without changing draw data; material and composition follow rarity."""
     if not items:
@@ -762,7 +628,7 @@ def render_rarity_draw(
         "ssr_pity_after": ssr_pity_after,
     }
     return (
-        _grid(items, context, image_loader)
+        _grid(items, context, image_loader, details_out)
         if len(items) > 1
-        else _single(items[0], context, image_loader)
+        else _single(items[0], context, image_loader, details_out)
     )

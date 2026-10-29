@@ -893,7 +893,7 @@ const SETTINGS_FIELDS = [
   {
     group: "今日宝可梦卡面",
     fields: [
-      { key: "daily_card_style", label: "今日宝可梦卡面风格", type: "select", default: "classic", options: [["classic", "现有稀有度卡面"], ["tcg", "TCG 收藏卡面"]], hint: "仅切换今日宝可梦的单抽和多抽图片；收藏、图鉴和对战卡保持原样。关闭图片卡片时使用文本。" },
+      { key: "daily_card_style", label: "今日宝可梦卡面风格", type: "select", default: "classic", options: [["classic", "现有稀有度卡面"], ["tcg", "TCG 收藏卡面"]], hint: "两套均发送文字提示与纯卡牌，卡内以属性图标显示弱点、抗性和免疫。仅切换今日宝可梦卡面；关闭图片卡片时使用文本。" },
     ],
   },
   {

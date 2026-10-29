@@ -198,7 +198,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.3.2",
+    "v1.3.3",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -345,7 +345,7 @@ class PokemonPartnerPlugin(Star):
         return bool(self.config.get("enable_image_card", True))
 
     @staticmethod
-    def _draw_text(outcome, nickname: str) -> str:
+    def _draw_text(outcome, nickname: str, ssr_pity_after: int | None = None) -> str:
         lines = [f"【今日宝可梦】{nickname}"]
         for index, item in enumerate(outcome.items, 1):
             tags = []
@@ -369,7 +369,9 @@ class PokemonPartnerPlugin(Star):
             f"今日剩余 {outcome.remaining}/{outcome.daily_limit} 次"
             f"｜星尘 {outcome.dust}"
         )
-        if outcome.pity_ssr:
+        if ssr_pity_after and ssr_pity_after > 0:
+            lines.append(f"SSR 保底进度 {outcome.pity_ssr}/{ssr_pity_after}")
+        elif ssr_pity_after is None and outcome.pity_ssr:
             lines.append(f"SSR 保底进度 {outcome.pity_ssr}")
         for reward in outcome.milestones:
             bonus = f"，额外 {reward.bonus} 次" if reward.bonus else ""
@@ -384,12 +386,16 @@ class PokemonPartnerPlugin(Star):
         except GachaError:
             # The draw was already committed. Disabling the system while its
             # response is pending must still deliver that same result.
-            yield event.plain_result(self._draw_text(outcome, nickname))
+            for part in split_battle_text(self._draw_text(outcome, nickname), 1800):
+                yield event.plain_result(part)
             return
         notice = service.recovery_notice()
+        text = self._draw_text(outcome, nickname, service.store.rules.ssr_pity_after)
+        if notice:
+            text = f"{notice}\n{text}"
         if not self._card_enabled():
-            text = self._draw_text(outcome, nickname)
-            yield event.plain_result(f"{notice}\n{text}" if notice else text)
+            for part in split_battle_text(text, 1800):
+                yield event.plain_result(part)
             return
         # 先把本批立绘取齐再渲染，否则卡片里只会是占位图。
         art_rows = []
@@ -398,6 +404,7 @@ class PokemonPartnerPlugin(Star):
                 art_rows.append(dict(item.row, _artwork_shiny=True))
             art_rows.append(item.row)
         await self._ensure_artwork(art_rows)
+        details = []
         try:
             png = await asyncio.to_thread(
                 render_draw_card,
@@ -410,32 +417,25 @@ class PokemonPartnerPlugin(Star):
                 ssr_pity_after=service.store.rules.ssr_pity_after,
                 image_loader=service.artwork,
                 style=self.config.get("daily_card_style", "classic"),
+                details_out=details,
             )
         except Exception as exc:
             logger.warning(f"[{PLUGIN_ID}] 抽卡卡片渲染失败: {exc}")
             png = None
         if png is None:
-            text = self._draw_text(outcome, nickname)
-            yield event.plain_result(f"{notice}\n{text}" if notice else text)
+            for part in split_battle_text(text, 1800):
+                yield event.plain_result(part)
             return
-        extra = []
-        if notice:
-            extra.append(notice)
-        if outcome.capped:
-            extra.append(
-                f"本次请求 {outcome.requested} 次，今日剩余次数只够抽取 {len(outcome.items)} 位。"
-            )
-        for reward in outcome.milestones:
-            bonus = f"，额外 {reward.bonus} 次" if reward.bonus else ""
-            extra.append(
-                f"🎉 收集达到 {reward.threshold} 位：{reward.dust} 星尘{bonus}"
-            )
-        if extra:
-            yield event.chain_result(
-                [Comp.Image.fromBytes(png), Comp.Plain("\n".join(extra))]
-            )
-        else:
-            yield event.chain_result([Comp.Image.fromBytes(png)])
+        if any(item.is_new for item in outcome.items):
+            text += "\n新宝可梦已加入图鉴。"
+        if details:
+            text += "\n" + "\n".join(dict.fromkeys(details))
+        text += "\n弱点、抗性和免疫按属性计算，特性可能改变实际效果。"
+        text += "\n重复宝可梦自动折算星尘；使用“兑换宝可梦 名称”可定向获得。"
+        parts = split_battle_text(text, 1799)
+        for part in parts[:-1]:
+            yield event.plain_result(part)
+        yield event.chain_result([Comp.Plain(parts[-1] + "\n"), Comp.Image.fromBytes(png)])
 
     @filter.command("图鉴帮助", alias={"图鉴菜单", "帮助菜单"})
     async def cmd_partner_help(self, event: AstrMessageEvent):
