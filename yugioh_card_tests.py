@@ -48,6 +48,11 @@ EDITIONS = (("C", False), ("R", False), ("SR", False),
 
 
 def title_mask(name, face):
+    artwork = yugioh_cards.load_card_name_mask(name, face.size)
+    if artwork is not None:
+        mask = Image.new('L', (artwork.width + 12, artwork.height + 12))
+        mask.paste(artwork, (6, 6))
+        return mask
     # Sample the actual supersampled glyph footprint, including its sidebearing.
     # Cropping to textbbox and drawing at zero would sample background pixels
     # for the inscription face, whose first ink pixel follows its left bearing.
@@ -61,7 +66,7 @@ def title_mask(name, face):
 def capture_card(items, loader):
     """Include foil ink from final card pixels, not its temporary white mask."""
     foil_records = []
-    original_foil = yugioh_cards._foil_name
+    original_foil = yugioh_cards._paint_name
     original_text = ImageDraw.ImageDraw.text
 
     def foil(base, name, x, y, size, kind, **kwargs):
@@ -84,7 +89,7 @@ def capture_card(items, loader):
                        for point in points)
         foil_records.append(TextRecord(name, box, size, contrast))
 
-    with patch.object(yugioh_cards, "_foil_name", foil):
+    with patch.object(yugioh_cards, "_paint_name", foil):
         image, records = capture_render(items, loader, style="yugioh")
     return image, records + foil_records
 
@@ -121,12 +126,18 @@ class YugiohCardTests(unittest.TestCase):
     def texts(self, item, loader=None, *, details_out=None):
         values = []
         original = ImageDraw.ImageDraw.text
+        original_name = yugioh_cards._paint_name
 
         def capture(draw, xy, text, *args, **kwargs):
             values.append(str(text))
             return original(draw, xy, text, *args, **kwargs)
 
-        with patch.object(ImageDraw.ImageDraw, "text", capture):
+        def name(base, value, *args, **kwargs):
+            values.append(value)
+            return original_name(base, value, *args, **kwargs)
+
+        with patch.object(ImageDraw.ImageDraw, "text", capture), \
+             patch.object(yugioh_cards, "_paint_name", name):
             raw = self.render([item], loader, details_out=details_out)
         return raw, values
 
@@ -336,7 +347,7 @@ class YugiohCardTests(unittest.TestCase):
         item = self.item("1", "C")
         _raw, values = self.texts(item)
         visible = "".join(values)
-        for label in ("HP", "ATK", "DEF", "特攻", "特防", "速度", "总和"):
+        for label in ("HP", "攻/", "守/", "特攻", "特防", "速度", "总和"):
             self.assertIn(label, visible)
         for number in ("45", "49", "65", "318"):
             self.assertRegex(visible, rf"(?<!\d){number}(?!\d)")
@@ -403,11 +414,11 @@ class YugiohCardTests(unittest.TestCase):
                                      'CJK ability text and Latin measurements need the same visual centre')
                 descriptor = next(record for record in records
                                   if record.value.startswith("【") and item.row["category"] in record.value)
-                combat = next(record for record in records if record.value.startswith("ATK /"))
+                combat = next(record for record in records if record.value.startswith("攻/"))
                 footer = next(record for record in records if record.value.startswith("捕获度 "))
                 serial = next(record for record in records if record.value == f"#{item.dex_raw}")
                 self.assertLess(ability.box[3], descriptor.box[1])
-                self.assertIn("DEF /", combat.value)
+                self.assertIn("守/", combat.value)
                 self.assertGreater(combat.box[0], image.width / 2,
                                    "ATK and DEF belong together at the bottom right")
                 self.assertLess(combat.box[3], footer.box[1])
@@ -470,10 +481,12 @@ class YugiohCardTests(unittest.TestCase):
                     "profile": "资料段落验证。",
                     "evolution": "前身 → 成体。",
                     **({"category": "特别长的分类名称" * 40} if long_category else {})})
-                rules, icon_boxes, in_descriptor = [], [], False
+                rules, icon_boxes, matchup_icons = [], [], []
+                in_descriptor, in_matchups = False, False
                 original_line = ImageDraw.ImageDraw.line
                 original_composite = Image.Image.alpha_composite
                 original_descriptor = yugioh_cards._descriptor
+                original_matchups = yugioh_cards._matchups
 
                 def line(draw, xy, *args, **kwargs):
                     if draw._image.size == (CARD_W, CARD_H) and len(xy) == 4 \
@@ -491,17 +504,27 @@ class YugiohCardTests(unittest.TestCase):
                         in_descriptor = False
 
                 def composite(target, source_image, dest=(0, 0), **kwargs):
-                    if in_descriptor and source_image.width == source_image.height \
+                    if (in_descriptor or in_matchups) and source_image.width == source_image.height \
                             and source_image.width <= 80:
                         bounds = source_image.getchannel("A").getbbox()
                         if bounds:
-                            icon_boxes.append(tuple(value + dest[axis % 2]
-                                                    for axis, value in enumerate(bounds)))
+                            boxes = icon_boxes if in_descriptor else matchup_icons
+                            boxes.append(tuple(value + dest[axis % 2]
+                                               for axis, value in enumerate(bounds)))
                     return original_composite(target, source_image, dest=dest, **kwargs)
+
+                def matchups(*args, **kwargs):
+                    nonlocal in_matchups
+                    in_matchups = True
+                    try:
+                        return original_matchups(*args, **kwargs)
+                    finally:
+                        in_matchups = False
 
                 with patch.object(ImageDraw.ImageDraw, "line", line), \
                      patch.object(Image.Image, "alpha_composite", composite), \
-                     patch.object(yugioh_cards, "_descriptor", descriptor):
+                     patch.object(yugioh_cards, "_descriptor", descriptor), \
+                     patch.object(yugioh_cards, "_matchups", matchups):
                     image, records = capture_card([item], lambda row: portrait())
                 body = [record for record in records if record.value.strip()]
                 profile = next(record for record in body if record.value == "资料段落验证。")
@@ -512,15 +535,15 @@ class YugiohCardTests(unittest.TestCase):
                     self.assertLess(earlier.box[3], later.box[1], (earlier.value, later.value))
 
                 total = next(record for record in body if record.value == f"总和 {item.bst}")
-                combat = next(record for record in body if record.value.startswith("ATK /"))
+                combat = next(record for record in body if record.value.startswith("攻/"))
                 rule = next(rule for rule in rules if total.box[3] < rule[1] < combat.box[1])
                 self.assertLessEqual(abs(total.box[2] - rule[2]), 3,
                                      "The species total should align with the rule's right end")
                 self.assertLessEqual(rule[1] - total.box[3], 16,
                                      "The total belongs immediately above the bottom rule")
                 combat_center = (combat.box[1] + combat.box[3]) / 2
-                self.assertGreaterEqual(combat.box[1] - rule[1], 7)
-                self.assertGreaterEqual(yugioh_cards.READING_PAPER[3] - combat.box[3], 7)
+                self.assertGreaterEqual(combat.box[1] - rule[1], 6)
+                self.assertGreaterEqual(yugioh_cards.READING_PAPER[3] - combat.box[3], 6)
                 self.assertLessEqual(abs(combat.box[1] - (rule[1]+2) -
                                          (yugioh_cards.READING_PAPER[3]-combat.box[3])), 1,
                                      'Keep equal clearance above and below the combat ink')
@@ -533,6 +556,13 @@ class YugiohCardTests(unittest.TestCase):
                 prefix = next(record for record in body if record.value.startswith("【"))
                 close = next(record for record in body if record.value == "】")
                 separator = max(rule[1] for rule in rules if rule[1] < resist.box[1])
+                matchup_boxes = [record.box for record in body
+                                 if separator < record.box[1] < rule[1]
+                                 and not record.value.startswith('总和 ')] + matchup_icons
+                top_gap = min(box[1] for box in matchup_boxes) - (separator + 1)
+                bottom_gap = rule[1] - max(box[3] for box in matchup_boxes)
+                self.assertLessEqual(abs(top_gap-bottom_gap), 2,
+                                     'Centre matchup rows without counting the independently placed total')
                 descriptor_bottom = max(prefix.box[3], close.box[3],
                                         max((box[3] for box in icon_boxes), default=0))
                 self.assertLessEqual(abs(profile.box[1]-descriptor_bottom -

@@ -136,7 +136,8 @@ def _draw_jewel(type_name: str, *, face=None) -> Image.Image:
     result = Image.new("RGBA", (size, size))
     result.putdata(data)
     disc_alpha = result.getchannel('A')
-    # The inscription face has the reference's straight cuts and sharp endings.
+    # The Noto Serif SC 500 inscription has the official card reference's
+    # slanted cross-strokes, tapered curves and sharp Song/Ming endings.
     # This generator is offline; the live path below only reads cached images.
     face = face or load_card_font(210, "symbol")
     mask = Image.new("L", result.size)

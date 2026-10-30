@@ -13,9 +13,9 @@ from functools import lru_cache
 from PIL import Image, ImageChops, ImageDraw, ImageFilter
 
 try:
-    from .yugioh_fonts import load_card_font
+    from .yugioh_fonts import load_card_font, load_card_name_mask
 except ImportError:
-    from yugioh_fonts import load_card_font
+    from yugioh_fonts import load_card_font, load_card_name_mask
 
 
 _GOLD = (
@@ -82,13 +82,20 @@ def _paint_mask(base, mask, color, amount=1, offset=(0, 0)):
 @lru_cache(maxsize=24)
 def _lettering(name, size, kind, font):
     scale, padding = 3, 6
-    width = max(1, math.ceil(font.getlength(name))) + padding * 2
-    height = max(1, font.getbbox(name, anchor="lt")[3]) + padding * 2
+    artwork = load_card_name_mask(name, size)
+    width = (artwork.width if artwork else max(1, math.ceil(font.getlength(name)))) + padding * 2
+    height = (artwork.height if artwork else max(1, font.getbbox(name, anchor="lt")[3])) + padding * 2
     large_size = (width * scale, height * scale)
     mask = Image.new("L", large_size)
-    large_font = font.font_variant(size=round(size * scale))
-    ImageDraw.Draw(mask).text((padding * scale, padding * scale), name,
-                              font=large_font, anchor="lt", fill=255)
+    if artwork is None:
+        large_font = font.font_variant(size=round(size * scale))
+        ImageDraw.Draw(mask).text((padding * scale, padding * scale), name,
+                                  font=large_font, anchor="lt", fill=255)
+    else:
+        # Whole-name image artwork is already rendered at high resolution;
+        # the same silhouette is used for solid, gold and spectrum lettering.
+        artwork = load_card_name_mask(name, size * scale)
+        mask.paste(artwork, (padding * scale, padding * scale))
     layer = Image.new("RGBA", large_size)
     # Ink impressions have a slight lower shadow, not a uniform black outline.
     shadow = mask.filter(ImageFilter.GaussianBlur(1.0 * scale))

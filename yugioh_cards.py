@@ -20,7 +20,7 @@ try:
     from .gacha import DrawItem
     from .yugioh_symbols import render_attribute_icon, render_level_star
     from .yugioh_materials import render_stock, render_art_scene, render_reading_stock, apply_print_finish
-    from .yugioh_fonts import load_card_font
+    from .yugioh_fonts import load_card_font, load_card_name_mask, card_name_artwork_metrics
     from .yugioh_foil import render_foil_name
     from .yugioh_frames import paint_frame
 except ImportError:
@@ -29,7 +29,7 @@ except ImportError:
     from gacha import DrawItem
     from yugioh_symbols import render_attribute_icon, render_level_star
     from yugioh_materials import render_stock, render_art_scene, render_reading_stock, apply_print_finish
-    from yugioh_fonts import load_card_font
+    from yugioh_fonts import load_card_font, load_card_name_mask, card_name_artwork_metrics
     from yugioh_foil import render_foil_name
     from yugioh_frames import paint_frame
 
@@ -207,6 +207,11 @@ def _portrait(base: Image.Image, item: DrawItem, loader: Callable | None, box):
 
 
 def _name_layout(draw, name: str):
+    if card_name_artwork_metrics(name, 66) is not None:
+        for size in range(66, 25, -1):
+            if card_name_artwork_metrics(name, size)[0] <= 748:
+                return size, (name,)
+        raise ValueError("完整宝可梦名称超出卡片的标题空间，请使用文本。")
     for size in range(66, 35, -2):
         if draw.textlength(name, font=_name_font(size, name)) <= 748:
             return size, (name,)
@@ -245,8 +250,25 @@ def _matchup_layout(draw, item: DrawItem):
 def _matchups(base, layout, top, kind, total):
     draw = ImageDraw.Draw(base)
     ink, muted, rule = INKS[kind]
-    y = top
-    draw.line((91, y - 13, 989, y - 13), fill=rule, width=1)
+    separator = top - 13
+    draw.line((91, separator, 989, separator), fill=rule, width=1)
+    # Centre only the left-hand matchup ink between its two rules. The total
+    # is independently anchored at the right and must not add bottom padding.
+    bounds, offset = [], 0
+    for label, rows in layout:
+        bounds.append((offset + 5, offset + 5 + _font(26).getbbox(label, anchor='lt')[3]))
+        for index, row in enumerate(rows):
+            row_y = offset + index * 40
+            if not row:
+                value = '未知' if row is None else '无'
+                bounds.append((row_y + 5, row_y + 5 + _font(26).getbbox(value, anchor='lt')[3]))
+            else:
+                # All jewels share the same symmetric disc, and their 26px
+                # multipliers fit inside this vertical footprint.
+                bounds.append((row_y, row_y + 36))
+        offset += len(rows) * 40 + 4
+    first, last = min(pair[0] for pair in bounds), max(pair[1] for pair in bounds)
+    y = round((separator + 1 + STATS_RULE_Y - first - last) / 2)
     for label, rows in layout:
         _text(draw, 92, y + 5, label, 26, ink)
         for index, row in enumerate(rows):
@@ -262,7 +284,7 @@ def _matchups(base, layout, top, kind, total):
                 x += width
         y += len(rows) * 40 + 4
     total_text = f"总和 {total}"
-    # Align the bottom-right number with the end of the ATK/DEF rule.
+    # Align the bottom-right number with the end of the combat rule.
     _text(draw, 988 - draw.textlength(total_text, font=_font(25)), STATS_RULE_Y - 32,
           total_text, 25, ink)
 
@@ -278,7 +300,7 @@ def _stats_band(base, item, kind):
         height = _font(24).getbbox(text, anchor="lt")[3]
         _text(draw, x, center_y - height / 2, text, 24, muted)
     draw.line((91, STATS_RULE_Y, 989, STATS_RULE_Y), fill=rule, width=2)
-    combat = f"ATK / {stats.get('攻击', '—')}   DEF / {stats.get('防御', '—')}"
+    combat = f"攻/{stats.get('攻击', '—')}   守/{stats.get('防御', '—')}"
     height = _title_font(34).getbbox(combat, anchor="lt")[3]
     _text(draw, 988 - draw.textlength(combat, font=_title_font(34)), center_y - height / 2,
           combat, 34, ink, font=_title_font(34))
@@ -286,6 +308,21 @@ def _stats_band(base, item, kind):
 
 def _foil_name(base, name, x, y, size, kind, *, font=None):
     render_foil_name(base, name, x, y, size, kind, font=font or _name_font(size, name))
+
+
+def _paint_name(base, name, x, y, size, kind, *, font=None):
+    face = font or _name_font(size, name)
+    if kind in {'SSR', 'SHINY'}:
+        _foil_name(base, name, x, y, size, kind, font=face)
+        return
+    ink = (252, 236, 216) if kind == 'C' else TITLE_INKS[kind]
+    mask = load_card_name_mask(name, size)
+    if mask is None:
+        _text(ImageDraw.Draw(base), x, y, name, size, ink, font=face)
+    else:
+        lettering = Image.new('RGBA', mask.size, (*ink, 0))
+        lettering.putalpha(mask)
+        base.alpha_composite(lettering, (round(x), round(y)))
 
 
 def _reading_frame(base, kind):
@@ -401,16 +438,13 @@ def _card(item: DrawItem, loader: Callable | None):
     draw = ImageDraw.Draw(base)
     size, lines = _name_layout(draw, item.name)
     name_face = _name_font(size, item.name)
-    heights = [name_face.getbbox(line, anchor='lt')[3] for line in lines]
+    heights = [(card_name_artwork_metrics(line, size) or
+                (0, name_face.getbbox(line, anchor='lt')[3]))[1] for line in lines]
     title_center = 97 if kind == 'SHINY' else (66+147)/2
     text_top = title_center - (sum(heights) + (len(lines)-1)*4) / 2
-    title_ink = (252, 236, 216) if kind == "C" else TITLE_INKS[kind]
     for index, line in enumerate(lines):
         y = text_top + sum(heights[:index]) + index * 4
-        if kind in {"SSR", "SHINY"}:
-            _foil_name(base, line, 78, y, size, kind, font=name_face)
-        else:
-            _text(draw, 78, y, line, size, title_ink, font=name_face)
+        _paint_name(base, line, 78, y, size, kind, font=name_face)
     for index, type_name in enumerate(types):
         x = 925 - (len(types) - index - 1) * 83
         base.alpha_composite(render_attribute_icon(type_name, 78), (x, round(title_center-39)))
