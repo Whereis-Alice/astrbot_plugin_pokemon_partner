@@ -44,6 +44,29 @@ ATTRIBUTES = {
     "妖精": ("妖", (145, 44, 93), (250, 162, 198)),
 }
 
+# The printed jewels have a bright upper pole, an almost black waist and a
+# saturated lower reflection. Hue shifts distinguish the two lit surfaces.
+_POLES = {
+    "草": ((47, 230, 58), (170, 255, 86)),
+    "火": ((255, 49, 12), (255, 191, 37)),
+    "水": ((23, 103, 255), (66, 229, 255)),
+    "电": ((255, 173, 5), (255, 247, 61)),
+    "超能力": ((255, 31, 84), (231, 108, 255)),
+    "格斗": ((240, 74, 21), (255, 188, 90)),
+    "恶": ((147, 22, 155), (213, 106, 255)),
+    "钢": ((105, 153, 185), (194, 247, 255)),
+    "龙": ((113, 47, 252), (154, 164, 255)),
+    "一般": ((189, 145, 91), (255, 240, 191)),
+    "冰": ((0, 177, 210), (155, 255, 255)),
+    "地面": ((215, 117, 25), (253, 211, 102)),
+    "飞行": ((99, 113, 236), (185, 223, 255)),
+    "毒": ((185, 39, 224), (240, 143, 255)),
+    "岩石": ((162, 145, 35), (238, 229, 123)),
+    "虫": ((138, 187, 10), (224, 255, 58)),
+    "幽灵": ((116, 51, 197), (195, 150, 255)),
+    "妖精": ((255, 79, 150), (255, 192, 235)),
+}
+
 _ALIASES = dict(zip(
     ("grass", "fire", "water", "electric", "psychic", "fighting", "dark",
      "steel", "dragon", "normal", "ice", "ground", "flying", "poison",
@@ -73,6 +96,7 @@ def _mix(a, b, amount):
 def _draw_jewel(type_name: str, *, face=None) -> Image.Image:
     """Asset-preparation source; live rendering reads the bundled PNGs below."""
     glyph, tint, reflected = ATTRIBUTES.get(type_name, ("?", (60, 59, 69), (180, 177, 190)))
+    upper_light, lower_light = _POLES.get(type_name, ((133, 132, 166), (223, 223, 249)))
     size, centre, radius = 256, 127.5, 124.0
     rng = random.Random(901 + sum(ord(char) for char in type_name))
     data = []
@@ -84,22 +108,23 @@ def _draw_jewel(type_name: str, *, face=None) -> Image.Image:
             if r >= 1:
                 data.append((0, 0, 0, 0))
                 continue
-            # The reference is printed enamel: a dark ink well, broad coloured
-            # reflections, and a thin struck rim rather than a glass hotspot.
-            lower = math.exp(-((u + .30) ** 2 / .68 + (v - .60) ** 2 / .22))
-            upper = math.exp(-((u + .43) ** 2 / .40 + (v + .63) ** 2 / .18))
-            hollow = math.exp(-((u - .21) ** 2 / .61 + (v + .04) ** 2 / .39))
+            # Broad opposing luminous poles leave a dark waist behind the
+            # lettering, as in the reference's red-to-purple DARK emblem.
+            lower = math.exp(-((u + .18) ** 2 / .90 + (v - .74) ** 2 / .075))
+            upper = math.exp(-((u + .08) ** 2 / 1.45 + (v + .77) ** 2 / .115))
+            hollow = math.exp(-((u - .07) ** 2 / 1.6 + (v + .01) ** 2 / .14))
             cloud = .5 + .25 * math.sin(u * 17 + 1.3 * math.sin(v * 11))
             cloud += .25 * math.sin(v * 21 - u * 9)
-            color = _mix(tint, reflected, .16 + .49 * lower + .23 * upper)
-            color = _mix(color, (5, 4, 8), .84 * hollow)
-            color = _mix(color, reflected, cloud * .055)
+            color = _mix(tint, (5, 2, 10), .80 * hollow)
+            color = _mix(color, upper_light, .98 * upper)
+            color = _mix(color, lower_light, .90 * lower)
+            color = _mix(color, reflected, cloud * .018)
             if r > .947:
                 # Only the lower-left cut edge catches light. A complete pale
                 # ring would turn the reference's jewel into a metal badge.
                 direction = max(0.0, min(1.0, -.52 * u + .48 * v))
                 edge = _mix(_mix(tint, (16, 10, 19), .54),
-                            _mix(reflected, (245, 237, 216), .35), direction)
+                            _mix(lower_light, (245, 249, 255), .38), direction)
                 highlight = math.exp(-((r - .971) / .013) ** 2)
                 color = _mix(color, edge, highlight * (.3 + .7 * direction))
                 color = _mix(color, (12, 8, 17), max(0.0, (r - .986) / .014) * .64)
@@ -110,6 +135,7 @@ def _draw_jewel(type_name: str, *, face=None) -> Image.Image:
             data.append((*color, alpha))
     result = Image.new("RGBA", (size, size))
     result.putdata(data)
+    disc_alpha = result.getchannel('A')
     # The inscription face has the reference's straight cuts and sharp endings.
     # This generator is offline; the live path below only reads cached images.
     face = face or load_card_font(210, "symbol")
@@ -117,14 +143,21 @@ def _draw_jewel(type_name: str, *, face=None) -> Image.Image:
     draw = ImageDraw.Draw(mask)
     draw.text((8, 8), glyph, font=face, anchor="lt", fill=255, stroke_width=1)
     mask = mask.crop(mask.getbbox())
-    scale = min(185 / mask.width, 191 / mask.height)
+    # Rectangular bounds are insufficient: a sweeping lower-left stroke can
+    # cross a circle even when both width and height fit. Fit the actual ink
+    # radially, leaving room for the engraving shadow inside the rim.
+    half_w, half_h = (mask.width - 1) / 2, (mask.height - 1) / 2
+    farthest = max(math.hypot(x-half_w, y-half_h)
+                   for y in range(mask.height) for x in range(mask.width)
+                   if mask.getpixel((x, y)) > 8)
+    scale = min(177 / mask.width, 181 / mask.height, 104 / max(1, farthest))
     mask = mask.resize((round(mask.width * scale), round(mask.height * scale)),
                        Image.Resampling.LANCZOS)
     centred = Image.new("L", result.size)
-    centred.paste(mask, ((size - mask.width) // 2, (size - mask.height) // 2 + 2))
+    centred.paste(mask, ((size - mask.width) // 2, (size - mask.height) // 2))
     mask = centred
     shade = Image.new("RGBA", result.size, (17, 7, 21, 0))
-    shade.putalpha(mask.filter(ImageFilter.MaxFilter(5)).filter(ImageFilter.GaussianBlur(.65)))
+    shade.putalpha(mask.filter(ImageFilter.MaxFilter(3)).filter(ImageFilter.GaussianBlur(.65)))
     result.alpha_composite(shade, (1, 2))
     ink = Image.new("RGBA", (1, size))
     ink.putdata([(*_mix((255, 254, 239), (237, 233, 209), y / (size - 1)), 255)
@@ -132,6 +165,7 @@ def _draw_jewel(type_name: str, *, face=None) -> Image.Image:
     ink = ink.resize(result.size)
     ink.putalpha(mask)
     result.alpha_composite(ink)
+    result.putalpha(disc_alpha)
     return result
 
 

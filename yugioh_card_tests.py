@@ -411,7 +411,11 @@ class YugiohCardTests(unittest.TestCase):
                 self.assertGreater(combat.box[0], image.width / 2,
                                    "ATK and DEF belong together at the bottom right")
                 self.assertLess(combat.box[3], footer.box[1])
-                self.assertEqual(footer.box[1], serial.box[1])
+                for text in (footer, serial):
+                    top_gap = text.box[1] - yugioh_cards.READING_BOX[3]
+                    bottom_gap = yugioh_cards.FOOTER_BOTTOM - text.box[3]
+                    self.assertLessEqual(abs(top_gap - bottom_gap), 1,
+                                         'Centre actual footer ink in the exposed paper')
 
     def test_matchups_pair_every_actual_type_jewel_with_its_multiplier_only(self):
         for key in ("6", "82", "302"):
@@ -515,6 +519,11 @@ class YugiohCardTests(unittest.TestCase):
                 self.assertLessEqual(rule[1] - total.box[3], 16,
                                      "The total belongs immediately above the bottom rule")
                 combat_center = (combat.box[1] + combat.box[3]) / 2
+                self.assertGreaterEqual(combat.box[1] - rule[1], 7)
+                self.assertGreaterEqual(yugioh_cards.READING_PAPER[3] - combat.box[3], 7)
+                self.assertLessEqual(abs(combat.box[1] - (rule[1]+2) -
+                                         (yugioh_cards.READING_PAPER[3]-combat.box[3])), 1,
+                                     'Keep equal clearance above and below the combat ink')
                 for label in ("HP ", "特攻 ", "特防 ", "速度 "):
                     stat = next(record for record in body if record.value.startswith(label))
                     self.assertLessEqual(abs((stat.box[1] + stat.box[3]) / 2 - combat_center), 1,

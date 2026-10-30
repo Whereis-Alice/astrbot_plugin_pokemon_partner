@@ -64,13 +64,25 @@ def _frame(name, width, height, kind):
 def paint_frame(base, name, box, kind):
     left, top, right, bottom = map(round, box)
     width, height = right-left, bottom-top
-    # The original picture mould casts a soft, narrow contact shadow in the
-    # stock, while the inset lip stays a crisp printed bevel.
-    if name in {'title', 'picture', 'description'} and not (name == 'title' and kind == 'SHINY'):
+    # The original picture mould stands above the stock: its broad ambient
+    # shadow is visible on all four sides, with a darker contact edge below.
+    # Keep this outside the mould so neither paper nor portrait is dimmed.
+    if name == 'picture':
+        margin = 64
+        for blur, spread, opacity, offset in ((15, 5, 185, (0, 1)),
+                                               (5, 1, 150, (2, 4))):
+            mask = Image.new('L', (width+margin*2, height+margin*2))
+            ImageDraw.Draw(mask).rectangle(
+                (margin-spread, margin-spread, margin+width+spread, margin+height+spread),
+                fill=opacity)
+            shade = Image.new('RGBA', mask.size, (14, 17, 20, 0))
+            shade.putalpha(mask.filter(ImageFilter.GaussianBlur(blur)))
+            base.alpha_composite(shade, (left-margin+offset[0], top-margin+offset[1]))
+    elif name in {'title', 'description'} and not (name == 'title' and kind == 'SHINY'):
         margin = 20
         mask = Image.new('L',(width+margin*2,height+margin*2))
-        ImageDraw.Draw(mask).rectangle((margin,margin,width+margin,height+margin),fill=210 if name=='picture' else 160)
+        ImageDraw.Draw(mask).rectangle((margin,margin,width+margin,height+margin),fill=160)
         shade = Image.new('RGBA', mask.size, (12, 13, 20, 0))
-        shade.putalpha(mask.filter(ImageFilter.GaussianBlur(7 if name=='picture' else 4)))
+        shade.putalpha(mask.filter(ImageFilter.GaussianBlur(4)))
         base.alpha_composite(shade,(left-margin+3,top-margin+5))
     base.alpha_composite(_frame(name,width,height,kind),(left,top))

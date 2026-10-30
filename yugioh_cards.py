@@ -35,6 +35,11 @@ except ImportError:
 
 
 CARD_W, CARD_H = 1080, 1680
+# The visible paper, rather than the frame's shadow, defines each text rail.
+READING_BOX = (60, 1123, 1020, 1600)
+READING_PAPER = (76, 1140, 1004, 1583)
+STATS_RULE_Y = 1533
+FOOTER_BOTTOM = 1644
 STAT_NAMES = ("HP", "攻击", "防御", "特攻", "特防", "速度")
 INKS = {
     "C": ((34, 24, 19), (63, 47, 37), (127, 100, 79)),
@@ -258,7 +263,7 @@ def _matchups(base, layout, top, kind, total):
         y += len(rows) * 40 + 4
     total_text = f"总和 {total}"
     # Align the bottom-right number with the end of the ATK/DEF rule.
-    _text(draw, 988 - draw.textlength(total_text, font=_font(25)), 1511,
+    _text(draw, 988 - draw.textlength(total_text, font=_font(25)), STATS_RULE_Y - 32,
           total_text, 25, ink)
 
 
@@ -266,13 +271,13 @@ def _stats_band(base, item, kind):
     draw = ImageDraw.Draw(base)
     ink, muted, rule = INKS[kind]
     stats = _stats(item)
-    center_y = 1566
+    center_y = (STATS_RULE_Y + 2 + READING_PAPER[3]) / 2
     for index, name in enumerate(("HP", "特攻", "特防", "速度")):
         x = 93 + index * 119
         text = f"{name} {stats.get(name, '—')}"
         height = _font(24).getbbox(text, anchor="lt")[3]
         _text(draw, x, center_y - height / 2, text, 24, muted)
-    draw.line((91, 1543, 989, 1543), fill=rule, width=2)
+    draw.line((91, STATS_RULE_Y, 989, STATS_RULE_Y), fill=rule, width=2)
     combat = f"ATK / {stats.get('攻击', '—')}   DEF / {stats.get('防御', '—')}"
     height = _title_font(34).getbbox(combat, anchor="lt")[3]
     _text(draw, 988 - draw.textlength(combat, font=_title_font(34)), center_y - height / 2,
@@ -284,8 +289,9 @@ def _foil_name(base, name, x, y, size, kind, *, font=None):
 
 
 def _reading_frame(base, kind):
-    paint_frame(base, 'description', (60, 1123, 1020, 1605), kind)
-    base.alpha_composite(render_reading_stock(kind, 928, 444), (76, 1140))
+    paint_frame(base, 'description', READING_BOX, kind)
+    left, top, right, bottom = READING_PAPER
+    base.alpha_composite(render_reading_stock(kind, right-left, bottom-top), (left, top))
 
 
 def _descriptor(base, item, types, kind, missing):
@@ -323,7 +329,7 @@ def _quiet_rail(base, top, bottom, kind):
     if kind not in {'C', 'R', 'SR'}:
         return
     if kind == 'C':
-        color, opacity = ((247, 220, 188), 100) if top > 1550 else ((237, 202, 165), 80)
+        color, opacity = ((247, 220, 188), 100) if top > 1550 else ((237, 202, 165), 130)
     else:
         color, opacity = (27, 9, 33), 103 if kind == 'SR' else 40
     margin = 12
@@ -371,8 +377,13 @@ def _footer(base, item, kind, missing):
     available = 931 - right_width - 24
     if draw.textlength(left, font=_font(size)) > available:
         missing.append(f"捕获度：{catch}；蛋群：{eggs}")
-    _text(draw, 62, 1609, left, size, ink, width=available)
-    _text(draw, 1009 - right_width, 1609, serial, size, ink)
+    center = (READING_BOX[3] + FOOTER_BOTTOM) / 2
+    # Chinese text, parentheses and the short numeric serial have different
+    # ink heights. Centre each in the exposed stock beneath the description.
+    left_y = center - _font(size).getbbox(left, anchor='lt')[3] / 2
+    serial_y = center - _font(size).getbbox(serial, anchor='lt')[3] / 2
+    _text(draw, 62, left_y, left, size, ink, width=available)
+    _text(draw, 1009 - right_width, serial_y, serial, size, ink)
 
 
 def _card(item: DrawItem, loader: Callable | None):
@@ -421,7 +432,7 @@ def _card(item: DrawItem, loader: Callable | None):
     draw = ImageDraw.Draw(base)
     layout = _matchup_layout(draw, item)
     matchup_height = sum(len(rows) * 40 + 4 for _label, rows in layout)
-    matchup_top = 1528 - matchup_height
+    matchup_top = STATS_RULE_Y - 15 - matchup_height
     y = descriptor_bottom + 12
     evolution = "；".join(dict.fromkeys(part.strip() for part in
         _split_top_level(str(item.row.get("evolution") or ""), "；") if part.strip()))
