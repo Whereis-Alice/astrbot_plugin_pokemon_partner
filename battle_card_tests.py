@@ -224,6 +224,25 @@ class BattleCardTests(unittest.TestCase):
         self.render(battle, lambda row: stream.getvalue())
         self.assertEqual(battle, before)
 
+    def test_transparent_artwork_shows_missing_art_placeholder(self):
+        battle = self.snapshot()
+        cards, text, sections = self.render(
+            battle, lambda row: Image.new("RGBA", (80, 120), (0, 0, 0, 0))
+        )
+        self.assertEqual(sections[0].count("立绘暂未缓存"), 2)
+
+    def test_adjacent_closing_punctuation_keeps_preceding_text(self):
+        text = "梦幻（乙） 使用铁蹄光线，梦幻（甲） 受到 54 点伤害（威力140，属性×1，本系×1），HP 111/175。"
+        draw = ImageDraw.Draw(Image.new("RGB", (1, 1)))
+        lines = battle_cards._wrap(draw, text, 26, 1026)
+        self.assertEqual("".join(lines), text)
+        self.assertGreater(len(lines), 1)
+        self.assertTrue(all(line and line[0] not in "），。" for line in lines))
+        punctuation = "），。" * 80
+        lines = battle_cards._wrap(draw, punctuation, 26, 180)
+        self.assertEqual("".join(lines), punctuation)
+        self.assertTrue(all(draw.textlength(line, font=battle_cards._font(26)) <= 180 for line in lines))
+
     def test_same_dex_normal_and_shiny_request_distinct_art_without_mutation(self):
         battle = build_battle_report(
             self.db,

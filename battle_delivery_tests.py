@@ -606,13 +606,35 @@ class DeliveryTests(unittest.TestCase):
                     pages = asyncio.run(self.plugin._battle_card_pages(self.battle))
                 self.assertEqual(pages, [b"page"])
                 self.assertEqual(loaded, [expected])
-                self.assertIs(lookup.call_args_list[0].kwargs["shiny"], True)
-                if expected is None:
-                    load.assert_not_called()
-                else:
-                    load.assert_called_once_with(request)
+                load.assert_called_once_with(request)
                 self.assertEqual(request, {**form_row, "_artwork_shiny": True})
                 self.assertEqual(self.battle, original)
+
+    def test_regional_forms_use_downloaded_cache_without_an_images_directory(self):
+        with TemporaryDirectory(prefix='partner-battle-downloaded-form-') as temporary:
+            root = Path(temporary)
+            artwork = main.ArtworkCache(root, db=self.db, allow_download=False)
+            row = self.db.pokemon('阿罗拉猫老大')
+            for shiny, color in ((False, (40, 90, 160, 255)), (True, (210, 160, 40, 255))):
+                request = dict(row)
+                if shiny:
+                    request['_artwork_shiny'] = True
+                folder = root / 'shiny' / 'forms' if shiny else root / 'forms'
+                folder.mkdir(parents=True, exist_ok=True)
+                Image.new('RGBA', (20, 20), color).save(folder / '10108.png')
+                self.plugin.artwork = artwork
+                loaded = []
+
+                def render(battle, *, image_loader):
+                    image = image_loader(request)
+                    loaded.append(image.getpixel((0, 0)) if image is not None else None)
+                    return [b'page']
+
+                module = types.ModuleType('battle_cards')
+                module.render_battle_cards = render
+                with patch.dict(sys.modules, {'battle_cards': module}):
+                    self.assertEqual(asyncio.run(self.plugin._battle_card_pages(self.battle)), [b'page'])
+                self.assertEqual(loaded, [color])
 
     def test_schema_validates_four_known_modes(self):
         schema = json.loads(

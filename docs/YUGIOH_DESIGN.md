@@ -38,4 +38,15 @@
 
 ## 字体
 
-姓名使用独立的刻字风格宋体，SSR 与闪光另叠加薄箔微纹、窄反光和压印阴影；攻击／防御使用厚重衬线数字，正文使用中等字重。字体随插件离线提供，覆盖当前图鉴与形态名称；来源、字形覆盖和开放许可见[字库说明](../assets/fonts/README.md)。
+姓名采用楷体方向的独立字库，SSR 与闪光另叠加薄箔微纹、窄反光和压印阴影；攻击／防御使用厚重衬线数字，正文使用中等字重。字体随插件离线提供，覆盖当前图鉴与形态名称；来源、字形覆盖和开放许可见[字库说明](../assets/fonts/README.md)。
+
+公开中文 DIY 制卡器有以下可核验的字体配置：
+
+| 语言与用途 | 字体 | 配置来源 |
+| --- | --- | --- |
+| 简体：卡名、描述、种族与类型 | 华康楷体 W5（DFPKaiW5-GB） | [ygo-card 简中配置](https://github.com/yamiyang/ygo-card/blob/HEAD/source/config/cnSimplifyConfig.js) |
+| 正体：卡名、分类行与正文 | 华康隶书 W5（DFLiShuW5-B5） | [card-maker 语言配置](https://github.com/linziyou0601/yugioh-card-maker/blob/HEAD/static/lang.card_meta.json)及[字体映射](https://github.com/linziyou0601/yugioh-card-maker/blob/HEAD/static/fonts/font-face.css) |
+
+这些是民间制卡工具的实际用法，尚不能据此确认 Konami 官方采用的字库。本插件借鉴简中楷体方向，用开放许可的霞鹜文楷 Regular 制作姓名子集；正文保留宋体，以适应较多宝可梦资料的小字阅读。
+
+星球图标为 64 像素，星级栏扩大后按可见圆形的边界均衡上下空隙。闪光姓名区使用更克制的银白纸纹，将虹彩集中到画窗与边缘。简介与进化按实际文字高度居中，不把末行额外行距计入；特性和身高体重按各自字形高度对齐。

@@ -112,7 +112,7 @@ def _draw_jewel(type_name: str, *, face=None) -> Image.Image:
     result.putdata(data)
     # The inscription face has the reference's straight cuts and sharp endings.
     # This generator is offline; the live path below only reads cached images.
-    face = face or load_card_font(210, "name")
+    face = face or load_card_font(210, "symbol")
     mask = Image.new("L", result.size)
     draw = ImageDraw.Draw(mask)
     draw.text((8, 8), glyph, font=face, anchor="lt", fill=255, stroke_width=1)

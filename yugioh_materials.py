@@ -84,13 +84,13 @@ def _spectrum(phase):
                  for shift in (0, 1 / 3, 2 / 3))
 
 
-def _pearl_wash(base, amount):
+def _pearl_wash(base, amount, *, quiet_title=False):
     """A low-opacity optical tint preserves the reference's white silver base."""
     width, height = base.size
     sw = min(width, 180)
     sh = min(height, max(1, round(sw * height / width)))
     glaze = Image.new("RGB", (sw, sh))
-    values = []
+    values, opacities = [], []
     for y in range(sh):
         v = y / max(1, sh - 1)
         for x in range(sw):
@@ -98,8 +98,15 @@ def _pearl_wash(base, amount):
             # Broad diagonal iridescence bends through the original paper's
             # clouds; the material stays silver-white instead of flat stripes.
             values.append(_spectrum(u * 1.04 - v * .52 + .055*math.sin(v*9 + u*3)))
+            if quiet_title:
+                fade = 1 - math.exp(-((u/.85)**6 + (v/.11)**6))
+                opacities.append(round(255*amount*(.10 + .90*fade)))
     glaze.putdata(values)
     glaze = glaze.resize((width, height), Image.Resampling.BICUBIC)
+    if quiet_title:
+        mask = Image.new('L', (sw, sh))
+        mask.putdata(opacities)
+        return Image.composite(glaze, base.convert('RGB'), mask.resize((width,height), Image.Resampling.BICUBIC))
     return Image.blend(base.convert("RGB"), glaze, amount)
 
 
@@ -164,7 +171,7 @@ def _artwork_field(kind, type_name, width, height):
         # that silver-rainbow light while retaining the reference paper grain
         # and printed rays underneath, rather than a dark coloured sky.
         field = Image.blend(field, _clouds('SHINY', width, height), .18)
-        field = ImageEnhance.Color(_pearl_wash(field, .48)).enhance(1.12)
+        field = ImageEnhance.Color(_pearl_wash(field, .32)).enhance(1.08)
     field = field.convert("RGBA")
     field.alpha_composite(_print_sparkles(kind, width, height))
     return field
@@ -191,11 +198,11 @@ def _material(kind, layer, width, height, type_name):
         # Keep effect boxes light, with compressed cloud contrast for black type.
         base = ImageOps.colorize(gray, *_PAPER[kind])
         if kind == "SHINY":
-            base = _pearl_wash(base, .08)
+            base = _pearl_wash(base, .04)
     elif kind == "SSR":
         base = Image.blend(base, Image.new("RGB", base.size, (7, 11, 13)), .27)
     elif kind == "SHINY":
-        base = _pearl_wash(base, .33)
+        base = _pearl_wash(base, .20, quiet_title=True)
     return base.convert("RGBA")
 
 

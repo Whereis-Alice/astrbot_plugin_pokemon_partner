@@ -161,7 +161,7 @@ def _outer_frame(base: Image.Image, kind: str):
 
 
 def _rarity_star(base: Image.Image, x: int, y: int, kind: str):
-    base.alpha_composite(render_level_star(46), (x, y))
+    base.alpha_composite(render_level_star(64), (x, y))
 
 
 def _portrait(base: Image.Image, item: DrawItem, loader: Callable | None, box):
@@ -314,6 +314,8 @@ def _descriptor(base, item, types, kind, missing):
         base.alpha_composite(render_attribute_icon(type_name, 29), (x+2, 1148))
         x += 34
     _text(draw, min(x, 965), 1150, '】', size, ink, font=_title_font(size))
+    return max(1150 + _title_font(size).getbbox(prefix+'】', anchor='lt')[3],
+               1177 if immunities else 0)
 
 
 def _quiet_rail(base, top, bottom, kind):
@@ -321,9 +323,9 @@ def _quiet_rail(base, top, bottom, kind):
     if kind not in {'C', 'R', 'SR'}:
         return
     if kind == 'C':
-        color, opacity = ((247, 220, 188), 100) if top > 1550 else ((237, 202, 165), 65)
+        color, opacity = ((247, 220, 188), 100) if top > 1550 else ((237, 202, 165), 80)
     else:
-        color, opacity = (27, 9, 33), 84 if kind == 'SR' else 40
+        color, opacity = (27, 9, 33), 103 if kind == 'SR' else 40
     margin = 12
     height = bottom-top+margin*2
     strip = Image.new('RGBA', (1, height))
@@ -335,7 +337,7 @@ def _quiet_rail(base, top, bottom, kind):
 
 
 def _data_rail(base, item, kind, missing):
-    _quiet_rail(base, 1070, 1117, kind)
+    _quiet_rail(base, 1082, 1120, kind)
     draw = ImageDraw.Draw(base)
     ink = (253, 242, 233) if kind in {"R", "SR", "SSR"} else (17, 8, 5)
     size = 26
@@ -349,8 +351,11 @@ def _data_rail(base, item, kind, missing):
     left_width = 894 - right_width - (24 if metadata else 0)
     if draw.textlength(text, font=_font(size)) > left_width:
         missing.append("特性：" + ability)
-    _text(draw, 91, 1082, text, size, ink, width=left_width)
-    _text(draw, 988 - right_width, 1082, metadata, size, ink)
+    center = (1080 + 1123) / 2
+    text_y = center - _font(size).getbbox(text, anchor='lt')[3] / 2
+    meta_y = center - _font(size).getbbox(metadata, anchor='lt')[3] / 2
+    _text(draw, 91, text_y, text, size, ink, width=left_width)
+    _text(draw, 988 - right_width, meta_y, metadata, size, ink)
 
 
 def _footer(base, item, kind, missing):
@@ -386,7 +391,8 @@ def _card(item: DrawItem, loader: Callable | None):
     size, lines = _name_layout(draw, item.name)
     name_face = _name_font(size, item.name)
     heights = [name_face.getbbox(line, anchor='lt')[3] for line in lines]
-    text_top = (66 + 147 - sum(heights) - (len(lines)-1)*4) / 2
+    title_center = 97 if kind == 'SHINY' else (66+147)/2
+    text_top = title_center - (sum(heights) + (len(lines)-1)*4) / 2
     title_ink = (252, 236, 216) if kind == "C" else TITLE_INKS[kind]
     for index, line in enumerate(lines):
         y = text_top + sum(heights[:index]) + index * 4
@@ -396,27 +402,27 @@ def _card(item: DrawItem, loader: Callable | None):
             _text(draw, 78, y, line, size, title_ink, font=name_face)
     for index, type_name in enumerate(types):
         x = 925 - (len(types) - index - 1) * 83
-        base.alpha_composite(render_attribute_icon(type_name, 78), (x, 70))
+        base.alpha_composite(render_attribute_icon(type_name, 78), (x, round(title_center-39)))
     stars = {"C": 2, "R": 4, "SR": 6, "SSR": 8, "SHINY": 12}[kind]
     for index in range(stars):
-        _rarity_star(base, 948 - index * 51, 172, kind)
+        _rarity_star(base, 930 - index * 68, 172, kind)
 
     # The supplied picture mould and light field share an actual print texture.
-    paint_frame(base, 'picture', (75, 223, 1005, 1067), kind)
-    art_box = (96, 244, 888, 801)
-    base.alpha_composite(render_art_scene(kind, types[0], 888, 801), (96, 244))
-    _portrait(base, item, loader, (114, 262, 852, 765))
+    paint_frame(base, 'picture', (75, 253, 1005, 1080), kind)
+    art_box = (96, 274, 888, 785)
+    base.alpha_composite(render_art_scene(kind, types[0], 888, 785), (96, 274))
+    _portrait(base, item, loader, (114, 292, 852, 749))
     apply_print_finish(base, art_box, kind)
 
     missing = []
     _data_rail(base, item, kind, missing)
     _reading_frame(base, kind)
-    _descriptor(base, item, types, kind, missing)
+    descriptor_bottom = _descriptor(base, item, types, kind, missing)
     draw = ImageDraw.Draw(base)
     layout = _matchup_layout(draw, item)
     matchup_height = sum(len(rows) * 40 + 4 for _label, rows in layout)
     matchup_top = 1528 - matchup_height
-    y = 1194
+    y = descriptor_bottom + 12
     evolution = "；".join(dict.fromkeys(part.strip() for part in
         _split_top_level(str(item.row.get("evolution") or ""), "；") if part.strip()))
     has_evolution = evolution and evolution not in {item.name, str(item.row.get("name_zh") or "")}
@@ -428,10 +434,12 @@ def _card(item: DrawItem, loader: Callable | None):
     profile_height = len(profile_lines)*37
     evolution_cap = min(2, max(0, (matchup_top-y-profile_height-12)//35)) if has_evolution else 0
     evolution_lines, _ = _wrap(draw, '进化：'+evolution, 26, 894, evolution_cap) if evolution_cap else ((), '')
-    block_height = profile_height + (7 + len(evolution_lines)*35 if evolution_lines else 0)
+    block_height = ((len(profile_lines)-1)*37 + _font(28).getbbox(profile_lines[-1], anchor='lt')[3])
+    if evolution_lines:
+        block_height = profile_height + 7 + (len(evolution_lines)-1)*35 + _font(26).getbbox(evolution_lines[-1], anchor='lt')[3]
     # Keep the paragraph and its evolution together, with balanced top/bottom
     # breathing room even for species with only a brief description.
-    y += max(0, (matchup_top-13-y-block_height)//2)
+    y = descriptor_bottom + max(12, (matchup_top-13-descriptor_bottom-block_height)/2)
     y, _ = _paragraph(draw, profile, y, size=28, cap=cap, ink=ink)
     if has_evolution:
         cap = evolution_cap
@@ -447,7 +455,9 @@ def _card(item: DrawItem, loader: Callable | None):
 
 def _encode(base: Image.Image) -> bytes:
     buf = io.BytesIO()
-    base.convert("RGB").save(buf, "JPEG", quality=94, optimize=True)
+    # Full chroma keeps small coloured type and jewels sharp. Streaming JPEG
+    # avoids libjpeg's optimized-buffer failures with high-quality 4:4:4 data.
+    base.convert("RGB").save(buf, "JPEG", quality=96, subsampling=0, optimize=False)
     return buf.getvalue()
 
 

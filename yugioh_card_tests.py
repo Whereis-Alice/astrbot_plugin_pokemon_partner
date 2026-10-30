@@ -146,9 +146,14 @@ class YugiohCardTests(unittest.TestCase):
         expected = (2, 4, 6, 8, 12)
         original_star = yugioh_cards._rarity_star
         original_composite = Image.Image.alpha_composite
+        original_frame = yugioh_cards.paint_frame
         for (kind, shiny), count in zip(EDITIONS, expected):
             with self.subTest(rarity=kind, shiny=shiny):
-                boxes, drawing_star = [], False
+                boxes, drawing_star, frames = [], False, {}
+
+                def frame(base, name, box, kind):
+                    frames[name] = box
+                    return original_frame(base, name, box, kind)
 
                 def star(*args, **kwargs):
                     nonlocal drawing_star
@@ -167,6 +172,7 @@ class YugiohCardTests(unittest.TestCase):
                     return original_composite(target, source_image, dest=dest, **kwargs)
 
                 with patch.object(yugioh_cards, "_rarity_star", star), \
+                     patch.object(yugioh_cards, "paint_frame", frame), \
                      patch.object(Image.Image, "alpha_composite", composite):
                     image, records = capture_card([self.item("151", kind, shiny)],
                                                   lambda row: portrait())
@@ -174,6 +180,13 @@ class YugiohCardTests(unittest.TestCase):
                 content = [r for r in coalesce_shadows(records) if meaningful(r) and r.value.strip()]
                 rail_top = min(box[1] for box in boxes)
                 rail_bottom = max(box[3] for box in boxes)
+                self.assertGreaterEqual(rail_bottom-rail_top, 60,
+                                        'The larger level orbs should remain readable at preview size')
+                top_gap = rail_top-frames['title'][3]
+                bottom_gap = frames['picture'][1]-rail_bottom
+                self.assertGreaterEqual(min(top_gap, bottom_gap), 12)
+                self.assertLessEqual(abs(top_gap-bottom_gap), 6,
+                                     'Balance the visible space above and below the level orbs')
                 self.assertFalse([record.value for record in content
                                   if record.box[1] < rail_bottom and record.box[3] > rail_top],
                                  "The level rail must contain stars without a written rarity label")
@@ -383,6 +396,11 @@ class YugiohCardTests(unittest.TestCase):
                         self.assertIn(item.row[field], text)
                 self.assertEqual(text.count(f"#{item.dex_raw}"), 1)
                 ability = next(record for record in records if record.value.startswith("特性 "))
+                metadata = next(record for record in records
+                                if record.value == f"{item.row['height']} · {item.row['weight']}")
+                self.assertLessEqual(abs((ability.box[1]+ability.box[3])/2-
+                                         (metadata.box[1]+metadata.box[3])/2), 1,
+                                     'CJK ability text and Latin measurements need the same visual centre')
                 descriptor = next(record for record in records
                                   if record.value.startswith("【") and item.row["category"] in record.value)
                 combat = next(record for record in records if record.value.startswith("ATK /"))
@@ -505,6 +523,12 @@ class YugiohCardTests(unittest.TestCase):
 
                 prefix = next(record for record in body if record.value.startswith("【"))
                 close = next(record for record in body if record.value == "】")
+                separator = max(rule[1] for rule in rules if rule[1] < resist.box[1])
+                descriptor_bottom = max(prefix.box[3], close.box[3],
+                                        max((box[3] for box in icon_boxes), default=0))
+                self.assertLessEqual(abs(profile.box[1]-descriptor_bottom -
+                                         (separator-evolution.box[3])), 2,
+                                     'Centre the actual paragraph ink, excluding its trailing line spacing')
                 self.assertLessEqual(close.box[2], image.width - 76)
                 if long_category:
                     self.assertIn("…", prefix.value)

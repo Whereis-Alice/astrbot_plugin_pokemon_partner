@@ -17,21 +17,25 @@ from PIL import Image, ImageDraw, ImageFilter
 try:
     from .battle_engine import calc_stats
     from .card_renderer import load_font, TYPE_COLORS
+    from .tcg_symbols import render_energy_icon
+    from .battle_card_style import arena_stock, report_stock, section_rule, hp_track
 except ImportError:
     from battle_engine import calc_stats
     from card_renderer import load_font, TYPE_COLORS
+    from tcg_symbols import render_energy_icon
+    from battle_card_style import arena_stock, report_stock, section_rule, hp_track
 
 WIDTH = 1200
 # JPEG dimensions must remain below 65500. Measure before allocating a canvas;
 # excessive external snapshots fail explicitly rather than lose any content.
 MAX_HEIGHT = 60000
 PAD = 54
-BG = (13, 22, 38)
-PANEL = (23, 35, 54)
-BORDER = (43, 60, 81)
+BG = (15, 28, 39)
+PANEL = (21, 35, 47)
+BORDER = (46, 66, 82)
 TEXT = (245, 248, 250)
 MUTED = (177, 192, 208)
-FAINT = (129, 152, 175)
+FAINT = (161, 182, 200)
 GOLD = (255, 212, 115)
 MINT = (126, 225, 183)
 
@@ -56,6 +60,7 @@ class _Block:
     title: str
     lines: tuple[_Line, ...]
     accent: tuple[int, int, int] = MINT
+    type_name: str | None = None
 
 
 def _blend(a, b, ratio):
@@ -69,6 +74,7 @@ def _color(row: dict):
 
 def _wrap(draw, text: str, size: int, width: int) -> list[str]:
     font = _font(size)
+    closing = "，。；：、！？）】〉》」』,.;:!?)]}"
     output, current = [], ""
     for char in str(text):
         if char == "\n":
@@ -76,16 +82,23 @@ def _wrap(draw, text: str, size: int, width: int) -> list[str]:
             current = ""
         elif current and draw.textlength(current + char, font=font) > width:
             tail = re.search(r"[A-Za-z0-9_./%]+$", current) if char.isascii() else None
-            if (
+            if char in closing and len(current) > 1:
+                split = len(current) - 1
+                while split > 0 and (current[split] in closing or current[split].isspace()):
+                    split -= 1
+                if split:
+                    output.append(current[:split])
+                    current = current[split:] + char
+                else:
+                    output.append(current)
+                    current = char
+            elif (
                 tail
                 and tail.start() > 0
                 and draw.textlength(tail.group() + char, font=font) <= width
             ):
                 output.append(current[: tail.start()])
                 current = tail.group() + char
-            elif char in "，。；：、！？）】〉》」』" and len(current) > 1:
-                output.append(current[:-1])
-                current = current[-1] + char
             else:
                 output.append(current)
                 current = char
@@ -145,29 +158,18 @@ def _ball(draw, cx, cy, radius, color, width=2):
 
 
 def _base(height: int, accents=None):
-    canvas = Image.new("RGB", (WIDTH, height), BG)
-    if accents:
-        light = Image.new("RGBA", canvas.size)
-        d = ImageDraw.Draw(light)
-        for cx, cy, color in accents:
-            d.ellipse([cx - 250, cy - 250, cx + 250, cy + 250], fill=(*color, 45))
-        canvas = Image.alpha_composite(
-            canvas.convert("RGBA"), light.filter(ImageFilter.GaussianBlur(100))
-        ).convert("RGB")
+    canvas = arena_stock(WIDTH, height, accents) if accents else report_stock(WIDTH, height)
     draw = ImageDraw.Draw(canvas)
-    draw.rounded_rectangle(
-        [18, 18, WIDTH - 18, height - 18], radius=26, outline=BORDER, width=2
-    )
     return canvas, draw
 
 
 def _header(draw, title, eyebrow, seed):
     _ball(draw, PAD + 16, 62, 16, MINT, 2)
-    _text(draw, (PAD + 46, 45), "POKÉMON / BATTLE REPORT", 22, MINT)
+    _text(draw, (PAD + 46, 45), "POKÉMON  /  ARENA ARCHIVE", 22, MINT)
     _text(draw, (WIDTH - PAD - 230, 48), f"SEED {seed}", 20, FAINT)
     _text(draw, (PAD, 103), title, 44)
     _text(draw, (PAD, 162), eyebrow, 24, MUTED)
-    draw.line([PAD, 207, WIDTH - PAD, 207], fill=BORDER, width=2)
+    section_rule(draw, PAD, 207, WIDTH-2*PAD, MINT)
 
 
 def _load_art(loader: ImageLoader | None, row: dict):
@@ -186,22 +188,19 @@ def _load_art(loader: ImageLoader | None, row: dict):
 
 
 def _art(canvas, draw, row, loader, center, top, side, color):
-    _ball(draw, center, top + side // 2, side // 2 - 12, _blend(BORDER, color, 0.3), 3)
-    draw.arc(
-        [center - side // 2, top, center + side // 2, top + side],
-        204,
-        322,
-        fill=color,
-        width=7,
-    )
+    draw.arc([center-side//2, top+15, center+side//2, top+side-15],
+             203, 280, fill=_blend(BORDER,color,.60), width=2)
     art = _load_art(loader, row)
     if art is None:
         _ball(draw, center, top + side // 2, 90, _blend(BORDER, color, 0.7), 6)
         _text(draw, (center - 104, top + side - 60), "立绘暂未缓存", 26, FAINT)
         return
     bbox = art.getbbox()
-    if bbox:
-        art = art.crop(bbox)
+    if not bbox:
+        _ball(draw, center, top + side // 2, 90, _blend(BORDER, color, 0.7), 6)
+        _text(draw, (center - 104, top + side - 60), "立绘暂未缓存", 26, FAINT)
+        return
+    art = art.crop(bbox)
     art.thumbnail((side - 30, side - 20), Image.Resampling.LANCZOS)
     x, y = center - art.width // 2, top + (side - art.height) // 2
     silhouette = Image.new("RGBA", art.size, (*color, 0))
@@ -254,13 +253,14 @@ def _poster(battle, loader):
     canvas, draw = _base(1420, [(250, 420, colors[0]), (950, 420, colors[1])])
     _header(
         draw,
-        "宝可梦对战",
-        f"Lv.{battle['level']}  ·  {result['turns']} 回合  ·  完整对战过程",
+        "宝可梦挑战" if battle.get("trainer_names") else "宝可梦对战",
+        f"Lv.{battle['level']}  /  {result['turns']} 回合  /  对阵与最终战况",
         battle["seed"],
     )
-    draw.polygon([(580, 245), (632, 245), (585, 697), (544, 697)], fill=(35, 49, 67))
+    draw.line((598, 731, 598, 1110), fill=BORDER, width=1)
     centers = (300, 900)
     for index, (row, color, center) in enumerate(zip(rows, colors, centers)):
+        label_color = _blend(color, TEXT, .30)
         art_row = dict(row)
         art_row.pop("_artwork_shiny", None)
         if _owned_shiny(battle, index):
@@ -273,38 +273,40 @@ def _poster(battle, loader):
             else f"CHALLENGER {index + 1:02d}"
         )
         _text(
-            draw, (center - 220, 703), _single_line(draw, trainer, 22, 440), 22, color
+            draw, (center - 220, 703), _single_line(draw, trainer, 24, 440), 24, label_color
         )
+        section_rule(draw, center-220, 733, 440, color)
         setup = result["setup"][index]
         size, names = _fitted(draw, _display_name(row, setup["name"]), 440)
         y = 741
         for line in names:
             _text(draw, (center - 220, y), line, size)
             y += size + 7
-        kind = (row.get("types") or "属性未收录") + (
-            "  /  闪光个体" if _owned_shiny(battle, index) else ""
-        )
-        _text(draw, (center - 220, 875), kind, 26, color)
+        x = center - 220
+        types = [kind for kind in str(row.get("types") or "").split("/") if kind]
+        for kind in types:
+            icon = render_energy_icon(kind, 31)
+            canvas.paste(icon, (x, 875), icon)
+            x += 40
+        kind = f"Lv.{battle['level']}" + ("  ·  闪光个体" if _owned_shiny(battle, index) else "")
+        if not types:
+            kind = "属性未收录  /  " + kind
+        _text(draw, (x + 4, 878), kind, 25, label_color)
         final = result["final"][setup["name"]]
         _text(draw, (center - 220, 927), f"HP {final['hp']} / {final['max']}", 31)
-        _text(draw, (center + 129, 930), f"{final['pct']}%", 26, color)
-        draw.rounded_rectangle(
-            [center - 220, 974, center + 220, 988], radius=7, fill=BORDER
-        )
+        _text(draw, (center + 129, 930), f"{final['pct']}%", 26, label_color)
         pct = max(0, min(1, final["hp"] / max(1, final["max"])))
-        if pct:
-            draw.rounded_rectangle(
-                [center - 220, 974, center - 220 + 440 * pct, 988], radius=7, fill=color
-            )
+        hp_track(draw, (center-216, 974, center+220, 990), pct,
+                 color if pct>.25 else (246, 148, 122))
         label = "倒下" if final.get("fainted") else final.get("status") or "战斗结束"
         _text(draw, (center - 220, 1005), label, 24, MUTED)
         stats = setup.get("stats") or _stats(row, battle["level"])
         for n, key in enumerate(("攻击", "防御", "特攻", "特防", "速度")):
             sx = center - 220 + (n % 3) * 150
             sy = 1055 + (n // 3) * 42
-            _text(draw, (sx, sy), f"{key} {stats.get(key, '—')}", 23, MUTED)
-    draw.ellipse([548, 420, 652, 524], fill=(19, 29, 45), outline=BORDER, width=2)
-    _text(draw, (559, 444), "VS", 51, GOLD)
+            _text(draw, (sx, sy), f"{key} {stats.get(key, '—')}", 25, MUTED)
+    draw.polygon(((598, 406),(656,457),(598,515),(540,457)), fill=(12,24,35), outline=(149,179,188), width=2)
+    _text(draw, (556, 434), "VS", 52, GOLD)
     win = result["winner"]
     winner_name = next(
         (
@@ -315,13 +317,10 @@ def _poster(battle, loader):
         win,
     )
     banner_color = GOLD if win == "平局" else MINT
-    draw.rounded_rectangle(
-        [PAD, 1174, WIDTH - PAD, 1313],
-        radius=22,
-        fill=(28, 44, 58),
-        outline=_blend(BORDER, banner_color, 0.6),
-        width=2,
-    )
+    draw.polygon(((PAD,1187),(PAD+15,1174),(WIDTH-PAD,1174),
+                  (WIDTH-PAD,1300),(WIDTH-PAD-15,1313),(PAD,1313)),
+                 fill=(22,40,50), outline=_blend(BORDER,banner_color,.6), width=2)
+    draw.line((PAD+1,1177,PAD+255,1177),fill=banner_color,width=3)
     _text(
         draw,
         (PAD + 26, 1195),
@@ -344,8 +343,8 @@ def _poster(battle, loader):
     _text(
         draw,
         (PAD, 1338),
-        "31 个体 · 0 努力 · 中性性格  /  后续卡片查看配招与回合记录",
-        23,
+        "31 个体 · 0 努力 · 中性性格  /  后续查看完整配招与对战过程",
+        24,
         FAINT,
     )
     return canvas
@@ -360,7 +359,7 @@ class _MeasuredBlock:
 
 
 def _measure_block(draw, block: _Block, width: int) -> _MeasuredBlock:
-    headings = tuple(_wrap(draw, block.title, 30, width))
+    headings = tuple(_wrap(draw, block.title, 30, width - (43 if block.type_name else 0)))
     lines = tuple(
         _Line(text, item.size, item.color, item.gap)
         for item in block.lines
@@ -378,7 +377,7 @@ def _content_image(battle, title, eyebrow, rows):
     layouts = []
     for row in rows:
         columns = len(row)
-        column_width = (WIDTH - 2 * PAD - (columns - 1) * 24) // columns
+        column_width = (WIDTH - 2 * PAD - (columns - 1) * 24 - (18 if columns == 1 else 0)) // columns
         cells = tuple(
             _measure_block(measure, block, column_width - 48)
             if block is not None
@@ -396,28 +395,37 @@ def _content_image(battle, title, eyebrow, rows):
     _header(draw, title, eyebrow, battle["seed"])
     y = 240
     for cells, column_width, row_height in layouts:
+        single = len(cells) == 1
+        if single:
+            draw.line((PAD,y+5,PAD,y+row_height+20),fill=BORDER,width=2)
+            draw.ellipse((PAD-5,y+26,PAD+5,y+36),fill=cells[0].block.accent)
         for column, cell in enumerate(cells):
             if cell is None:
                 continue
-            x = PAD + column * (column_width + 24)
+            x = PAD + (18 if single else 0) + column * (column_width + 24)
             accent = cell.block.accent
-            fill = _blend(PANEL, accent, 0.04)
-            draw.rounded_rectangle(
-                [x, y, x + column_width, y + row_height],
-                radius=18,
-                fill=fill,
-                outline=_blend(BORDER, accent, 0.16),
-                width=1,
-            )
-            draw.rounded_rectangle([x, y + 20, x + 5, y + 56], radius=2, fill=accent)
+            # Numbered report sections sit on continuous printed stock, rather
+            # than a stack of large rounded application panels.
+            section_rule(draw, x, y, column_width, accent)
+            band_end = y + 22 + len(cell.headings)*39 + 7
+            draw.polygon(((x,y+3),(x+column_width,y+3),
+                          (x+column_width-12,band_end),(x,band_end)),
+                         fill=_blend(BG,accent,.08))
             ty = y + 22
+            inset = 0
+            if cell.block.type_name:
+                icon = render_energy_icon(cell.block.type_name, 32)
+                canvas.paste(icon,(x+23,ty-1),icon)
+                inset = 43
             for heading in cell.headings:
-                _text(draw, (x + 24, ty), heading, 30, accent)
+                _text(draw, (x + 24 + inset, ty), heading, 30, accent)
                 ty += 39
             ty += 15
             for line in cell.lines:
                 _text(draw, (x + 24, ty), line.text, line.size, line.color)
                 ty += line.size + line.gap
+            if not single:
+                draw.line((x+column_width,y+90,x+column_width,y+row_height-10),fill=BORDER,width=1)
         y += row_height + 20
     return canvas
 
@@ -429,7 +437,7 @@ def _move_image(battle):
     for index, (setup, row) in enumerate(
         zip(result["setup"], (battle["row1"], battle["row2"]))
     ):
-        accent = _blend(_color(row), TEXT, 0.12)
+        accent = _blend(_color(row), TEXT, .30)
         if index == 1 and _color(battle["row1"]) == _color(row):
             accent = _blend(accent, (174, 158, 247), 0.45)
         side = "甲方" if index == 0 else "乙方"
@@ -464,19 +472,20 @@ def _move_image(battle):
             )
         ]
         for number, move in enumerate(setup.get("moves", []), 1):
+            move_accent = _blend(TYPE_COLORS.get(move.get("type"), (122, 178, 191)), TEXT, .47)
             accuracy = (
                 "必定命中"
                 if move.get("accuracy") is None
-                else f"命中 {move['accuracy']}%"
+                else f"命中{move['accuracy']}%"
             )
             blocks.append(
                 _Block(
                     f"{number:02d}  {move['name']}",
                     (
                         _Line(
-                            f"{move.get('type') or '无属性'} · {move.get('category') or '未知'}   /   威力 {move.get('power') or '—'}   /   {accuracy}   /   PP {move.get('pp', '—')}",
-                            25,
-                            accent,
+                            f"{move.get('category') or '未知'} / 威力{move.get('power') or '—'} / {accuracy} / PP{move.get('pp', '—')}",
+                            24,
+                            move_accent,
                         ),
                         _Line(
                             "模拟效果：" + str(move.get("effects") or "未实现的效果"),
@@ -490,7 +499,8 @@ def _move_image(battle):
                             MUTED,
                         ),
                     ),
-                    accent,
+                    move_accent,
+                    str(move.get("type") or "一般"),
                 )
             )
         if not setup.get("moves"):
@@ -525,11 +535,16 @@ def _turn_image(battle):
                 or "解冻" in event
                 or "醒来" in event
             )
+            color = FAINT if decision else TEXT if main else MUTED
+            if not decision and any(word in event for word in ("灼伤", "中毒", "剧毒", "麻痹", "冰冻", "睡眠", "倒下")):
+                color = (249, 183, 154)
+            elif not decision and any(word in event for word in ("回复", "恢复", "吸取", "醒来", "解冻")):
+                color = MINT
             lines.append(
                 _Line(
                     event,
                     24 if decision else 26,
-                    FAINT if decision else TEXT if main else MUTED,
+                    color,
                 )
             )
         blocks.append(
@@ -605,7 +620,7 @@ def render_battle_cards(
                 FAINT,
             )
             stream = io.BytesIO()
-            image.save(stream, "JPEG", quality=92, optimize=image.height <= 8000)
+            image.save(stream, "JPEG", quality=92, subsampling=0, optimize=False)
             encoded.append(stream.getvalue())
         finally:
             image.close()

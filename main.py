@@ -198,7 +198,7 @@ def nature_table_text() -> str:
     PLUGIN_ID,
     "Whereis-Alice",
     "宝可梦图鉴：抽卡收藏 + 中文图鉴查询 + 对战分析 + 冠军赛数据",
-    "v1.3.9",
+    "v1.3.10",
 )
 class PokemonPartnerPlugin(Star):
     def __init__(self, context: Context, config: AstrBotConfig = None):
@@ -1555,22 +1555,9 @@ class PokemonPartnerPlugin(Star):
         except Exception as exc:
             logger.warning(f"[{PLUGIN_ID}] 对战立绘预取失败，使用现有素材: {exc}")
 
-        def load(row: dict):
-            # 默认形态缓存不能冒充 Mega/地区形态的立绘。
-            if row.get("form_name"):
-                if not artwork.images_dir:
-                    return None
-                shiny = row.get("_artwork_shiny") is True
-                exact = self.db.find_image(row, artwork.images_dir, shiny=True) if shiny else self.db.find_image(row, artwork.images_dir)
-                if not exact and shiny:
-                    normal_row = dict(row)
-                    normal_row.pop("_artwork_shiny", None)
-                    exact = self.db.find_image(normal_row, artwork.images_dir)
-                if not exact:
-                    return None
-            return artwork.load(row)
-
-        return await asyncio.to_thread(render_battle_cards, battle, image_loader=load)
+        # ArtworkCache resolves exact normal/shiny forms in both the configured
+        # image folder and the downloaded cache, without borrowing base forms.
+        return await asyncio.to_thread(render_battle_cards, battle, image_loader=artwork.load)
 
     async def _send_battle_report(self, event: AstrMessageEvent, battle: dict, *, mode: str | None = None) -> AsyncIterator[object]:
         """同一对局生成战报；图片转发失败复用普通图片，图片失败保留全回合文本。"""
