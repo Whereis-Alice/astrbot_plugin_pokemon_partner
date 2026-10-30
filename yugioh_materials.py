@@ -12,7 +12,7 @@ from functools import lru_cache
 from pathlib import Path
 import random
 
-from PIL import Image, ImageDraw, ImageOps
+from PIL import Image, ImageDraw, ImageOps, ImageEnhance
 
 try:
     from .tcg_symbols import TYPE_COLORS
@@ -95,71 +95,87 @@ def _pearl_wash(base, amount):
         v = y / max(1, sh - 1)
         for x in range(sw):
             u = x / max(1, sw - 1)
-            values.append(_spectrum(u * .83 - v * .37))
+            # Broad diagonal iridescence bends through the original paper's
+            # clouds; the material stays silver-white instead of flat stripes.
+            values.append(_spectrum(u * 1.04 - v * .52 + .055*math.sin(v*9 + u*3)))
     glaze.putdata(values)
     glaze = glaze.resize((width, height), Image.Resampling.BICUBIC)
     return Image.blend(base.convert("RGB"), glaze, amount)
 
 
+@lru_cache(maxsize=2)
+def _illustration_light(optical=False):
+    # Bare light rays cropped from the supplied C reference; no character or
+    # text is present. These retain the source's fine painted/printed texture.
+    with Image.open(_ASSETS / ("optical-light.jpg" if optical else "illustration-light.jpg")) as image:
+        return image.convert("RGB")
+
+
+@lru_cache(maxsize=10)
+def _print_sparkles(kind, width, height):
+    image = Image.new("RGBA", (width, height))
+    if kind not in {"SR", "SSR", "SHINY"}:
+        return image
+    rng = random.Random(_SEEDS[kind])
+    draw = ImageDraw.Draw(image)
+    count = {"SR": 190, "SSR": 290, "SHINY": 3800}[kind]
+    for index in range(count):
+        x, y = rng.randrange(width), rng.randrange(height)
+        phase = (x / width + y / height * .37)
+        band = .5 + .5 * math.sin(phase * 24)
+        if kind == "SHINY" and rng.random() > .18 + band * .82:
+            continue
+        hue=phase+rng.uniform(-.11,.11)
+        colour = tuple(round(153+102*math.cos(math.tau*(hue-shift))) for shift in (0,1/3,2/3)) if kind == "SHINY" else (248, 220, 158)
+        opacity = rng.randint(38, 165)
+        length = rng.choice((1, 1, 1, 2, 2, 3))
+        if length == 1:
+            draw.point((x,y),fill=(*colour,opacity))
+        else:
+            draw.polygon(((x,y),(x+length,y-1),(x+length+1,y+1),(x+1,y+2)),fill=(*colour,opacity))
+        if index % 137 == 0:
+            draw.line((x-3,y,x+3,y),fill=(*colour,190),width=1)
+            draw.line((x,y-3,x,y+3),fill=(*colour,190),width=1)
+    return image
+
+
 def _artwork_field(kind, type_name, width, height):
-    """Soft picture-window depth, with the portrait centre kept clear."""
-    source_kind = "C" if kind == "SSR" else kind
-    source = ImageOps.autocontrast(ImageOps.grayscale(_clouds(source_kind, width, height)), cutoff=1)
-    source = Image.blend(source, Image.new("L", source.size, 128), .43)
-    tc = TYPE_COLORS[type_name]
-    darks = {
-        "C": _mix((74, 91, 74), tc, .10),
-        "R": _mix((48, 43, 87), tc, .14),
-        "SR": _mix((42, 50, 83), tc, .18),
-        "SSR": _mix((14, 29, 38), tc, .09),
-        "SHINY": _mix((63, 75, 113), tc, .12),
-    }
-    lights = {
-        "C": _mix((238, 225, 185), tc, .13),
-        "R": _mix((207, 205, 230), tc, .18),
-        "SR": _mix((205, 218, 235), tc, .15),
-        "SSR": _mix((198, 191, 133), tc, .08),
-        "SHINY": _mix((243, 233, 246), tc, .10),
-    }
-    dark, light = darks[kind], lights[kind]
-    field = ImageOps.colorize(source, _mix(dark, light, .14), _mix(dark, light, .55))
-    sw = min(width, 192)
-    sh = min(height, max(1, round(sw * height / width)))
-    glow = Image.new("L", (sw, sh))
-    values = []
-    for y in range(sh):
-        v = y / max(1, sh - 1)
-        for x in range(sw):
-            u = x / max(1, sw - 1)
-            halo = math.exp(-(((u - .46) / .48) ** 2 + ((v - .43) / .58) ** 2) * 1.8)
-            mist = math.exp(-((v - .86 + .035 * math.sin(u * 8)) / .17) ** 2)
-            values.append(round(halo * 145 + mist * 19))
-    glow.putdata(values)
-    glow = glow.resize((width, height), Image.Resampling.BICUBIC)
-    field = Image.composite(Image.new("RGB", field.size, light), field, glow)
+    """Printed illumination with depth and fine reflection instead of fog."""
+    source = _illustration_light(kind == "R")
+    if kind == "SR":
+        source=source.transpose(Image.Transpose.ROTATE_90)
+    source = source.resize((width, height), Image.Resampling.LANCZOS)
+    luminance = ImageOps.grayscale(source)
+    dark, light = {
+        "C": ((28, 57, 39), (234, 220, 151)),
+        "R": ((13, 21, 66), (149, 211, 248)),
+        "SR": ((35, 26, 78), (226, 229, 255)),
+        "SSR": ((4, 10, 17), (218, 191, 112)),
+        "SHINY": ((129, 146, 170), (229, 239, 233)),
+    }[kind]
+    if kind == "C":
+        dark = _mix(dark, TYPE_COLORS[type_name], .10)
+    field = ImageOps.colorize(luminance, dark, light)
+    if kind == "SSR":
+        field = ImageEnhance.Brightness(field).enhance(.80)
+        field = Image.blend(_clouds('SSR',width,height),field,.72)
     if kind == "SHINY":
-        field = _pearl_wash(field, .12)
+        # The supplied early preview uses broad pastel foil reflections. Keep
+        # that silver-rainbow light while retaining the reference paper grain
+        # and printed rays underneath, rather than a dark coloured sky.
+        field = Image.blend(field, _clouds('SHINY', width, height), .18)
+        field = ImageEnhance.Color(_pearl_wash(field, .48)).enhance(1.12)
     field = field.convert("RGBA")
-    # Fine, irregular foil glints only occupy the open portrait margins.
-    if kind in {"SR", "SSR", "SHINY"}:
-        rng = random.Random(_SEEDS[kind] + sum(map(ord, type_name)))
-        overlay = Image.new("RGBA", field.size)
-        draw = ImageDraw.Draw(overlay)
-        scale = width / 900
-        for index in range(95 if kind == "SHINY" else 35):
-            x, y = rng.random() * width, rng.random() * height
-            if .24 * width < x < .76 * width and .13 * height < y < .88 * height:
-                continue
-            color = _spectrum(rng.random()) if kind == "SHINY" else (241, 222, 167)
-            radius = max(.4, rng.uniform(.4, 1.5) * scale)
-            draw.ellipse((x-radius, y-radius, x+radius, y+radius),
-                         fill=(*color, rng.randint(75, 165)))
-            if index % 11 == 0:
-                arm = max(1, 3 * scale)
-                draw.line((x-arm, y, x+arm, y), fill=(*color, 118), width=1)
-                draw.line((x, y-arm, x, y+arm), fill=(*color, 118), width=1)
-        field.alpha_composite(overlay)
+    field.alpha_composite(_print_sparkles(kind, width, height))
     return field
+
+
+def apply_print_finish(base, box, kind):
+    """A light common varnish joins the portrait to the illustration's foil."""
+    x, y, width, height = map(round, box)
+    layer = _print_sparkles(kind, width, height).copy()
+    layer.putalpha(layer.getchannel("A").point(lambda value: round(value * .18)))
+    base.alpha_composite(layer, (x, y))
 
 
 @lru_cache(maxsize=15)
@@ -171,15 +187,15 @@ def _material(kind, layer, width, height, type_name):
         if kind == "SSR":
             base = _clouds("C", width, height)
         gray = ImageOps.autocontrast(ImageOps.grayscale(base), cutoff=2)
-        gray = Image.blend(gray, Image.new("L", gray.size, 128), .48)
+        gray = Image.blend(gray, Image.new("L", gray.size, 128), .26)
         # Keep effect boxes light, with compressed cloud contrast for black type.
         base = ImageOps.colorize(gray, *_PAPER[kind])
         if kind == "SHINY":
-            base = _pearl_wash(base, .035)
+            base = _pearl_wash(base, .08)
     elif kind == "SSR":
         base = Image.blend(base, Image.new("RGB", base.size, (7, 11, 13)), .27)
     elif kind == "SHINY":
-        base = _pearl_wash(base, .135)
+        base = _pearl_wash(base, .33)
     return base.convert("RGBA")
 
 

@@ -19,15 +19,19 @@ try:
     from .card_matchups import matchup_groups, TYPE_ORDER
     from .gacha import DrawItem
     from .yugioh_symbols import render_attribute_icon, render_level_star
-    from .yugioh_materials import render_stock, render_art_scene, render_reading_stock
+    from .yugioh_materials import render_stock, render_art_scene, render_reading_stock, apply_print_finish
     from .yugioh_fonts import load_card_font
+    from .yugioh_foil import render_foil_name
+    from .yugioh_frames import paint_frame
 except ImportError:
     from card_renderer import _split_top_level
     from card_matchups import matchup_groups, TYPE_ORDER
     from gacha import DrawItem
     from yugioh_symbols import render_attribute_icon, render_level_star
-    from yugioh_materials import render_stock, render_art_scene, render_reading_stock
+    from yugioh_materials import render_stock, render_art_scene, render_reading_stock, apply_print_finish
     from yugioh_fonts import load_card_font
+    from yugioh_foil import render_foil_name
+    from yugioh_frames import paint_frame
 
 
 CARD_W, CARD_H = 1080, 1680
@@ -62,6 +66,11 @@ def _title_font(size: int):
     return load_card_font(size, "title")
 
 
+@lru_cache(maxsize=48)
+def _name_font(size: int, text: str = ""):
+    return load_card_font(size, "name", text=text)
+
+
 def _kind(item: DrawItem) -> str:
     return "SHINY" if item.shiny else item.rarity if item.rarity in INKS else "C"
 
@@ -86,6 +95,7 @@ def _text(draw, x, y, value, size=26, fill=(49, 33, 17), *, bold=False, width=No
             text = text[:-2] + "…" if len(text) > 2 else ""
     draw.text((round(x), round(y)), text, font=face, anchor="lt", fill=fill,
               stroke_width=1 if bold else 0, stroke_fill=fill)
+    return text
 
 
 def _wrap(draw, value: str, size: int, width: int, limit: int | None = None, *, font=None):
@@ -147,12 +157,7 @@ def _bevel(draw, box, kind: str, thickness=8, *, recessed=False):
 
 
 def _outer_frame(base: Image.Image, kind: str):
-    draw = ImageDraw.Draw(base)
-    # A narrow charcoal edge and cut-paper bevel match the supplied cards.
-    draw.rectangle((0, 0, CARD_W - 1, CARD_H - 1), outline=(43, 43, 47), width=18)
-    dark, _, light = METALS[kind]
-    draw.line((19, CARD_H - 20, 19, 19, CARD_W - 20, 19), fill=light, width=2)
-    draw.line((CARD_W - 20, 19, CARD_W - 20, CARD_H - 20, 19, CARD_H - 20), fill=dark, width=3)
+    paint_frame(base, 'outer', (0, 0, CARD_W, CARD_H), kind)
 
 
 def _rarity_star(base: Image.Image, x: int, y: int, kind: str):
@@ -191,25 +196,18 @@ def _portrait(base: Image.Image, item: DrawItem, loader: Callable | None, box):
     alpha = Image.new("L", (art.width + padding * 2, art.height + padding * 2))
     alpha.paste(art.getchannel("A"), (padding, padding))
     shadow = Image.new("RGBA", alpha.size, (12, 15, 22, 0))
-    shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(8)).point(lambda a: round(a * .44)))
-    base.alpha_composite(shadow, (tx - padding + 5, ty - padding + 10))
-    kind = _kind(item)
-    if kind in {"SR", "SSR", "SHINY"}:
-        color = (188, 222, 241, 0) if kind == "SR" else (238, 206, 133, 0) if kind == "SSR" else (237, 244, 255, 0)
-        strength = .32 if kind == "SR" else .28 if kind == "SSR" else .74
-        rim = Image.new("RGBA", alpha.size, color)
-        rim.putalpha(alpha.filter(ImageFilter.MaxFilter(5)).point(lambda a: round(a * strength)))
-        base.alpha_composite(rim, (tx - padding, ty - padding))
+    shadow.putalpha(alpha.filter(ImageFilter.GaussianBlur(2)).point(lambda a: round(a * .12)))
+    base.alpha_composite(shadow, (tx - padding + 1, ty - padding + 2))
     base.alpha_composite(art, (tx, ty))
 
 
 def _name_layout(draw, name: str):
     for size in range(66, 35, -2):
-        if draw.textlength(name, font=_title_font(size)) <= 748:
+        if draw.textlength(name, font=_name_font(size, name)) <= 748:
             return size, (name,)
     for size in range(38, 27, -2):
         # Long names keep the same title face at every size and on both lines.
-        lines, rest = _wrap(draw, name, size, 748, 2, font=_title_font(size))
+        lines, rest = _wrap(draw, name, size, 748, 2, font=_name_font(size, name))
         if not rest:
             return size, lines
     raise ValueError("完整宝可梦名称超出卡片的标题空间，请使用文本。")
@@ -219,7 +217,7 @@ def _matchup_layout(draw, item: DrawItem):
     layout = []
     types = _types(item)
     groups = matchup_groups(item.row, types) if types != ("未知",) else None
-    for key, label in (("weak", "弱点"), ("resist", "抗性"), ("immune", "免疫")):
+    for key, label in (("resist", "抗性"), ("weak", "弱点")):
         if groups is None:
             layout.append((label, (None,)))
             continue
@@ -228,7 +226,8 @@ def _matchup_layout(draw, item: DrawItem):
         for name, multiplier in entries:
             text = f"×{multiplier:g}"
             width = 41 + round(draw.textlength(text, font=_font(26))) + 18
-            if current and used + width > 806:
+            available = 635 if key == "weak" else 806
+            if current and used + width > available:
                 rows.append(tuple(current))
                 current, used = [], 0
             current.append((name, text, width))
@@ -238,7 +237,7 @@ def _matchup_layout(draw, item: DrawItem):
     return tuple(layout)
 
 
-def _matchups(base, layout, top, kind):
+def _matchups(base, layout, top, kind, total):
     draw = ImageDraw.Draw(base)
     ink, muted, rule = INKS[kind]
     y = top
@@ -257,129 +256,88 @@ def _matchups(base, layout, top, kind):
                 _text(draw, x + 41, yy + 5, text, 26, ink)
                 x += width
         y += len(rows) * 40 + 4
+    total_text = f"总和 {total}"
+    # Align the bottom-right number with the end of the ATK/DEF rule.
+    _text(draw, 988 - draw.textlength(total_text, font=_font(25)), 1511,
+          total_text, 25, ink)
 
 
 def _stats_band(base, item, kind):
     draw = ImageDraw.Draw(base)
     ink, muted, rule = INKS[kind]
     stats = _stats(item)
-    draw.line((91, 1509, 989, 1509), fill=rule, width=1)
+    center_y = 1566
     for index, name in enumerate(("HP", "特攻", "特防", "速度")):
-        x = 93 + index * 175
-        _text(draw, x, 1524, f"{name} {stats.get(name, '—')}", 26, ink)
-    _text(draw, 795, 1524, f"总和 {item.bst}", 26, ink)
-    draw.line((91, 1563, 989, 1563), fill=rule, width=2)
+        x = 93 + index * 119
+        text = f"{name} {stats.get(name, '—')}"
+        height = _font(24).getbbox(text, anchor="lt")[3]
+        _text(draw, x, center_y - height / 2, text, 24, muted)
+    draw.line((91, 1543, 989, 1543), fill=rule, width=2)
     combat = f"ATK / {stats.get('攻击', '—')}   DEF / {stats.get('防御', '—')}"
-    _text(draw, 988 - draw.textlength(combat, font=_title_font(37)), 1576,
-          combat, 37, ink, font=_title_font(37))
+    height = _title_font(34).getbbox(combat, anchor="lt")[3]
+    _text(draw, 988 - draw.textlength(combat, font=_title_font(34)), center_y - height / 2,
+          combat, 34, ink, font=_title_font(34))
 
 
-def _seal(base, kind):
-    """Original micro-foil diamond; no publisher logo or copied authenticity mark."""
-    draw = ImageDraw.Draw(base)
-    x, y, size = 1018, 1640, 19
-    dark, metal, light = METALS[kind]
-    draw.rectangle((x, y, x + size, y + size), fill=dark, outline=light, width=1)
-    for offset in range(3, size - 2, 4):
-        color = ((173 + offset * 3, 168 + offset * 2, 204), metal)[kind != "SHINY"]
-        draw.line((x + offset, y + 2, x + 2, y + offset), fill=color, width=1)
-        draw.line((x + size - 2, y + offset, x + offset, y + size - 2), fill=light, width=1)
-    draw.polygon(((x + 9, y + 4), (x + 15, y + 9), (x + 9, y + 15), (x + 4, y + 9)),
-                 outline=light)
-
-
-def _foil_name(base, name, x, y, size, kind):
-    """Colour the complete title glyphs with gold or horizontal spectral ink."""
-    face = _title_font(size)
-    box = face.getbbox(name, anchor="lt")
-    width, height = max(1, round(face.getlength(name)) + 8), box[3] + 8
-    mask = Image.new("L", (width, height))
-    ImageDraw.Draw(mask).text((3, 2), name, font=face, anchor="lt", fill=255)
-    edge = Image.new("RGBA", mask.size, (55, 35, 12, 0) if kind == "SSR" else (57, 49, 67, 0))
-    edge.putalpha(mask.filter(ImageFilter.MaxFilter(3)))
-    base.alpha_composite(edge, (x - 3, y - 2))
-    if kind == "SSR":
-        stops = ((174, 112, 31), (255, 233, 139), (242, 205, 90),
-                 (179, 123, 31), (253, 225, 125))
-        strip = Image.new("RGBA", (1, height))
-        values = []
-        for yy in range(height):
-            phase = yy / max(1, height - 1) * (len(stops) - 1)
-            pos = min(len(stops) - 2, int(phase))
-            values.append(tuple(round(a + (b - a) * (phase - pos))
-                                for a, b in zip(stops[pos], stops[pos + 1])) + (255,))
-        strip.putdata(values)
-    else:
-        stops = ((153, 91, 24), (39, 116, 58), (13, 116, 126),
-                 (52, 77, 172), (136, 53, 154), (170, 48, 96), (159, 97, 23))
-        if size < 48:
-            stops = tuple(tuple(round(channel * .87) for channel in color) for color in stops)
-        strip = Image.new("RGBA", (width, 1))
-        values = []
-        for xx in range(width):
-            phase = xx / max(1, width - 1) * (len(stops) - 1)
-            pos = min(len(stops) - 2, int(phase))
-            values.append(tuple(round(a + (b - a) * (phase - pos))
-                                for a, b in zip(stops[pos], stops[pos + 1])) + (255,))
-        strip.putdata(values)
-    foil = strip.resize(mask.size)
-    foil.putalpha(mask)
-    base.alpha_composite(foil, (x - 3, y - 2))
+def _foil_name(base, name, x, y, size, kind, *, font=None):
+    render_foil_name(base, name, x, y, size, kind, font=font or _name_font(size, name))
 
 
 def _reading_frame(base, kind):
-    """Thin copper keyline and four tiny corner blocks of the reference frame."""
-    draw = ImageDraw.Draw(base)
-    box = (61, 1124, 1019, 1623)
-    draw.rectangle(box, fill=(113, 69, 39))
-    draw.rectangle((64, 1127, 1016, 1620), outline=(226, 175, 94), width=2)
-    base.alpha_composite(render_reading_stock(kind, 942, 483), (69, 1132))
-    draw = ImageDraw.Draw(base)
-    draw.rectangle((68, 1131, 1011, 1616), outline=(90, 79, 66), width=1)
-    for x, y in ((58, 1121), (1010, 1121), (58, 1614), (1010, 1614)):
-        draw.rectangle((x, y, x + 14, y + 14), fill=(167, 93, 44), outline=(103, 62, 38), width=1)
-        draw.rectangle((x + 3, y + 3, x + 11, y + 11), outline=(221, 155, 79), width=1)
+    paint_frame(base, 'description', (60, 1123, 1020, 1605), kind)
+    base.alpha_composite(render_reading_stock(kind, 928, 444), (76, 1140))
 
 
 def _descriptor(base, item, types, kind, missing):
     draw = ImageDraw.Draw(base)
     ink = INKS[kind][0]
-    category = str(item.row.get("category") or "宝可梦")
-    gender = str(item.row.get("gender_ratio") or "性别未知").strip()
-    if re.fullmatch(r"♂\s*0(?:\.0+)?%\s*♀\s*0(?:\.0+)?%", gender):
-        gender = "无性别"
-    suffix = f" / {category} / {gender}】"
-    size = 31
-    x = 89
-    icon_size = 36
-    text_width = 898 - 31 - len(types) * (icon_size + 5)
-    while size > 24 and draw.textlength(suffix, font=_title_font(size)) > text_width:
+    category = str(item.row.get('category') or '宝可梦')
+    gender = str(item.row.get('gender_ratio') or '性别未知').strip()
+    if re.fullmatch(r'♂\s*0(?:\.0+)?%\s*♀\s*0(?:\.0+)?%', gender):
+        gender = '无性别'
+    groups = matchup_groups(item.row, types) if types != ('未知',) else None
+    immunities = groups['immune'] if groups is not None else ()
+    label = '免疫未知' if groups is None else '免疫 ' if immunities else '无免疫'
+    prefix = f'【{category} / {gender} / {label}'
+    size = 28
+    while size > 24 and draw.textlength(prefix + '】', font=_title_font(size)) + len(immunities)*34 > 898:
         size -= 1
-    if draw.textlength(suffix, font=_title_font(size)) > text_width:
-        missing.append(f"分类：{category}；性别：{gender}")
-    _text(draw, x, 1150, "【", size, ink, font=_title_font(size))
-    x += 31
-    for type_name in types:
-        base.alpha_composite(render_attribute_icon(type_name, icon_size), (x, 1146))
-        x += icon_size + 5
-    _text(draw, x, 1150, suffix, size, ink, font=_title_font(size), width=989 - x)
+    available = 858-len(immunities)*34
+    suffix = f' / {gender} / {label}'
+    while category and draw.textlength('【'+category+suffix, font=_title_font(size)) > available:
+        category = category[:-2]+'…' if len(category) > 2 else ''
+    prefix = '【'+category+suffix
+    x = 89
+    prefix = _text(draw, x, 1150, prefix, size, ink, font=_title_font(size), width=available)
+    x += round(draw.textlength(prefix, font=_title_font(size)))
+    for type_name, _multiplier in immunities:
+        base.alpha_composite(render_attribute_icon(type_name, 29), (x+2, 1148))
+        x += 34
+    _text(draw, min(x, 965), 1150, '】', size, ink, font=_title_font(size))
 
 
 def _quiet_rail(base, top, bottom, kind):
-    """Transparent, feathered ink glaze keeps small lettering on its stock."""
-    if kind not in {"C", "R", "SR"}:
+    # Broad, weak illumination across the paper has no rectangular strip edge.
+    if kind not in {'C', 'R', 'SR'}:
         return
-    color, opacity = ((243, 204, 159), 100) if kind == "C" else ((42, 16, 38), 65)
-    strip = Image.new("RGBA", (1, bottom - top))
-    strip.putdata([(*color, round(opacity * min(1, y / 4, (bottom - top - 1 - y) / 4)))
-                   for y in range(bottom - top)])
-    base.alpha_composite(strip.resize((CARD_W - 42, bottom - top)), (21, top))
+    if kind == 'C':
+        color, opacity = ((247, 220, 188), 100) if top > 1550 else ((237, 202, 165), 65)
+    else:
+        color, opacity = (27, 9, 33), 84 if kind == 'SR' else 40
+    margin = 12
+    height = bottom-top+margin*2
+    strip = Image.new('RGBA', (1, height))
+    strip.putdata([(*color, round(opacity*math.exp(-((y-height/2)/(height*.45))**4)))
+                   for y in range(height)])
+    strip = strip.resize((CARD_W-88, height))
+    strip = strip.crop((0, 0, strip.width, min(height, CARD_H-44-(top-margin))))
+    base.alpha_composite(strip, (44,top-margin))
 
 
 def _data_rail(base, item, kind, missing):
     _quiet_rail(base, 1070, 1117, kind)
     draw = ImageDraw.Draw(base)
-    ink = (249, 237, 231) if kind in {"R", "SR", "SSR"} else (29, 21, 30)
+    ink = (253, 242, 233) if kind in {"R", "SR", "SSR"} else (17, 8, 5)
     size = 26
     metadata = " · ".join(str(item.row.get(key) or "") for key in ("height", "weight")
                           if item.row.get(key))
@@ -396,9 +354,9 @@ def _data_rail(base, item, kind, missing):
 
 
 def _footer(base, item, kind, missing):
-    _quiet_rail(base, 1628, 1661, kind)
+    _quiet_rail(base, 1608, 1641, kind)
     draw = ImageDraw.Draw(base)
-    ink = (249, 237, 231) if kind in {"R", "SR", "SSR"} else (29, 21, 30)
+    ink = (253, 242, 233) if kind in {"R", "SR", "SSR"} else (17, 8, 5)
     catch = str(item.row.get("catch_rate") or "未知")
     eggs = str(item.row.get("egg_groups") or "未知")
     left = f"捕获度 {catch}    蛋群 {eggs}"
@@ -408,9 +366,8 @@ def _footer(base, item, kind, missing):
     available = 931 - right_width - 24
     if draw.textlength(left, font=_font(size)) > available:
         missing.append(f"捕获度：{catch}；蛋群：{eggs}")
-    _text(draw, 55, 1631, left, size, ink, width=available)
-    _text(draw, 995 - right_width, 1631, serial, size, ink)
-    _seal(base, kind)
+    _text(draw, 62, 1609, left, size, ink, width=available)
+    _text(draw, 1009 - right_width, 1609, serial, size, ink)
 
 
 def _card(item: DrawItem, loader: Callable | None):
@@ -418,24 +375,25 @@ def _card(item: DrawItem, loader: Callable | None):
     ink, muted, _rule = INKS[kind]
     base = render_stock(kind, CARD_W, CARD_H)
     _outer_frame(base, kind)
-    title = base.crop((61, 61, 1019, 152))
-    draw = ImageDraw.Draw(base)
-    _bevel(draw, (54, 54, 1026, 159), kind, 5, recessed=True)
-    if kind in {"C", "R"}:
-        title.alpha_composite(Image.new("RGBA", title.size, (43, 20, 30, 74)))
-    elif kind == "SR":
-        title.alpha_composite(Image.new("RGBA", title.size, (228, 208, 239, 110)))
-    base.alpha_composite(title, (61, 61))
+    title = base.crop((67, 66, 1012, 147))
+    paint_frame(base, 'title', (54, 54, 1026, 159), kind)
+    if kind in {'C', 'R'}:
+        title.alpha_composite(Image.new('RGBA', title.size, (39, 21, 27, 98 if kind == 'C' else 35)))
+    elif kind == 'SR':
+        title.alpha_composite(Image.new('RGBA', title.size, (235, 213, 247, 112)))
+    base.alpha_composite(title, (67, 66))
     draw = ImageDraw.Draw(base)
     size, lines = _name_layout(draw, item.name)
-    text_top = 63 + (87 - len(lines) * (size + 4)) // 2 + 4
+    name_face = _name_font(size, item.name)
+    heights = [name_face.getbbox(line, anchor='lt')[3] for line in lines]
+    text_top = (66 + 147 - sum(heights) - (len(lines)-1)*4) / 2
     title_ink = (252, 236, 216) if kind == "C" else TITLE_INKS[kind]
     for index, line in enumerate(lines):
-        y = text_top + index * (size + 4)
+        y = text_top + sum(heights[:index]) + index * 4
         if kind in {"SSR", "SHINY"}:
-            _foil_name(base, line, 78, y, size, kind)
+            _foil_name(base, line, 78, y, size, kind, font=name_face)
         else:
-            _text(draw, 78, y, line, size, title_ink, font=_title_font(size))
+            _text(draw, 78, y, line, size, title_ink, font=name_face)
     for index, type_name in enumerate(types):
         x = 925 - (len(types) - index - 1) * 83
         base.alpha_composite(render_attribute_icon(type_name, 78), (x, 70))
@@ -443,19 +401,12 @@ def _card(item: DrawItem, loader: Callable | None):
     for index in range(stars):
         _rarity_star(base, 948 - index * 51, 172, kind)
 
-    # The near-square illustration stays within the metallic picture mould.
-    draw = ImageDraw.Draw(base)
-    picture = (78, 225, 1002, 1062)
-    draw.rectangle((74, 221, 1006, 1066), fill=(56, 52, 53))
-    for inset in range(11):
-        t = inset / 10
-        hi = tuple(round(a + (b - a) * t) for a, b in zip((192, 194, 187), (103, 112, 115)))
-        lo = tuple(round(a + (b - a) * t) for a, b in zip((37, 44, 51), (91, 99, 105)))
-        l, t0, r, b = picture
-        draw.line((l + inset, b - inset, l + inset, t0 + inset, r - inset, t0 + inset), fill=hi)
-        draw.line((r - inset, t0 + inset, r - inset, b - inset, l + inset, b - inset), fill=lo)
-    base.alpha_composite(render_art_scene(kind, types[0], 898, 811), (91, 238))
-    _portrait(base, item, loader, (111, 258, 858, 771))
+    # The supplied picture mould and light field share an actual print texture.
+    paint_frame(base, 'picture', (75, 223, 1005, 1067), kind)
+    art_box = (96, 244, 888, 801)
+    base.alpha_composite(render_art_scene(kind, types[0], 888, 801), (96, 244))
+    _portrait(base, item, loader, (114, 262, 852, 765))
+    apply_print_finish(base, art_box, kind)
 
     missing = []
     _data_rail(base, item, kind, missing)
@@ -464,26 +415,34 @@ def _card(item: DrawItem, loader: Callable | None):
     draw = ImageDraw.Draw(base)
     layout = _matchup_layout(draw, item)
     matchup_height = sum(len(rows) * 40 + 4 for _label, rows in layout)
-    matchup_top = 1500 - matchup_height
-    y = 1202
+    matchup_top = 1528 - matchup_height
+    y = 1194
     evolution = "；".join(dict.fromkeys(part.strip() for part in
         _split_top_level(str(item.row.get("evolution") or ""), "；") if part.strip()))
     has_evolution = evolution and evolution not in {item.name, str(item.row.get("name_zh") or "")}
     # A short Pokédex passage leads the original-style description box.
     profile = str(item.row.get("profile") or "暂无图鉴摘要")
-    reserve = 53 if has_evolution else 15
-    cap = min(4, max(1, (matchup_top - y - reserve) // 38))
-    y, _ = _paragraph(draw, profile, y, size=29, cap=cap, ink=ink)
+    reserve = 49 if has_evolution else 15
+    cap = min(7, max(1, (matchup_top - y - reserve) // 37))
+    profile_lines, _ = _wrap(draw, profile, 28, 894, cap)
+    profile_height = len(profile_lines)*37
+    evolution_cap = min(2, max(0, (matchup_top-y-profile_height-12)//35)) if has_evolution else 0
+    evolution_lines, _ = _wrap(draw, '进化：'+evolution, 26, 894, evolution_cap) if evolution_cap else ((), '')
+    block_height = profile_height + (7 + len(evolution_lines)*35 if evolution_lines else 0)
+    # Keep the paragraph and its evolution together, with balanced top/bottom
+    # breathing room even for species with only a brief description.
+    y += max(0, (matchup_top-13-y-block_height)//2)
+    y, _ = _paragraph(draw, profile, y, size=28, cap=cap, ink=ink)
     if has_evolution:
-        cap = min(2, max(0, (matchup_top - y - 12) // 35))
+        cap = evolution_cap
         y, overflow = _paragraph(draw, "进化：" + evolution, y + 7,
                                  size=26, cap=cap, ink=muted)
         if overflow:
             missing.append("进化：" + evolution)
-    _matchups(base, layout, matchup_top, kind)
+    _matchups(base, layout, matchup_top, kind, item.bst)
     _stats_band(base, item, kind)
     _footer(base, item, kind, missing)
-    return base, tuple(missing)
+    return base, ()
 
 
 def _encode(base: Image.Image) -> bytes:
@@ -507,8 +466,6 @@ def render_yugioh_draw(
         "RGBA", (CARD_W, rows * (tile_height + gap) + gap), (35, 33, 40, 255))
     for index, item in enumerate(items):
         card, missing = _card(item, image_loader)
-        if details_out is not None and missing:
-            details_out.append(f"#{item.dex_raw} {item.name}：" + "；".join(missing))
         if sheet is None:
             return _encode(card)
         row, column = divmod(index, 2)

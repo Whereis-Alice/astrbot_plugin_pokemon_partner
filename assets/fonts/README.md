@@ -1,10 +1,14 @@
 # 卡片衬线字体
 
-游戏王收藏卡面使用基于 [Noto Serif SC](https://github.com/google/fonts/tree/main/ofl/notoserifsc) 的静态字体子集，采用 500 字重正文与 800 字重标题、攻击／防御横栏。原字体属于 Noto / Source Han Serif 宋明衬线字族，来自 Google Fonts 的官方字体库。
+游戏王收藏卡面使用两组随插件打包的开放字体。姓名采用基于 [ZCOOL XiaoWei](https://github.com/google/fonts/tree/main/ofl/zcoolxiaowei) 的尖角宋体字形，强调窄笔画和卡牌刻字感；正文与攻击／防御横栏使用 [Noto Serif SC](https://github.com/google/fonts/tree/main/ofl/notoserifsc) 的静态字体子集，分别采用 500 和 800 字重。
 
-字体使用 [SIL Open Font License 1.1](OFL-NotoSerifSC.txt)，可以随插件再分发。修改后的字体族名为 **Partner Card Serif**；原作者、版权和许可信息保留在字体元数据与许可证文件内。
+两组字体均使用 SIL Open Font License 1.1，可以随插件再分发。修改后的字族分别名为 **Partner Duel Inscription** 和 **Partner Card Serif**；原作者、版权和许可信息保留在字体元数据及 [ZCOOL XiaoWei 许可](OFL-ZCOOLXiaoWei.txt)、[Noto Serif SC 许可](OFL-NotoSerifSC.txt)中。
 
-子集保留插件 Python、图鉴 TSV 与页面文案使用的全部可用字形，并加入 GB2312 标准字符集、ASCII、常用标点、属性倍率、方向箭头与性别符号。常用简体中文及当前图鉴的名称、特殊形态、特性、进化条件、摘要均可离线显示。
+正文字库保留插件 Python、图鉴 TSV 与页面文案使用的全部可用字形，并加入 GB2312 标准字符集、ASCII、常用标点、属性倍率、方向箭头与性别符号。常用简体中文及当前图鉴的名称、特殊形态、特性、进化条件、摘要均可离线显示。
+
+姓名字库 `PartnerDuelInscription-Regular.ttf` 保留当前所有图鉴名称、形态名、属性单字、ASCII 及必要标点，共 1151 个码点，约 547 KiB。原肖维字体缺少的「椪」、两种中点及性别符号使用随插件附带的 Noto 对应轮廓补齐。实际覆盖字符记录在 `name-coverage.txt`。
+
+姓名的测量和绘制均传入完整文字。遇到姓名子集之外的自定义文字时，整行回退到包含常用简体中文的 Noto 500 字库，避免缺字或同一姓名内混用字形；普通资料仍始终使用正文字库。
 
 `PartnerCardSerif-Medium.ttf` 为 500 字重，`PartnerCardSerif-ExtraBold.ttf` 为 800 字重。两者是普通静态 TTF，Windows 和 Linux 均直接通过 Pillow 读取，不依赖系统安装字体或联网下载；运行时无需 fontTools。
 

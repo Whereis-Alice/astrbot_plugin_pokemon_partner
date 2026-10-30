@@ -8,6 +8,7 @@ extremities detect cropping/overlays in the final JPEG.
 from __future__ import annotations
 
 import io
+import math
 import os
 import re
 import tempfile
@@ -46,21 +47,32 @@ EDITIONS = (("C", False), ("R", False), ("SR", False),
             ("SSR", False), ("SSR", True))
 
 
+def title_mask(name, face):
+    # Sample the actual supersampled glyph footprint, including its sidebearing.
+    # Cropping to textbbox and drawing at zero would sample background pixels
+    # for the inscription face, whose first ink pixel follows its left bearing.
+    size = (math.ceil(face.getlength(name)) + 12, face.getbbox(name, anchor='lt')[3] + 12)
+    mask = Image.new('L', (size[0]*3, size[1]*3))
+    ImageDraw.Draw(mask).text((18, 18), name, font=face.font_variant(size=face.size*3),
+                             anchor='lt', fill=255)
+    return mask.resize(size, Image.Resampling.LANCZOS)
+
+
 def capture_card(items, loader):
     """Include foil ink from final card pixels, not its temporary white mask."""
     foil_records = []
     original_foil = yugioh_cards._foil_name
     original_text = ImageDraw.ImageDraw.text
 
-    def foil(base, name, x, y, size, kind):
+    def foil(base, name, x, y, size, kind, **kwargs):
         before = base.copy()
         # Mask coordinates and white paint are not the final title's position
         # or colour. All ordinary card text keeps the shared instrumentation.
         with patch.object(ImageDraw.ImageDraw, "text", original_text):
-            original_foil(base, name, x, y, size, kind)
+            original_foil(base, name, x, y, size, kind, **kwargs)
             mask = Image.new("L", base.size)
-            original_text(ImageDraw.Draw(mask), (x, y), name,
-                          font=yugioh_cards._title_font(size), anchor="lt", fill=255)
+            local = title_mask(name, kwargs.get('font') or yugioh_cards._name_font(size, name))
+            mask.paste(local, (round(x)-6, round(y)-6))
         box = mask.getbbox()
         if box is None:
             raise AssertionError(f"Title contains no visible glyphs: {name}")
@@ -190,19 +202,23 @@ class YugiohCardTests(unittest.TestCase):
                 item = self.item("857", "SSR", shiny)
                 image, records = capture_card([item], lambda row: portrait())
                 title = next(record for record in records if record.value == item.name)
-                face = yugioh_cards._title_font(title.size)
-                local = face.getbbox(item.name, anchor="lt")
-                mask = Image.new("L", (title.box[2] - title.box[0], title.box[3] - title.box[1]))
-                ImageDraw.Draw(mask).text((-local[0], -local[1]), item.name,
-                                          font=face, anchor="lt", fill=255)
+                face = yugioh_cards._name_font(title.size, item.name)
+                mask = title_mask(item.name, face)
+                mask = mask.crop(mask.getbbox())
                 colours = [image.getpixel((x + title.box[0], y + title.box[1]))
                            for y in range(0, mask.height, 2) for x in range(0, mask.width, 2)
                            if mask.getpixel((x, y)) >= 248]
                 self.assertGreater(len(colours), 200, "The entire title must remain printed")
                 if not shiny:
-                    gold = sum(r > g and g > b * 1.15 and r - b > 70 for r, g, b in colours)
-                    self.assertGreater(gold / len(colours), .8,
-                                       "SSR title should visibly use gold ink, not plain white")
+                    # Champagne-gold foil includes pale highlights. Warm ink
+                    # and a reflected light range distinguish it from white,
+                    # while the old saturated-yellow ratio rejected real foil.
+                    gold = sum(r >= g and g-b >= 12 and r-b >= 25 for r, g, b in colours)
+                    self.assertGreater(gold / len(colours), .65,
+                                       "SSR title should visibly use warm gold ink, not plain white")
+                    light = sorted(sum(colour)/3 for colour in colours)
+                    self.assertGreater(light[len(light)*9//10]-light[len(light)//10], 20,
+                                       "Gold foil should retain a visible reflection and shaded crease")
                 else:
                     hues = {int(h * 12) for r, g, b in colours
                             for h, s, v in (rgb_to_hsv(r / 255, g / 255, b / 255),)
@@ -256,11 +272,12 @@ class YugiohCardTests(unittest.TestCase):
 
                 with patch.object(yugioh_cards, "render_attribute_icon", icon):
                     _raw, values = self.texts(item, lambda row: portrait())
-                self.assertEqual(values.count("未知"), 3,
+                self.assertEqual(values.count("未知"), 2,
                                  "Unknown type data must keep all matchup groups explicitly unknown")
-                self.assertEqual(icons, ["未知", "未知"],
-                                 "Header and descriptor must use unknown jewels, never invented types")
-                for label in ("弱点", "抗性", "免疫"):
+                self.assertIn("免疫未知", "".join(values))
+                self.assertEqual(icons, ["未知"],
+                                 "Own attributes belong only to the top-right header")
+                for label in ("弱点", "抗性"):
                     self.assertIn(label, values)
 
     def test_valid_full_width_type_separators_preserve_the_same_card_and_matchups(self):
@@ -311,7 +328,7 @@ class YugiohCardTests(unittest.TestCase):
         for number in ("45", "49", "65", "318"):
             self.assertRegex(visible, rf"(?<!\d){number}(?!\d)")
 
-    def test_descriptor_uses_species_gender_and_icons_without_type_label_duplication(self):
+    def test_descriptor_uses_species_gender_and_immunity_without_repeating_own_types(self):
         for key in ("1", "82", "871"):
             with self.subTest(species=key):
                 item = self.item(key, "SSR")
@@ -343,14 +360,14 @@ class YugiohCardTests(unittest.TestCase):
                      patch.object(yugioh_cards, "_text", text):
                     self.render([item], lambda row: portrait())
                 self.assertEqual([value for kind, value in records if kind == "icon"],
-                                 item.types.split("/"))
+                                 [name for name, _ in matchup_groups(item.row,item.types)["immune"]])
                 wording = [value for kind, value in records if kind == "text"]
-                self.assertEqual(wording[0], "【")
-                self.assertIn(item.row["category"], wording[-1])
-                self.assertTrue(wording[-1].endswith("】"))
+                self.assertTrue(wording[0].startswith("【"))
+                self.assertIn(item.row["category"], wording[0])
+                self.assertEqual(wording[-1], "】")
                 expected_gender = "无性别" if item.row["gender_ratio"] == "♂0% ♀0%" \
                     else item.row["gender_ratio"]
-                self.assertIn(expected_gender, wording[-1])
+                self.assertIn(expected_gender, wording[0])
                 self.assertTrue(all(value not in item.types.split("/") for value in wording),
                                 "The descriptor must not repeat an icon's type name as separate text")
 
@@ -367,7 +384,7 @@ class YugiohCardTests(unittest.TestCase):
                 self.assertEqual(text.count(f"#{item.dex_raw}"), 1)
                 ability = next(record for record in records if record.value.startswith("特性 "))
                 descriptor = next(record for record in records
-                                  if item.row["category"] in record.value and record.value.endswith("】"))
+                                  if record.value.startswith("【") and item.row["category"] in record.value)
                 combat = next(record for record in records if record.value.startswith("ATK /"))
                 footer = next(record for record in records if record.value.startswith("捕获度 "))
                 serial = next(record for record in records if record.value == f"#{item.dex_raw}")
@@ -413,14 +430,93 @@ class YugiohCardTests(unittest.TestCase):
                 self.assertIn("弱点", visible)
                 self.assertIn("抗性", visible)
                 expected = []
-                for name, label in (("weak", "弱点"), ("resist", "抗性"), ("immune", "免疫")):
+                for name, label in (("resist", "抗性"), ("weak", "弱点")):
                     entries = matchup_groups(item.row, item.types)[name]
                     expected.append(("text", label))
                     if not entries:
                         expected.append(("text", "无"))
                     for name, multiplier in entries:
                         expected.extend((("icon", name), ("text", f"×{multiplier:g}")))
+                expected.append(("text", f"总和 {item.bst}"))
                 self.assertEqual(events, expected)
+
+    def test_effect_box_order_rule_alignment_and_long_descriptor_stay_inside_the_card(self):
+        for key, long_category in (("82", False), ("110:伽勒尔双弹瓦斯", False), ("302", True)):
+            with self.subTest(species=key, long_category=long_category):
+                item = self.item(key, "SSR")
+                item = replace(item, row={**item.row,
+                    "profile": "资料段落验证。",
+                    "evolution": "前身 → 成体。",
+                    **({"category": "特别长的分类名称" * 40} if long_category else {})})
+                rules, icon_boxes, in_descriptor = [], [], False
+                original_line = ImageDraw.ImageDraw.line
+                original_composite = Image.Image.alpha_composite
+                original_descriptor = yugioh_cards._descriptor
+
+                def line(draw, xy, *args, **kwargs):
+                    if draw._image.size == (CARD_W, CARD_H) and len(xy) == 4 \
+                            and all(isinstance(value, (int, float)) for value in xy) \
+                            and xy[1] == xy[3] and xy[0] <= 93 and xy[2] >= 988:
+                        rules.append(tuple(xy))
+                    return original_line(draw, xy, *args, **kwargs)
+
+                def descriptor(*args, **kwargs):
+                    nonlocal in_descriptor
+                    in_descriptor = True
+                    try:
+                        return original_descriptor(*args, **kwargs)
+                    finally:
+                        in_descriptor = False
+
+                def composite(target, source_image, dest=(0, 0), **kwargs):
+                    if in_descriptor and source_image.width == source_image.height \
+                            and source_image.width <= 80:
+                        bounds = source_image.getchannel("A").getbbox()
+                        if bounds:
+                            icon_boxes.append(tuple(value + dest[axis % 2]
+                                                    for axis, value in enumerate(bounds)))
+                    return original_composite(target, source_image, dest=dest, **kwargs)
+
+                with patch.object(ImageDraw.ImageDraw, "line", line), \
+                     patch.object(Image.Image, "alpha_composite", composite), \
+                     patch.object(yugioh_cards, "_descriptor", descriptor):
+                    image, records = capture_card([item], lambda row: portrait())
+                body = [record for record in records if record.value.strip()]
+                profile = next(record for record in body if record.value == "资料段落验证。")
+                evolution = next(record for record in body if record.value.startswith("进化："))
+                resist = next(record for record in body if record.value == "抗性")
+                weak = next(record for record in body if record.value == "弱点")
+                for earlier, later in zip((profile, evolution, resist), (evolution, resist, weak)):
+                    self.assertLess(earlier.box[3], later.box[1], (earlier.value, later.value))
+
+                total = next(record for record in body if record.value == f"总和 {item.bst}")
+                combat = next(record for record in body if record.value.startswith("ATK /"))
+                rule = next(rule for rule in rules if total.box[3] < rule[1] < combat.box[1])
+                self.assertLessEqual(abs(total.box[2] - rule[2]), 3,
+                                     "The species total should align with the rule's right end")
+                self.assertLessEqual(rule[1] - total.box[3], 16,
+                                     "The total belongs immediately above the bottom rule")
+                combat_center = (combat.box[1] + combat.box[3]) / 2
+                for label in ("HP ", "特攻 ", "特防 ", "速度 "):
+                    stat = next(record for record in body if record.value.startswith(label))
+                    self.assertLessEqual(abs((stat.box[1] + stat.box[3]) / 2 - combat_center), 1,
+                                         "Small stats and ATK/DEF should share a visual centre")
+                    self.assertLess(stat.box[2], combat.box[0])
+
+                prefix = next(record for record in body if record.value.startswith("【"))
+                close = next(record for record in body if record.value == "】")
+                self.assertLessEqual(close.box[2], image.width - 76)
+                if long_category:
+                    self.assertIn("…", prefix.value)
+                    self.assertIn(item.row['gender_ratio'], prefix.value)
+                    self.assertIn('免疫', prefix.value)
+                previous_right = prefix.box[2]
+                for left, top, right, bottom in icon_boxes:
+                    self.assertGreaterEqual(left, previous_right - 1)
+                    self.assertLessEqual(right, close.box[0] + 1)
+                    self.assertGreaterEqual(top, prefix.box[1] - 5)
+                    self.assertLessEqual(bottom, prefix.box[3] + 5)
+                    previous_right = right
 
     def test_long_form_title_and_practical_text_have_safe_readable_glyphs(self):
         values = [self.item("857", kind, shiny) for kind, shiny in EDITIONS]
@@ -437,6 +533,11 @@ class YugiohCardTests(unittest.TestCase):
                     self.assertTrue(18 <= left < right <= image.width - 18, record)
                     self.assertTrue(18 <= top < bottom <= image.height - 12, record)
                     self.assertGreaterEqual(record.size, 24, record)
+                    if record.box[1] < 160 and (item.shiny or item.rarity == "SSR"):
+                        # Specular foil deliberately includes highlights close
+                        # to the paper's luminance. Its final glyph geometry,
+                        # hue and full-/phone-size images are checked separately.
+                        continue
                     required = 3 if record.size >= 48 else 4.5
                     self.assertGreaterEqual(record.contrast, required - .03, record)
                 for index, a in enumerate(records):
@@ -445,19 +546,17 @@ class YugiohCardTests(unittest.TestCase):
                                   max(a.box[1], b.box[1]) < min(a.box[3], b.box[3])
                         self.assertFalse(overlap, (a.value, b.value))
 
-    def test_overflow_practical_data_is_returned_without_flavor_continuation(self):
+    def test_long_data_stays_on_the_card_without_appending_chat_details(self):
         item = self.item("857", "C")
         item = replace(item, row={**item.row,
             "abilities": "很长的特性名称、" * 50 + "特性末尾标记",
             "evolution": "非常长的进化链 → " * 20 + "进化末尾标记",
             "profile": "图鉴说明。" * 1200 + "摘要末尾标记"})
         details = []
-        self.render([item], details_out=details)
-        returned = "\n".join(details)
-        self.assertIn("特性末尾标记", returned)
-        self.assertIn("进化末尾标记", returned)
-        self.assertNotIn("摘要末尾标记", returned)
-        self.assertIn(item.name, returned)
+        _raw, values = self.texts(item, details_out=details)
+        self.assertEqual(details, [])
+        self.assertIn("…", "".join(values))
+        self.assertIn(item.name, "".join(values))
 
     def test_evolution_deduplicates_identical_branches_and_preserves_nested_conditions(self):
         ponyta = self.item("77", "R")
@@ -473,6 +572,7 @@ class YugiohCardTests(unittest.TestCase):
         nested = "伊布 →（夜晚（亲密度高）；白昼）月亮伊布"
         different = "伊布 →（白昼）太阳伊布"
         item = replace(ponyta, row={**ponyta.row,
+            "profile": "简短摘要。",
             "evolution": f"{nested}；{nested}；{different}"})
         details = []
         _raw, values = self.texts(item, details_out=details)

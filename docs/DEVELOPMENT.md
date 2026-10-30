@@ -63,6 +63,7 @@ python rarity_visual_tests.py --output /path/to/review --art-dir /path/to/review
 | `rarity_scenes.py`、`rarity_emblems.py` | 稀有度场景与精灵球圆盘材质 |
 | `tcg_materials.py`、`tcg_symbols.py` | TCG 纸面、彩箔、雕纹与 18 种属性能量图标 |
 | `yugioh_cards.py`、`yugioh_materials.py` | 游戏王怪兽卡构图、五档参考云纹底材、纸面与箔效果 |
+| `yugioh_frames.py`、`yugioh_foil.py` | 参考框边伸缩、刻边阴影与金色／虹彩薄箔姓名 |
 | `yugioh_symbols.py`、`assets/yugioh/` | 游戏王风格的 18 种独立属性圆章、参考星标、预制底材及资产来源说明 |
 | `yugioh_fonts.py`、`assets/fonts/` | 随插件附带的宋明衬线字库、字体加载与 OFL 许可 |
 | `artwork.py` | 普通与闪光立绘的查找、预取和缓存 |
