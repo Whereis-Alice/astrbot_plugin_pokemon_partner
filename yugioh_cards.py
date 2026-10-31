@@ -213,19 +213,24 @@ def _portrait(base: Image.Image, item: DrawItem, loader: Callable | None, box):
     base.alpha_composite(art, (tx, ty))
 
 
-def _name_layout(draw, name: str):
+def _name_layout(draw, name: str, kind: str = 'C'):
+    height_limit = 62 if kind == 'SHINY' else 81
     if card_name_artwork_metrics(name, 66) is not None:
         for size in range(66, 25, -1):
-            if card_name_artwork_metrics(name, size)[0] <= 748:
+            width, height = card_name_artwork_metrics(name, size)
+            if width <= 748 and height <= height_limit:
                 return size, (name,)
         raise ValueError("完整宝可梦名称超出卡片的标题空间，请使用文本。")
     for size in range(66, 35, -2):
-        if draw.textlength(name, font=_name_font(size, name)) <= 748:
+        face = _name_font(size, name)
+        if draw.textlength(name, font=face) <= 748 and face.getbbox(name, anchor='lt')[3] <= height_limit:
             return size, (name,)
     for size in range(38, 27, -2):
         # Long names keep the same title face at every size and on both lines.
-        lines, rest = _wrap(draw, name, size, 748, 2, font=_name_font(size, name))
-        if not rest:
+        face = _name_font(size, name)
+        lines, rest = _wrap(draw, name, size, 748, 2, font=face)
+        height = sum(face.getbbox(line, anchor='lt')[3] for line in lines) + (len(lines)-1)*4
+        if not rest and height <= height_limit:
             return size, lines
     raise ValueError("完整宝可梦名称超出卡片的标题空间，请使用文本。")
 
@@ -444,7 +449,7 @@ def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool =
         title.alpha_composite(Image.new('RGBA', title.size, (235, 213, 247, 112)))
     base.alpha_composite(title, (67, 66))
     draw = ImageDraw.Draw(base)
-    size, lines = _name_layout(draw, item.name)
+    size, lines = _name_layout(draw, item.name, kind)
     name_face = _name_font(size, item.name)
     heights = [(card_name_artwork_metrics(line, size) or
                 (0, name_face.getbbox(line, anchor='lt')[3]))[1] for line in lines]

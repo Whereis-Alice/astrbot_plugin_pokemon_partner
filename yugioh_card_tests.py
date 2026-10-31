@@ -641,11 +641,16 @@ class YugiohCardTests(unittest.TestCase):
         values += [self.item("555:伽勒尔达摩狒狒（达摩模式）", kind, shiny)
                    for kind, shiny in EDITIONS]
         values.append(self.item("82", "SSR"))
+        values += [self.item(key, 'SSR', True) for key in ('20:阿罗拉拉达', '26:阿罗拉雷丘')]
         for item in values:
             with self.subTest(key=item.key, rarity=item.rarity, shiny=item.shiny):
                 image, records = capture_card([item], lambda row: portrait())
                 records = [r for r in coalesce_shadows(records) if meaningful(r) and r.value.strip()]
                 self.assertIn(item.name, "".join(r.value for r in records))
+                for record in records:
+                    if record.box[1] < 160 and record.value in item.name:
+                        self.assertGreaterEqual(record.box[1], 64)
+                        self.assertLessEqual(record.box[3], 149)
                 for record in records:
                     left, top, right, bottom = record.box
                     self.assertTrue(18 <= left < right <= image.width - 18, record)
