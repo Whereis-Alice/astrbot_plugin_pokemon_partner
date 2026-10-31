@@ -14,6 +14,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 try:
     from .card_renderer import load_font
+    from .card_text import single_line_text, paragraph_text
     from .gacha import DrawItem, rarity_label
     from .rarity_emblems import render_emblem
     from .rarity_scenes import render_scene
@@ -21,6 +22,7 @@ try:
     from .card_matchups import matchup_groups
 except ImportError:
     from card_renderer import load_font
+    from card_text import single_line_text, paragraph_text
     from gacha import DrawItem, rarity_label
     from rarity_emblems import render_emblem
     from rarity_scenes import render_scene
@@ -116,14 +118,15 @@ def _font(size: int):
 
 
 def _fit(draw, text, width, size=64, minimum=42):
+    text = single_line_text(text)
     for value in range(size, minimum - 1, -2):
-        if draw.textlength(str(text), font=_font(value)) <= width:
+        if draw.textlength(text, font=_font(value)) <= width:
             return value
     return minimum
 
 
 def _wrap(draw, text, size, width, maximum=None):
-    text = str(text or "")
+    text = paragraph_text(text or "")
     font = _font(size)
     lines, current = [], ""
     tokens = re.findall(
@@ -487,6 +490,7 @@ BADGES = {
 
 
 def _pill(draw, x, y, label, fill, ink, *, size=24, height=40):
+    label = single_line_text(label)
     width = math.ceil(draw.textlength(label, font=_font(size))) + 28
     draw.rounded_rectangle((x, y, x + width, y + height), radius=height // 2, fill=fill)
     draw.text(
@@ -520,7 +524,7 @@ def _badges(draw, item, x, y, *, center=False, width=940):
 def _type_layout(draw, item, x, y, width, *, center=False):
     rows = [[]]
     used = 0
-    for label in filter(None, item.types.split("/")):
+    for label in filter(None, (single_line_text(part).strip() for part in item.types.split("/"))):
         size = math.ceil(draw.textlength(label, font=_font(26))) + 72
         if used and used + size > width:
             rows.append([])
@@ -590,18 +594,18 @@ HEROES = {
 def _compact_info(item):
     row = item.row
     values = []
-    basic = " · ".join(str(row.get(key) or "").strip()
+    basic = " · ".join(single_line_text(row.get(key) or "").strip()
                        for key in ("category", "height", "weight") if row.get(key))
     if basic:
         values.append((basic, 2))
-    ability, hidden = str(row.get("abilities") or ""), str(row.get("hidden_abilities") or "")
+    ability, hidden = single_line_text(row.get("abilities") or ""), single_line_text(row.get("hidden_abilities") or "")
     if ability or hidden:
         values.append((f"特性：{ability or '—'}" + (f"（隐藏：{hidden}）" if hidden else ""), 3))
     if row.get("catch_rate"):
-        values.append((f"捕获度：{row['catch_rate']}", 1))
+        values.append((f"捕获度：{single_line_text(row['catch_rate'])}", 1))
     if row.get("egg_groups"):
-        values.append((f"蛋群：{row['egg_groups']}", 2))
-    gender = str(row.get("gender_ratio") or "").replace(" ", "")
+        values.append((f"蛋群：{single_line_text(row['egg_groups'])}", 2))
+    gender = single_line_text(row.get("gender_ratio") or "").replace(" ", "")
     gender = {"♂0%♀0%": "无性别", "♂0%♀100%": "仅雌性", "♂100%♀0%": "仅雄性"}.get(gender, gender)
     if gender:
         values.append((f"性别：{gender}", 1))
@@ -684,8 +688,9 @@ def _single_image(item, context, loader, details_out=None):
     hero = HEROES[kind]
     measure = ImageDraw.Draw(Image.new("RGB", (1, 1)))
     name_x, name_y, name_width = hero.name_x, hero.name_y, hero.name_width
-    size = _fit(measure, item.name, name_width, hero.name_size, 42)
-    name_lines = _wrap(measure, item.name, size, name_width, 3)
+    name = single_line_text(item.name)
+    size = _fit(measure, name, name_width, hero.name_size, 42)
+    name_lines = _wrap(measure, name, size, name_width, 3)
     name_end = name_y + len(name_lines) * (size + 12)
     type_positions, type_end = _type_layout(measure, item, name_x, name_end + 19, name_width)
     stat_top = type_end + 26
@@ -718,7 +723,7 @@ def _single_image(item, context, loader, details_out=None):
     _badges(draw, item, name_x, 100)
     _art(base, ImageDraw.Draw(base), item, loader, (art_x, art_y, art_w, art_h), p)
     draw = ImageDraw.Draw(base)
-    _text(draw, name_x, name_y, item.name, size, p.ink, width=name_width, maximum=3)
+    _text(draw, name_x, name_y, name, size, p.ink, width=name_width, maximum=3)
     _types(base, draw, type_positions, p)
     _stat_bars(draw, item, name_x, stat_top, name_width, p)
     _panel(draw, (66, dex_y - 5, 220, dex_y + 35), p, radius=10)

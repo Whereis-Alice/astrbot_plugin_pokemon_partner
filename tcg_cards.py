@@ -17,12 +17,14 @@ from PIL import Image, ImageDraw, ImageFilter
 
 try:
     from .card_renderer import load_font
+    from .card_text import single_line_text, paragraph_text
     from .gacha import DrawItem, rarity_label
     from .tcg_materials import render_art_backdrop, render_print_surface
     from .tcg_symbols import render_energy_icon
     from .card_matchups import matchup_groups
 except ImportError:
     from card_renderer import load_font
+    from card_text import single_line_text, paragraph_text
     from gacha import DrawItem, rarity_label
     from tcg_materials import render_art_backdrop, render_print_surface
     from tcg_symbols import render_energy_icon
@@ -70,7 +72,7 @@ def _stats(item):
 def _wrap(draw, text, size, width):
     """Measure full text; callers decide how much belongs on the physical card."""
     lines, current = [], ""
-    for character in str(text or ""):
+    for character in paragraph_text(text or ""):
         if character == "\n":
             lines.append(current)
             current = ""
@@ -91,7 +93,7 @@ def _wrap(draw, text, size, width):
 
 
 def _line(draw, x, y, text, size=26, ink=INK, width=None, *, bold=False, center=False):
-    value = str(text)
+    value = single_line_text(text)
     if width is not None:
         while value and draw.textlength(value, font=_font(size)) > width:
             value = value[:-2] + "…" if len(value) > 2 else ""
@@ -103,7 +105,7 @@ def _line(draw, x, y, text, size=26, ink=INK, width=None, *, bold=False, center=
 
 def _take_lines(draw, text, size, width, count):
     """Measure only the visible prefix, preserving unmeasured continuation text."""
-    text, lines, current = str(text or ""), [], ""
+    text, lines, current = paragraph_text(text or ""), [], ""
     for index, character in enumerate(text):
         if character == "\n":
             lines.append(current)
@@ -260,6 +262,7 @@ def _rarity_mark(draw, x, y, kind, color=INK):
 
 
 def _name_layout(draw, name):
+    name = single_line_text(name)
     # A normal form name should shrink before taking a second artwork row.
     for size in range(62, 35, -2):
         if draw.textlength(name, font=_font(size)) <= 530:
@@ -313,7 +316,7 @@ def _draw_matchups(base, layout, top, kind):
 
 
 def _gender(value):
-    value = str(value or "").strip()
+    value = single_line_text(value or "").strip()
     return {"♂0%♀0%": "无性别", "♂0%♀100%": "仅雌性", "♂100%♀0%": "仅雄性"}.get(value.replace(" ", ""), value)
 
 
@@ -383,15 +386,15 @@ def _card(item, loader):
         base.alpha_composite(render_energy_icon(type_name, icon_size), (icon_x, 55 if len(types) == 1 else 61))
 
     missing = []
-    metadata = " · ".join(str(item.row.get(key) or "").strip()
+    metadata = " · ".join(single_line_text(item.row.get(key) or "").strip()
                           for key in ("category", "height", "weight") if item.row.get(key))
     _line(draw, 61, art_bottom + 23, metadata or "宝可梦资料", 24, muted, 778, center=True)
     if metadata and draw.textlength(metadata, font=_font(24)) > 778:
         missing.append(metadata)
     draw.line((61, art_bottom + 58, 839, art_bottom + 58), fill=rule, width=1)
     ability_y = art_bottom + 74
-    abilities = str(item.row.get("abilities") or "—")
-    hidden = str(item.row.get("hidden_abilities") or "")
+    abilities = single_line_text(item.row.get("abilities") or "—")
+    hidden = single_line_text(item.row.get("hidden_abilities") or "")
     if hidden:
         abilities += f"（隐藏：{hidden}）"
     ability_lines = _wrap(draw, abilities, 26, 650)
@@ -425,8 +428,8 @@ def _card(item, loader):
     matchup_top = footer_line - 14 - matchup_height
     # Practical species data takes priority over the intentionally short flavour text.
     basic = " · ".join(part for part in (
-        f"捕获度：{item.row['catch_rate']}" if item.row.get("catch_rate") else "",
-        f"蛋群：{item.row['egg_groups']}" if item.row.get("egg_groups") else "",
+        f"捕获度：{single_line_text(item.row['catch_rate'])}" if item.row.get("catch_rate") else "",
+        f"蛋群：{single_line_text(item.row['egg_groups'])}" if item.row.get("egg_groups") else "",
         f"性别：{_gender(item.row['gender_ratio'])}" if item.row.get("gender_ratio") else "",
     ) if part)
     basic_y = stat_y + 103

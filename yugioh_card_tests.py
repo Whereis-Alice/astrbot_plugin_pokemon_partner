@@ -675,11 +675,38 @@ class YugiohCardTests(unittest.TestCase):
             "abilities": "很长的特性名称、" * 50 + "特性末尾标记",
             "evolution": "非常长的进化链 → " * 20 + "进化末尾标记",
             "profile": "图鉴说明。" * 1200 + "摘要末尾标记"})
-        details = []
-        _raw, values = self.texts(item, details_out=details)
-        self.assertEqual(details, [])
-        self.assertIn("…", "".join(values))
-        self.assertIn(item.name, "".join(values))
+        for enabled in (False, True):
+            with self.subTest(black_bold=enabled):
+                details, rules = [], []
+                original_line = ImageDraw.ImageDraw.line
+
+                def line(draw, xy, *args, **kwargs):
+                    if draw._image.size == (CARD_W, CARD_H) and len(xy) == 4 \
+                            and all(isinstance(value, (int, float)) for value in xy) \
+                            and xy[1] == xy[3] and xy[0] <= 93 and xy[2] >= 988:
+                        rules.append(xy[1])
+                    return original_line(draw, xy, *args, **kwargs)
+
+                with patch.object(ImageDraw.ImageDraw, 'line', line):
+                    _image, records = capture_render([item], lambda row: portrait(),
+                        style='yugioh', details_out=details, yugioh_profile_black_bold=enabled)
+                self.assertEqual(details, [])
+                descriptor_bottom = max(r.box[3] for r in records
+                    if r.value.startswith('【') or r.value == '】')
+                evolution_start = next(r for r in records if r.value.startswith('进化：'))
+                resist = next(r for r in records if r.value == '抗性')
+                separator = max(y for y in rules if y < resist.box[1])
+                profile = [r for r in records if r.value.strip()
+                    and descriptor_bottom < r.box[1] < evolution_start.box[1]]
+                evolution = [r for r in records if r.value.strip()
+                    and evolution_start.box[1] <= r.box[1] < separator]
+                self.assertTrue(profile)
+                self.assertTrue(profile[0].value.startswith('图鉴说明'))
+                self.assertTrue(profile[-1].value.endswith('…'))
+                self.assertTrue(evolution[-1].value.endswith('…'))
+                self.assertLessEqual(abs(profile[0].box[1]-descriptor_bottom-12), 1)
+                self.assertLess(profile[-1].box[3], evolution[0].box[1])
+                self.assertLess(evolution[-1].box[3], separator)
 
     def test_evolution_deduplicates_identical_branches_and_preserves_nested_conditions(self):
         ponyta = self.item("77", "R")

@@ -26,6 +26,7 @@ python -m pip install -r requirements.txt
 | 群友挑战、收藏与指令解析 | `python owned_duels_tests.py`、`python owned_duel_command_tests.py`、`python duel_commands_tests.py` |
 | 收藏卡片的图鉴编号与分页显示 | `python dex_collection_card_tests.py` |
 | 卡片排版与稀有度样式 | `python card_layout_tests.py`、`python rarity_card_tests.py`、`python rarity_visual_tests.py` |
+| 三套卡面的导入资料换行、制表符与正文段落 | `python card_text_tests.py` |
 | 今日卡面切换、配置保存与发送分流 | `python tcg_render_integration_tests.py` |
 | 卡内基础属性相性、双属性倍率与免疫 | `python card_matchups_tests.py` |
 | TCG 实卡比例、文字边界、闪光请求与十连 | `python tcg_card_tests.py` |
@@ -60,6 +61,7 @@ python rarity_visual_tests.py --output /path/to/review --art-dir /path/to/review
 | `partner_service.py` | 卡池、存储与素材的业务编排 |
 | `owned_duels.py`、`duel_commands.py` | 群友挑战事务与指令解析 |
 | `partner_cards.py`、`rarity_cards.py`、`tcg_cards.py` | 收藏及抽卡卡片排版，现有卡面与 TCG 卡面分流 |
+| `card_text.py` | 卡面单行字段与段落换行的共同规则，不改变原始数据 |
 | `rarity_scenes.py`、`rarity_emblems.py` | 稀有度场景与精灵球圆盘材质 |
 | `tcg_materials.py`、`tcg_symbols.py` | TCG 纸面、彩箔、雕纹与 18 种属性能量图标 |
 | `yugioh_cards.py`、`yugioh_materials.py` | 游戏王怪兽卡构图、五档参考云纹底材、纸面与箔效果 |
@@ -81,6 +83,12 @@ python rarity_visual_tests.py --output /path/to/review --art-dir /path/to/review
 `daily_card_style` 只影响今日宝可梦单抽和多抽，默认 `classic`；`tcg` 和 `yugioh` 使用各自的独立渲染模块。
 消息入口每次读取当前配置，切换样式不会重新抽取、迁移收藏或改变闪光判定。
 修改玩法时保持群聊/私聊的数据隔离，修改消息输出时保留图片或转发失败后的文本回退。
+
+## 复用模板与插件同步
+
+独立卡面模板不是插件的运行依赖。修复模板中的字体测量、换行或排版问题后，必须检查插件对应渲染模块，把适用于插件的修复同步到实际代码。模板的通用字段不能直接代替宝可梦属性计算或收藏规则。
+
+交付插件修复时，运行对应卡面检查与 `card_text_tests.py`，查看实际插件渲染的原尺寸样张。发布后对照提交校验服务器文件，通过 AstrBot 热重载接口确认实际加载版本；模板文件更新不能作为插件部署完成的依据。
 
 ## 数据来源与许可
 

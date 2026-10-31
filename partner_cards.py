@@ -17,6 +17,7 @@ from PIL import Image, ImageDraw, ImageFont
 
 try:
     from .card_renderer import load_font
+    from .card_text import single_line_text, paragraph_text
     from .gacha import (
         DrawItem,
         GachaRules,
@@ -26,6 +27,7 @@ try:
     )
 except ImportError:  # 兼容以普通模块方式加载插件
     from card_renderer import load_font
+    from card_text import single_line_text, paragraph_text
     from gacha import (
         DrawItem,
         GachaRules,
@@ -93,7 +95,7 @@ def _font(size: int) -> ImageFont.FreeTypeFont:
 def _wrap(draw: ImageDraw.ImageDraw, text: str, font, width: int) -> list[str]:
     lines: list[str] = []
     current = ""
-    for ch in str(text):
+    for ch in paragraph_text(text):
         if ch == "\n":
             lines.append(current)
             current = ""
@@ -130,6 +132,7 @@ def _limited_wrapped_lines(
 
 def _ellipsize(draw: ImageDraw.ImageDraw, text: str, font, width: int) -> str:
     """把超宽文本截断成一行并以省略号收尾，避免压到右侧徽章。"""
+    text = single_line_text(text)
     if draw.textlength(text, font=font) <= width:
         return text
     ellipsis = "…"
@@ -150,6 +153,7 @@ def _fit_text_font(
     min_size: int,
 ):
     """在可读范围内选择最大字号，尽量完整显示长名称。"""
+    text = single_line_text(text)
     for size in range(max_size, min_size - 1, -2):
         font = _font(size)
         if draw.textlength(text, font=font) <= width:

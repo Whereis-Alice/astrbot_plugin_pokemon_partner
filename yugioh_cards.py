@@ -16,6 +16,7 @@ from PIL import Image, ImageDraw, ImageFilter
 
 try:
     from .card_renderer import _split_top_level
+    from .card_text import single_line_text, paragraph_text
     from .card_matchups import matchup_groups, TYPE_ORDER
     from .gacha import DrawItem
     from .yugioh_symbols import render_attribute_icon, render_level_star
@@ -25,6 +26,7 @@ try:
     from .yugioh_frames import paint_frame
 except ImportError:
     from card_renderer import _split_top_level
+    from card_text import single_line_text, paragraph_text
     from card_matchups import matchup_groups, TYPE_ORDER
     from gacha import DrawItem
     from yugioh_symbols import render_attribute_icon, render_level_star
@@ -92,7 +94,7 @@ def _stats(item: DrawItem) -> dict[str, int]:
 
 
 def _text(draw, x, y, value, size=26, fill=(49, 33, 17), *, bold=False, width=None, font=None):
-    text = str(value)
+    text = single_line_text(value)
     face = font if font is not None else _font(size)
     if width is not None:
         while text and draw.textlength(text, font=face) > width:
@@ -104,7 +106,7 @@ def _text(draw, x, y, value, size=26, fill=(49, 33, 17), *, bold=False, width=No
 
 def _wrap(draw, value: str, size: int, width: int, limit: int | None = None, *, font=None):
     """Measure only the visible prefix; return continuation without losing it."""
-    text, lines, current = str(value or ""), [], ""
+    text, lines, current = paragraph_text(value or ""), [], ""
     face = font if font is not None else _font(size)
     for index, char in enumerate(text):
         if char == "\n":
@@ -214,6 +216,7 @@ def _portrait(base: Image.Image, item: DrawItem, loader: Callable | None, box):
 
 
 def _name_layout(draw, name: str, kind: str = 'C'):
+    name = single_line_text(name)
     height_limit = 62 if kind == 'SHINY' else 81
     if card_name_artwork_metrics(name, 66) is not None:
         for size in range(66, 25, -1):
@@ -346,8 +349,8 @@ def _reading_frame(base, kind):
 def _descriptor(base, item, types, kind, missing):
     draw = ImageDraw.Draw(base)
     ink = INKS[kind][0]
-    category = str(item.row.get('category') or '宝可梦')
-    gender = str(item.row.get('gender_ratio') or '性别未知').strip()
+    category = single_line_text(item.row.get('category') or '宝可梦')
+    gender = single_line_text(item.row.get('gender_ratio') or '性别未知').strip()
     if re.fullmatch(r'♂\s*0(?:\.0+)?%\s*♀\s*0(?:\.0+)?%', gender):
         gender = '无性别'
     groups = matchup_groups(item.row, types) if types != ('未知',) else None
@@ -396,12 +399,12 @@ def _data_rail(base, item, kind, missing):
     draw = ImageDraw.Draw(base)
     ink = (253, 242, 233) if kind in {"R", "SR", "SSR"} else (17, 8, 5)
     size = 26
-    metadata = " · ".join(str(item.row.get(key) or "") for key in ("height", "weight")
+    metadata = " · ".join(single_line_text(item.row.get(key) or "") for key in ("height", "weight")
                           if item.row.get(key))
     right_width = draw.textlength(metadata, font=_font(size))
-    ability = str(item.row.get("abilities") or "—")
+    ability = single_line_text(item.row.get("abilities") or "—")
     if item.row.get("hidden_abilities"):
-        ability += f"（隐藏：{item.row['hidden_abilities']}）"
+        ability += f"（隐藏：{single_line_text(item.row['hidden_abilities'])}）"
     text = "特性 " + ability
     left_width = 894 - right_width - (24 if metadata else 0)
     if draw.textlength(text, font=_font(size)) > left_width:
@@ -417,10 +420,10 @@ def _footer(base, item, kind, missing):
     _quiet_rail(base, 1608, 1641, kind)
     draw = ImageDraw.Draw(base)
     ink = (253, 242, 233) if kind in {"R", "SR", "SSR"} else (17, 8, 5)
-    catch = str(item.row.get("catch_rate") or "未知")
-    eggs = str(item.row.get("egg_groups") or "未知")
+    catch = single_line_text(item.row.get("catch_rate") or "未知")
+    eggs = single_line_text(item.row.get("egg_groups") or "未知")
     left = f"捕获度 {catch}    蛋群 {eggs}"
-    serial = f"#{item.dex_raw}"
+    serial = f"#{single_line_text(item.dex_raw)}"
     size = 26
     right_width = draw.textlength(serial, font=_font(size))
     available = 931 - right_width - 24
@@ -449,8 +452,9 @@ def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool =
         title.alpha_composite(Image.new('RGBA', title.size, (235, 213, 247, 112)))
     base.alpha_composite(title, (67, 66))
     draw = ImageDraw.Draw(base)
-    size, lines = _name_layout(draw, item.name, kind)
-    name_face = _name_font(size, item.name)
+    name = single_line_text(item.name)
+    size, lines = _name_layout(draw, name, kind)
+    name_face = _name_font(size, name)
     heights = [(card_name_artwork_metrics(line, size) or
                 (0, name_face.getbbox(line, anchor='lt')[3]))[1] for line in lines]
     title_center = 97 if kind == 'SHINY' else (66+147)/2
@@ -490,7 +494,7 @@ def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool =
     profile_font = _title_font(28) if profile_black_bold is True else _font(28)
     profile_ink = (0, 0, 0) if profile_black_bold is True else ink
     reserve = 49 if has_evolution else 15
-    cap = min(7, max(1, (matchup_top - y - reserve) // 37))
+    cap = max(1, (matchup_top - y - reserve) // 37)
     profile_lines, _ = _paragraph_lines(draw, profile, size=28, cap=cap, font=profile_font)
     profile_height = len(profile_lines)*37
     evolution_cap = min(2, max(0, (matchup_top-y-profile_height-12)//35)) if has_evolution else 0
