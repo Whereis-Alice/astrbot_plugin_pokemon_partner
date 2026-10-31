@@ -244,6 +244,37 @@ class YugiohCardTests(unittest.TestCase):
         self.assertEqual(len(card.call_args_list), 2)
         self.assertTrue(all(call.kwargs['profile_black_bold'] for call in card.call_args_list))
 
+    def test_truncation_on_blank_lines_centres_the_actual_description_ink(self):
+        for enabled in (False, True):
+            for blank_section in ('profile', 'evolution'):
+                with self.subTest(black_bold=enabled, section=blank_section):
+                    item = self.item('25', 'R')
+                    item = replace(item, row={**item.row,
+                        'profile': '资料段落验证。' + ('\n' * 12 + '摘要后文。' if blank_section == 'profile' else ''),
+                        'evolution': item.name if blank_section == 'profile' else '前身 →\n\n进化后文。'})
+                    separators = []
+                    original_line = ImageDraw.ImageDraw.line
+
+                    def line(draw, xy, *args, **kwargs):
+                        if draw._image.size == (CARD_W, CARD_H) and len(xy) == 4 \
+                                and all(isinstance(value, (int, float)) for value in xy) \
+                                and xy[1] == xy[3] and xy[0] <= 93 and xy[2] >= 988:
+                            separators.append(xy[1])
+                        return original_line(draw, xy, *args, **kwargs)
+
+                    with patch.object(ImageDraw.ImageDraw, 'line', line):
+                        _image, records = capture_render([item], lambda row: portrait(),
+                            style='yugioh', yugioh_profile_black_bold=enabled)
+                    descriptor = [r for r in records if r.value.startswith('【') or r.value == '】']
+                    descriptor_bottom = max(r.box[3] for r in descriptor)
+                    resist = next(r for r in records if r.value == '抗性')
+                    separator = max(y for y in separators if y < resist.box[1])
+                    paragraph = [r for r in records if r.value.strip()
+                                 and descriptor_bottom < r.box[1] < separator]
+                    self.assertTrue(any(r.value == '…' for r in paragraph))
+                    self.assertLessEqual(abs(min(r.box[1] for r in paragraph) - descriptor_bottom
+                                             - (separator - max(r.box[3] for r in paragraph))), 2)
+
     def test_ssr_title_is_gold_and_shiny_title_contains_multiple_foil_colours(self):
         for shiny in (False, True):
             with self.subTest(shiny=shiny):

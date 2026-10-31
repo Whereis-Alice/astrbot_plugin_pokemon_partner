@@ -128,9 +128,10 @@ def _wrap(draw, value: str, size: int, width: int, limit: int | None = None, *, 
     return tuple(lines), ""
 
 
-def _paragraph(draw, text, y, *, size, cap, ink, width=894, font=None):
+def _paragraph_lines(draw, text, *, size, cap, width=894, font=None):
+    """Return the exact printed lines, including any truncation mark."""
     if cap < 1:
-        return y, bool(text)
+        return (), bool(text)
     face = font if font is not None else _font(size)
     lines, rest = _wrap(draw, text, size, width, cap, font=face)
     if rest:
@@ -138,9 +139,15 @@ def _paragraph(draw, text, y, *, size, cap, ink, width=894, font=None):
         while line and draw.textlength(line + "…", font=face) > width:
             line = line[:-1]
         lines = (*lines[:-1], line + "…")
+    return lines, bool(rest)
+
+
+def _paragraph(draw, text, y, *, size, cap, ink, width=894, font=None):
+    face = font if font is not None else _font(size)
+    lines, overflow = _paragraph_lines(draw, text, size=size, cap=cap, width=width, font=face)
     for index, line in enumerate(lines):
         _text(draw, 92, y + index * (size + 9), line, size, ink, font=face)
-    return y + len(lines) * (size + 9), bool(rest)
+    return y + len(lines) * (size + 9), overflow
 
 
 def _bevel(draw, box, kind: str, thickness=8, *, recessed=False):
@@ -473,16 +480,16 @@ def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool =
         _split_top_level(str(item.row.get("evolution") or ""), "；") if part.strip()))
     has_evolution = evolution and evolution not in {item.name, str(item.row.get("name_zh") or "")}
     # A short Pokédex passage leads the original-style description box.
-    profile = str(item.row.get("profile") or "暂无图鉴摘要")
+    profile = str(item.row.get("profile") or "").strip() or "暂无图鉴摘要"
     # Select a face per card; concurrent renders never change shared fonts.
     profile_font = _title_font(28) if profile_black_bold is True else _font(28)
     profile_ink = (0, 0, 0) if profile_black_bold is True else ink
     reserve = 49 if has_evolution else 15
     cap = min(7, max(1, (matchup_top - y - reserve) // 37))
-    profile_lines, _ = _wrap(draw, profile, 28, 894, cap, font=profile_font)
+    profile_lines, _ = _paragraph_lines(draw, profile, size=28, cap=cap, font=profile_font)
     profile_height = len(profile_lines)*37
     evolution_cap = min(2, max(0, (matchup_top-y-profile_height-12)//35)) if has_evolution else 0
-    evolution_lines, _ = _wrap(draw, '进化：'+evolution, 26, 894, evolution_cap) if evolution_cap else ((), '')
+    evolution_lines, _ = _paragraph_lines(draw, '进化：'+evolution, size=26, cap=evolution_cap) if evolution_cap else ((), False)
     block_height = ((len(profile_lines)-1)*37 + profile_font.getbbox(profile_lines[-1], anchor='lt')[3])
     if evolution_lines:
         block_height = profile_height + 7 + (len(evolution_lines)-1)*35 + _font(26).getbbox(evolution_lines[-1], anchor='lt')[3]
@@ -529,6 +536,8 @@ def render_yugioh_draw(
         if sheet is None:
             return _encode(card)
         row, column = divmod(index, 2)
+        count = min(2, len(items) - row * 2)
+        left = (CARD_W - count * tile_width - (count - 1) * gap) // 2
         sheet.alpha_composite(card.resize((tile_width, tile_height), Image.Resampling.LANCZOS),
-                              (12 + column * (tile_width + gap), gap + row * (tile_height + gap)))
+                              (left + column * (tile_width + gap), gap + row * (tile_height + gap)))
     return _encode(sheet)

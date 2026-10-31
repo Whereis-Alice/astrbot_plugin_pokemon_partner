@@ -446,7 +446,7 @@ def _card(item, loader):
             missing.append(f"进化：{evolution}")
     profile_capacity = max(0, (matchup_top - cursor - 17) // 33)
     if profile_capacity:
-        profile = str(item.row.get("profile") or "暂无图鉴摘要")
+        profile = str(item.row.get("profile") or "").strip() or "暂无图鉴摘要"
         profile_lines, rest = _take_lines(draw, profile, 24, 773, min(5, profile_capacity))
         if rest:
             profile_lines = _limited(draw, (*profile_lines, ""), len(profile_lines), 24, 773)
@@ -488,12 +488,14 @@ def _single(item, loader, details_out):
 
 
 def _grid(items, loader, details_out):
-    tile_width, gap, left = 506, 22, 23
+    tile_width, gap = 506, 22
     tile_height = round(CARD_H * tile_width / CARD_W)
     rows = math.ceil(len(items) / 2)
     base = Image.new("RGBA", (WIDTH, rows * (tile_height + gap) + gap), (237, 236, 229, 255))
     for index, item in enumerate(items):
         row, column = divmod(index, 2)
+        count = min(2, len(items) - row * 2)
+        left = (WIDTH - count * tile_width - (count - 1) * gap) // 2
         x, y = left + column * (tile_width + gap), gap + row * (tile_height + gap)
         card, missing = _card(item, loader)
         _collect_details(item, missing, details_out)
