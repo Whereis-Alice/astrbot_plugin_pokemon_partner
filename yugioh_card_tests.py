@@ -244,7 +244,7 @@ class YugiohCardTests(unittest.TestCase):
         self.assertEqual(len(card.call_args_list), 2)
         self.assertTrue(all(call.kwargs['profile_black_bold'] for call in card.call_args_list))
 
-    def test_truncation_on_blank_lines_centres_the_actual_description_ink(self):
+    def test_truncation_on_blank_lines_keeps_the_description_top_aligned(self):
         for enabled in (False, True):
             for blank_section in ('profile', 'evolution'):
                 with self.subTest(black_bold=enabled, section=blank_section):
@@ -272,8 +272,8 @@ class YugiohCardTests(unittest.TestCase):
                     paragraph = [r for r in records if r.value.strip()
                                  and descriptor_bottom < r.box[1] < separator]
                     self.assertTrue(any(r.value == '…' for r in paragraph))
-                    self.assertLessEqual(abs(min(r.box[1] for r in paragraph) - descriptor_bottom
-                                             - (separator - max(r.box[3] for r in paragraph))), 2)
+                    self.assertLessEqual(abs(min(r.box[1] for r in paragraph) - descriptor_bottom - 12), 1)
+                    self.assertLess(max(r.box[3] for r in paragraph), separator)
 
     def test_ssr_title_is_gold_and_shiny_title_contains_multiple_foil_colours(self):
         for shiny in (False, True):
@@ -620,9 +620,9 @@ class YugiohCardTests(unittest.TestCase):
                                      'Centre matchup rows without counting the independently placed total')
                 descriptor_bottom = max(prefix.box[3], close.box[3],
                                         max((box[3] for box in icon_boxes), default=0))
-                self.assertLessEqual(abs(profile.box[1]-descriptor_bottom -
-                                         (separator-evolution.box[3])), 2,
-                                     'Centre the actual paragraph ink, excluding its trailing line spacing')
+                self.assertLessEqual(abs(profile.box[1]-descriptor_bottom-12), 1,
+                                     'Start the description directly below the descriptor')
+                self.assertLess(evolution.box[3], separator)
                 self.assertLessEqual(close.box[2], image.width - 76)
                 if long_category:
                     self.assertIn("…", prefix.value)

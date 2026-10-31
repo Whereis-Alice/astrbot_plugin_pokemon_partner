@@ -49,8 +49,7 @@ INKS = {
     "SHINY": ((28, 27, 34), (53, 50, 65), (132, 127, 143)),
 }
 TITLE_INKS = {
-    "C": (39, 23, 14), "R": (251, 245, 250), "SR": (30, 19, 44),
-    "SSR": (255, 233, 153), "SHINY": (45, 36, 77),
+    "C": (0, 0, 0), "R": (0, 0, 0), "SR": (0, 0, 0),
 }
 METALS = {
     "C": ((94, 52, 33), (191, 126, 89), (244, 202, 162)),
@@ -323,7 +322,7 @@ def _paint_name(base, name, x, y, size, kind, *, font=None):
     if kind in {'SSR', 'SHINY'}:
         _foil_name(base, name, x, y, size, kind, font=face)
         return
-    ink = (252, 236, 216) if kind == 'C' else TITLE_INKS[kind]
+    ink = TITLE_INKS[kind]
     mask = load_card_name_mask(name, size)
     if mask is None:
         _text(ImageDraw.Draw(base), x, y, name, size, ink, font=face)
@@ -439,7 +438,8 @@ def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool =
     title = base.crop((67, 66, 1012, 147))
     paint_frame(base, 'title', (54, 54, 1026, 159), kind)
     if kind in {'C', 'R'}:
-        title.alpha_composite(Image.new('RGBA', title.size, (39, 21, 27, 98 if kind == 'C' else 35)))
+        tint = (237, 202, 165, 90) if kind == 'C' else (239, 209, 231, 80)
+        title.alpha_composite(Image.new('RGBA', title.size, tint))
     elif kind == 'SR':
         title.alpha_composite(Image.new('RGBA', title.size, (235, 213, 247, 112)))
     base.alpha_composite(title, (67, 66))
@@ -489,13 +489,7 @@ def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool =
     profile_lines, _ = _paragraph_lines(draw, profile, size=28, cap=cap, font=profile_font)
     profile_height = len(profile_lines)*37
     evolution_cap = min(2, max(0, (matchup_top-y-profile_height-12)//35)) if has_evolution else 0
-    evolution_lines, _ = _paragraph_lines(draw, '进化：'+evolution, size=26, cap=evolution_cap) if evolution_cap else ((), False)
-    block_height = ((len(profile_lines)-1)*37 + profile_font.getbbox(profile_lines[-1], anchor='lt')[3])
-    if evolution_lines:
-        block_height = profile_height + 7 + (len(evolution_lines)-1)*35 + _font(26).getbbox(evolution_lines[-1], anchor='lt')[3]
-    # Keep the paragraph and its evolution together, with balanced top/bottom
-    # breathing room even for species with only a brief description.
-    y = descriptor_bottom + max(12, (matchup_top-13-descriptor_bottom-block_height)/2)
+    # Original Chinese cards start their description just below the descriptor.
     y, _ = _paragraph(draw, profile, y, size=28, cap=cap, ink=profile_ink, font=profile_font)
     if has_evolution:
         cap = evolution_cap
