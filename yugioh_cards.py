@@ -128,17 +128,18 @@ def _wrap(draw, value: str, size: int, width: int, limit: int | None = None, *, 
     return tuple(lines), ""
 
 
-def _paragraph(draw, text, y, *, size, cap, ink, width=894):
+def _paragraph(draw, text, y, *, size, cap, ink, width=894, font=None):
     if cap < 1:
         return y, bool(text)
-    lines, rest = _wrap(draw, text, size, width, cap)
+    face = font if font is not None else _font(size)
+    lines, rest = _wrap(draw, text, size, width, cap, font=face)
     if rest:
         line = lines[-1]
-        while line and draw.textlength(line + "…", font=_font(size)) > width:
+        while line and draw.textlength(line + "…", font=face) > width:
             line = line[:-1]
         lines = (*lines[:-1], line + "…")
     for index, line in enumerate(lines):
-        _text(draw, 92, y + index * (size + 9), line, size, ink)
+        _text(draw, 92, y + index * (size + 9), line, size, ink, font=face)
     return y + len(lines) * (size + 9), bool(rest)
 
 
@@ -423,7 +424,7 @@ def _footer(base, item, kind, missing):
     _text(draw, 1009 - right_width, serial_y, serial, size, ink)
 
 
-def _card(item: DrawItem, loader: Callable | None):
+def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool = False):
     kind, types = _kind(item), _types(item)
     ink, muted, _rule = INKS[kind]
     base = render_stock(kind, CARD_W, CARD_H)
@@ -473,19 +474,22 @@ def _card(item: DrawItem, loader: Callable | None):
     has_evolution = evolution and evolution not in {item.name, str(item.row.get("name_zh") or "")}
     # A short Pokédex passage leads the original-style description box.
     profile = str(item.row.get("profile") or "暂无图鉴摘要")
+    # Select a face per card; concurrent renders never change shared fonts.
+    profile_font = _title_font(28) if profile_black_bold is True else _font(28)
+    profile_ink = (0, 0, 0) if profile_black_bold is True else ink
     reserve = 49 if has_evolution else 15
     cap = min(7, max(1, (matchup_top - y - reserve) // 37))
-    profile_lines, _ = _wrap(draw, profile, 28, 894, cap)
+    profile_lines, _ = _wrap(draw, profile, 28, 894, cap, font=profile_font)
     profile_height = len(profile_lines)*37
     evolution_cap = min(2, max(0, (matchup_top-y-profile_height-12)//35)) if has_evolution else 0
     evolution_lines, _ = _wrap(draw, '进化：'+evolution, 26, 894, evolution_cap) if evolution_cap else ((), '')
-    block_height = ((len(profile_lines)-1)*37 + _font(28).getbbox(profile_lines[-1], anchor='lt')[3])
+    block_height = ((len(profile_lines)-1)*37 + profile_font.getbbox(profile_lines[-1], anchor='lt')[3])
     if evolution_lines:
         block_height = profile_height + 7 + (len(evolution_lines)-1)*35 + _font(26).getbbox(evolution_lines[-1], anchor='lt')[3]
     # Keep the paragraph and its evolution together, with balanced top/bottom
     # breathing room even for species with only a brief description.
     y = descriptor_bottom + max(12, (matchup_top-13-descriptor_bottom-block_height)/2)
-    y, _ = _paragraph(draw, profile, y, size=28, cap=cap, ink=ink)
+    y, _ = _paragraph(draw, profile, y, size=28, cap=cap, ink=profile_ink, font=profile_font)
     if has_evolution:
         cap = evolution_cap
         y, overflow = _paragraph(draw, "进化：" + evolution, y + 7,
@@ -510,6 +514,7 @@ def render_yugioh_draw(
     items: Sequence[DrawItem], *, nickname: str, remaining: int, daily_limit: int,
     dust: int, pity_ssr: int, ssr_pity_after: int, image_loader: Callable | None = None,
     details_out: list[str] | None = None,
+    profile_black_bold: bool = False,
 ) -> bytes:
     """Render collectible cards; counts, NEW and dust remain in the chat notice."""
     if not items:
@@ -520,7 +525,7 @@ def render_yugioh_draw(
     sheet = None if len(items) == 1 else Image.new(
         "RGBA", (CARD_W, rows * (tile_height + gap) + gap), (35, 33, 40, 255))
     for index, item in enumerate(items):
-        card, missing = _card(item, image_loader)
+        card, missing = _card(item, image_loader, profile_black_bold=profile_black_bold)
         if sheet is None:
             return _encode(card)
         row, column = divmod(index, 2)

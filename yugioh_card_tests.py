@@ -220,6 +220,30 @@ class YugiohCardTests(unittest.TestCase):
         for removed in ("全国图鉴", "今日宝可梦", "今日剩余", "星尘", "NEW", "加入图鉴", "图鉴摘要（续）"):
             self.assertNotIn(removed, visible)
 
+    def test_black_bold_profile_is_optional_and_does_not_leak_to_later_cards(self):
+        item = self.item('151', 'SSR', True)
+        item = replace(item, row={**item.row, 'profile': '这是一段用于比较字重的宝可梦简介。',
+                                  'evolution': item.name})
+        normal = self.render([item])
+        self.assertEqual(normal, self.render([item], yugioh_profile_black_bold=False))
+        bold = self.render([item], yugioh_profile_black_bold=True)
+        self.assertNotEqual(normal, bold)
+        self.assertEqual(normal, self.render([item]))
+        with Image.open(io.BytesIO(normal)) as first, Image.open(io.BytesIO(bold)) as second:
+            # The header and the independent matchup/footer regions stay identical.
+            self.assertEqual(first.crop((0, 0, CARD_W, 1180)).tobytes(),
+                             second.crop((0, 0, CARD_W, 1180)).tobytes())
+            self.assertEqual(first.crop((0, 1430, CARD_W, CARD_H)).tobytes(),
+                             second.crop((0, 1430, CARD_W, CARD_H)).tobytes())
+            normal_ink = sum(max(pixel) < 70 for pixel in first.convert('RGB').crop((90, 1180, 990, 1410)).getdata())
+            bold_ink = sum(max(pixel) < 70 for pixel in second.convert('RGB').crop((90, 1180, 990, 1410)).getdata())
+            self.assertGreater(bold_ink, normal_ink * 1.2)
+
+        with patch.object(yugioh_cards, '_card', wraps=yugioh_cards._card) as card:
+            self.render([item, item], yugioh_profile_black_bold=True)
+        self.assertEqual(len(card.call_args_list), 2)
+        self.assertTrue(all(call.kwargs['profile_black_bold'] for call in card.call_args_list))
+
     def test_ssr_title_is_gold_and_shiny_title_contains_multiple_foil_colours(self):
         for shiny in (False, True):
             with self.subTest(shiny=shiny):

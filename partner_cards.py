@@ -593,6 +593,7 @@ def render_draw_card(
     image_loader: ImageLoader | None = None,
     style: str = "classic",
     details_out: list[str] | None = None,
+    yugioh_profile_black_bold: bool = False,
 ) -> bytes:
     """切换今日卡面；未指定或未知样式时保留现有稀有度卡面。"""
     style = style.strip().lower() if isinstance(style, str) else "classic"
@@ -618,6 +619,8 @@ def render_draw_card(
     )
     if details_out is not None:
         options["details_out"] = details_out
+    if style == "yugioh":
+        options["profile_black_bold"] = yugioh_profile_black_bold is True
     return render(
         items, **options,
     )

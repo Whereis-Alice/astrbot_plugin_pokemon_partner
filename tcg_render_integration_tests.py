@@ -55,9 +55,19 @@ class CardRoutingTests(unittest.TestCase):
 
     def test_yugioh_uses_independent_renderer_with_the_same_context(self):
         self.assertEqual(partner_cards.render_draw_card(self.items, style="yugioh", **self.options), b"yugioh")
-        self.yugioh.assert_called_once_with(self.items, **self.options)
+        self.yugioh.assert_called_once_with(self.items, **self.options, profile_black_bold=False)
         self.classic.assert_not_called()
         self.tcg.assert_not_called()
+
+    def test_black_bold_option_only_reaches_yugioh_renderer(self):
+        for style, renderer in (("classic", self.classic), ("tcg", self.tcg), ("yugioh", self.yugioh)):
+            with self.subTest(style=style):
+                partner_cards.render_draw_card(self.items, style=style,
+                    yugioh_profile_black_bold=True, **self.options)
+                if style == "yugioh":
+                    self.assertIs(renderer.call_args.kwargs["profile_black_bold"], True)
+                else:
+                    self.assertNotIn("profile_black_bold", renderer.call_args.kwargs)
 
     def test_manual_style_values_accept_case_and_whitespace(self):
         for style, expected in ((" TCG ", b"tcg"), ("YuGiOh", b"yugioh"), (None, b"classic"), (True, b"classic")):
@@ -117,6 +127,16 @@ class DailyCardSendTests(unittest.TestCase):
         self.assertIn("梦幻", results[0])
         self.assertIn("闪光", results[0])
         self.assertIn("今日剩余 2/3", results[0])
+
+    def test_profile_option_changes_on_the_next_draw_without_changing_text(self):
+        self.plugin.config["daily_card_style"] = "yugioh"
+        with patch.object(main, "render_draw_card", return_value=b"card") as render:
+            original = self.send()[0][0].text
+            self.assertIs(render.call_args.kwargs["yugioh_profile_black_bold"], False)
+            for enabled in (True, False):
+                self.plugin.config["yugioh_profile_black_bold"] = enabled
+                self.assertEqual(self.send()[0][0].text, original)
+                self.assertIs(render.call_args.kwargs["yugioh_profile_black_bold"], enabled)
 
     def test_success_sends_notice_then_one_pure_card_for_each_style(self):
         for style in ("classic", "tcg", "yugioh"):
@@ -269,6 +289,22 @@ class CardSettingsTests(unittest.TestCase):
                 self.assertFalse(self.save(style)["ok"])
                 self.assertEqual(self.config["daily_card_style"], "classic")
                 self.assertEqual(self.path.read_bytes(), before)
+
+    def test_profile_checkbox_persists_only_booleans_and_preserves_other_settings(self):
+        for enabled in (True, False):
+            with patch.object(self.ui, "_body", AsyncMock(return_value={
+                    "config": {"yugioh_profile_black_bold": enabled}})):
+                self.assertEqual(asyncio.run(self.ui.api_settings_save()), {"ok": True})
+            saved = json.loads(self.path.read_text(encoding="utf-8"))
+            self.assertEqual(saved, {"daily_card_style": "classic", "daily_draw_limit": 3,
+                                     "yugioh_profile_black_bold": enabled})
+            self.assertIs(asyncio.run(self.ui.api_settings())["config"]["yugioh_profile_black_bold"], enabled)
+        before = self.path.read_bytes()
+        for invalid in ("false", "true", 0, 1, None):
+            with patch.object(self.ui, "_body", AsyncMock(return_value={
+                    "config": {"yugioh_profile_black_bold": invalid}})):
+                self.assertFalse(asyncio.run(self.ui.api_settings_save())["ok"])
+            self.assertEqual(self.path.read_bytes(), before)
 
 
 if __name__ == "__main__":

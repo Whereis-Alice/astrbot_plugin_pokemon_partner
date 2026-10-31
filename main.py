@@ -425,6 +425,7 @@ class PokemonPartnerPlugin(Star):
                 image_loader=service.artwork,
                 style=self.config.get("daily_card_style", "classic"),
                 details_out=details,
+                yugioh_profile_black_bold=self.config.get("yugioh_profile_black_bold", False),
             )
         except Exception as exc:
             logger.warning(f"[{PLUGIN_ID}] 抽卡卡片渲染失败: {exc}")

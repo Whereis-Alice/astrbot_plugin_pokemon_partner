@@ -156,6 +156,12 @@
     "options": ["classic", "tcg", "yugioh"],
     "hint": "classic=现有稀有度卡面（默认）；tcg=参考 Pokémon TCG 的收藏卡面；yugioh=参考游戏王的收藏卡面。三套均发送文字提示与纯卡牌图片，弱点、抗性、免疫以属性图标展示。仅切换今日宝可梦的单抽和多抽卡面，收藏、图鉴与对战卡不受影响。关闭图片卡片时使用文本。"
   },
+  "yugioh_profile_black_bold": {
+    "description": "游戏王简介纯黑粗体",
+    "type": "bool",
+    "default": false,
+    "hint": "仅影响游戏王卡面「今日宝可梦」单抽和多抽的简介正文。开启后使用纯黑粗体，默认沿用当前字体；其他文字和卡面不变。"
+  },
   "battle_output_mode": {
     "description": "对战战报发送方式",
     "type": "string",

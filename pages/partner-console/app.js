@@ -894,6 +894,7 @@ const SETTINGS_FIELDS = [
     group: "今日宝可梦卡面",
     fields: [
       { key: "daily_card_style", label: "今日宝可梦卡面风格", type: "select", default: "classic", options: [["classic", "现有稀有度卡面"], ["tcg", "TCG 收藏卡面"], ["yugioh", "游戏王收藏卡面"]], hint: "三套均发送文字提示与纯卡牌，卡内以属性图标显示弱点、抗性和免疫。仅切换今日宝可梦卡面；关闭图片卡片时使用文本。" },
+      { key: "yugioh_profile_black_bold", label: "游戏王简介纯黑粗体", type: "bool", default: false, hint: "仅影响游戏王卡面「今日宝可梦」单抽和多抽的简介正文。开启后使用纯黑粗体，默认沿用当前字体；其他文字和卡面不变。" },
     ],
   },
   {
