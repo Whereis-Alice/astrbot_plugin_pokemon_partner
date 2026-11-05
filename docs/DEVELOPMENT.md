@@ -31,6 +31,7 @@ python -m pip install -r requirements.txt
 | 卡内基础属性相性、双属性倍率与免疫 | `python card_matchups_tests.py` |
 | TCG 实卡比例、文字边界、闪光请求与十连 | `python tcg_card_tests.py` |
 | 游戏王卡面、真实文字对比度、完整立绘、属性相性与十连 | `python yugioh_card_tests.py` |
+| Mega 专属卡面、形态辨别、进化石与十二星边界 | `python mega_yugioh_tests.py` |
 | 场景、精灵球圆盘与闪光图片缓存 | `python rarity_scene_tests.py`、`python rarity_emblem_tests.py`、`python shiny_artwork_tests.py` |
 | 图片下载大小限制与备用图源 | `python image_download_tests.py` |
 | 形态立绘匹配、独立缓存与缺图日志 | `python artwork_form_tests.py` |
@@ -66,6 +67,7 @@ python rarity_visual_tests.py --output /path/to/review --art-dir /path/to/review
 | `tcg_materials.py`、`tcg_symbols.py` | TCG 纸面、彩箔、雕纹与 18 种属性能量图标 |
 | `yugioh_cards.py`、`yugioh_materials.py` | 游戏王怪兽卡构图、五档参考云纹底材、纸面与箔效果 |
 | `yugioh_frames.py`、`yugioh_foil.py` | 参考框边伸缩、刻边阴影与金色／虹彩薄箔姓名 |
+| `yugioh_mega_materials.py`、`mega_forms.py` | Mega 专属材质与立绘描边、准确形态名称、离线原版标识与进化石 |
 | `yugioh_symbols.py`、`assets/yugioh/` | 游戏王风格的 18 种独立属性圆章、参考星标、预制底材及资产来源说明 |
 | `yugioh_fonts.py`、`assets/fonts/` | 姓名楷体、独立属性字形、宋明正文、字体加载与 OFL 许可 |
 | `battle_cards.py`、`battle_card_style.py` | 对阵海报、双方完整配招、全回合过程与竞技场材质 |

@@ -1,0 +1,1583 @@
+{
+  "retrieved_date": "2026-11-06",
+  "stone_origin": "Original Pokémon Legends: Z-A game item icons mirrored by WikiDex; unchanged PNG bytes",
+  "mega_emblem": {
+    "filename": "mega-evolution.png",
+    "source_page": "https://legends.pokemon.com/en-us/mega-pokemon",
+    "original_svg_symbol": "symbol#wtc-icon-mega-evolution",
+    "preparation": "Lossless rasterization of the official SVG at 8x dimensions using sharp; no redrawing or design edits.",
+    "sha256": "c7355c29f0e37402c5f0a1aa5a291db21e34c9c26006f42a346fd304af4edb0a"
+  },
+  "no_stone_species": {
+    "384": "Rayquaza evolves without a Mega Stone"
+  },
+  "stones": [
+    {
+      "filename": "venusaur.png",
+      "dex": 3,
+      "variant": "",
+      "species": "Venusaur",
+      "forms": [
+        "超级妙蛙花"
+      ],
+      "source_file": "Archivo:Venusaurita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Venusaurita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/f/fe/latest/20251015165437/Venusaurita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "e973d939493f907dc338908371e8618ec69455c0c7459445565dd822f297e3fb"
+    },
+    {
+      "filename": "charizard-x.png",
+      "dex": 6,
+      "variant": "X",
+      "species": "Charizard",
+      "forms": [
+        "超级喷火龙Ｘ"
+      ],
+      "source_file": "Archivo:Charizardita X LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Charizardita_X_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/f/fb/latest/20251015165503/Charizardita_X_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "fc8c71d722811a7ca56a4da84dfdb8e4d7cf91159273d594e333a325e3f18282"
+    },
+    {
+      "filename": "charizard-y.png",
+      "dex": 6,
+      "variant": "Y",
+      "species": "Charizard",
+      "forms": [
+        "超级喷火龙Ｙ"
+      ],
+      "source_file": "Archivo:Charizardita Y LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Charizardita_Y_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/5d/latest/20251015173751/Charizardita_Y_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "4a90f37422445b71fd99dc7ea4c6fb4bf8a2715208ace209b61579792a501a41"
+    },
+    {
+      "filename": "blastoise.png",
+      "dex": 9,
+      "variant": "",
+      "species": "Blastoise",
+      "forms": [
+        "超级水箭龟"
+      ],
+      "source_file": "Archivo:Blastoisita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Blastoisita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/3/3d/latest/20251015165527/Blastoisita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "b264d07a3b0b5cbe383fed976a972f16d6006aa08a59c5d30812dd137107372b"
+    },
+    {
+      "filename": "beedrill.png",
+      "dex": 15,
+      "variant": "",
+      "species": "Beedrill",
+      "forms": [
+        "超级大针蜂"
+      ],
+      "source_file": "Archivo:Beedrillita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Beedrillita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/e/ed/latest/20251015181250/Beedrillita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "71584b85a1ff8c0b23803a08378a03b960e3d018cbbfb3fe7854aca9551d0cb4"
+    },
+    {
+      "filename": "pidgeot.png",
+      "dex": 18,
+      "variant": "",
+      "species": "Pidgeot",
+      "forms": [
+        "超级大比鸟"
+      ],
+      "source_file": "Archivo:Pidgeotita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Pidgeotita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/2/2f/latest/20251015180942/Pidgeotita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "54be3fb3b4f28ca0ae6bb498107a39c499bb883c393de632f70b46b566695251"
+    },
+    {
+      "filename": "raichu-x.png",
+      "dex": 26,
+      "variant": "X",
+      "species": "Raichu",
+      "forms": [
+        "超级雷丘Ｘ"
+      ],
+      "source_file": "Archivo:Raichunita X LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Raichunita_X_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/4/49/latest/20251018161424/Raichunita_X_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "305c075761d9f08b4b04dd463a71f7c7b2e600563d404cc3902f2ddc04dcab07"
+    },
+    {
+      "filename": "raichu-y.png",
+      "dex": 26,
+      "variant": "Y",
+      "species": "Raichu",
+      "forms": [
+        "超级雷丘Ｙ"
+      ],
+      "source_file": "Archivo:Raichunita Y LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Raichunita_Y_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/51/latest/20251018161657/Raichunita_Y_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "3d759daaa265a48c890c55e27df67f84d0634bff6bab20cb80abfeac5f01c874"
+    },
+    {
+      "filename": "clefable.png",
+      "dex": 36,
+      "variant": "",
+      "species": "Clefable",
+      "forms": [
+        "超级皮可西"
+      ],
+      "source_file": "Archivo:Clefablita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Clefablita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/8/85/latest/20251015135544/Clefablita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "44dcc7819deb12f99a68b24ebd97fe7ed6bab2d56ebdc5776f26960ba8130be7"
+    },
+    {
+      "filename": "alakazam.png",
+      "dex": 65,
+      "variant": "",
+      "species": "Alakazam",
+      "forms": [
+        "超级胡地"
+      ],
+      "source_file": "Archivo:Alakazamita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Alakazamita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/5f/latest/20251015173805/Alakazamita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "e112464055107c81da800e421dee978c561da334e3e1819551c166449a6b93de"
+    },
+    {
+      "filename": "victreebel.png",
+      "dex": 71,
+      "variant": "",
+      "species": "Victreebel",
+      "forms": [
+        "超级大食花"
+      ],
+      "source_file": "Archivo:Victreebelita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Victreebelita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/3/34/latest/20251015155639/Victreebelita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "c1fde56bcbddd9aad36c6ffb12fe13355a482d08ab28aef3476f6647e75361bb"
+    },
+    {
+      "filename": "slowbro.png",
+      "dex": 80,
+      "variant": "",
+      "species": "Slowbro",
+      "forms": [
+        "超级呆壳兽"
+      ],
+      "source_file": "Archivo:Slowbronita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Slowbronita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/f/f1/latest/20251015180904/Slowbronita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "1b4c3029c8f4593378f7e1d2dee3d2f28252e620b6d158dbb0ea80d48f399123"
+    },
+    {
+      "filename": "gengar.png",
+      "dex": 94,
+      "variant": "",
+      "species": "Gengar",
+      "forms": [
+        "超级耿鬼"
+      ],
+      "source_file": "Archivo:Gengarita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Gengarita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/9/97/latest/20251015164132/Gengarita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "e397febf55e61bdf74db24b0b5e5499b3937511788f68ec3123744b593e47dd5"
+    },
+    {
+      "filename": "kangaskhan.png",
+      "dex": 115,
+      "variant": "",
+      "species": "Kangaskhan",
+      "forms": [
+        "超级袋兽"
+      ],
+      "source_file": "Archivo:Kangaskhanita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Kangaskhanita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/51/latest/20251015173434/Kangaskhanita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "2d934be3414a2ade72c9da47e0d637653570a17b580dc42e8a88173d6803fe36"
+    },
+    {
+      "filename": "starmie.png",
+      "dex": 121,
+      "variant": "",
+      "species": "Starmie",
+      "forms": [
+        "超级宝石海星"
+      ],
+      "source_file": "Archivo:Starmita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Starmita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/2/2b/latest/20251015155716/Starmita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "405f0c4d8f490f8b0ed15cd1166c47ca66b11fbf244e3f12c820de550bbe2617"
+    },
+    {
+      "filename": "pinsir.png",
+      "dex": 127,
+      "variant": "",
+      "species": "Pinsir",
+      "forms": [
+        "超级凯罗斯"
+      ],
+      "source_file": "Archivo:Pinsirita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Pinsirita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/2/21/latest/20251015172437/Pinsirita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "c714babaa3c9c1b3bab29442acf71750674ec06bdf13954047cba6ffbc2ee16e"
+    },
+    {
+      "filename": "gyarados.png",
+      "dex": 130,
+      "variant": "",
+      "species": "Gyarados",
+      "forms": [
+        "超级暴鲤龙"
+      ],
+      "source_file": "Archivo:Gyaradosita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Gyaradosita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/d/d8/latest/20251015173455/Gyaradosita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "a6e331f066e7d38a26078d9f76ca9d48d58bdbd96d89581d8466af131d789c96"
+    },
+    {
+      "filename": "aerodactyl.png",
+      "dex": 142,
+      "variant": "",
+      "species": "Aerodactyl",
+      "forms": [
+        "超级化石翼龙"
+      ],
+      "source_file": "Archivo:Aerodactylita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Aerodactylita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/3/31/latest/20251015172502/Aerodactylita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "fc41db272689df67f1feee6f7e7e5162c8c7aa8dc33839e00b425afb3aed1e60"
+    },
+    {
+      "filename": "dragonite.png",
+      "dex": 149,
+      "variant": "",
+      "species": "Dragonite",
+      "forms": [
+        "超级快龙"
+      ],
+      "source_file": "Archivo:Dragonitita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Dragonitita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/2/2c/latest/20251015160022/Dragonitita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "b07d965766a412861ebb802751f1fd59cb6f6e92f6683db5fec042fbc2bc91a0"
+    },
+    {
+      "filename": "mewtwo-x.png",
+      "dex": 150,
+      "variant": "X",
+      "species": "Mewtwo",
+      "forms": [
+        "超级超梦Ｘ"
+      ],
+      "source_file": "Archivo:Mewtwoita X LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Mewtwoita_X_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/7/78/latest/20251015165556/Mewtwoita_X_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "6abb071843e110e0ad7d1363d6d71ed01eaa6d24bcf75929b13e52890e200092"
+    },
+    {
+      "filename": "mewtwo-y.png",
+      "dex": 150,
+      "variant": "Y",
+      "species": "Mewtwo",
+      "forms": [
+        "超级超梦Ｙ"
+      ],
+      "source_file": "Archivo:Mewtwoita Y LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Mewtwoita_Y_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/7/79/latest/20251015171400/Mewtwoita_Y_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "3dc9883c3670b166677b781a1e03df043bf45f0872622bc76aec7ba72674fa9a"
+    },
+    {
+      "filename": "meganium.png",
+      "dex": 154,
+      "variant": "",
+      "species": "Meganium",
+      "forms": [
+        "超级大竺葵"
+      ],
+      "source_file": "Archivo:Meganiumita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Meganiumita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/d/d1/latest/20251015160246/Meganiumita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "974d038df2c3b00b88b546438a0bc3d33f1a33af00557ed50706b122441d8b89"
+    },
+    {
+      "filename": "feraligatr.png",
+      "dex": 160,
+      "variant": "",
+      "species": "Feraligatr",
+      "forms": [
+        "超级大力鳄"
+      ],
+      "source_file": "Archivo:Feraligatrita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Feraligatrita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/9/9b/latest/20251015160317/Feraligatrita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "e7c02c847dc8bbbd235cc7a8edf91ef71e483c9082af426a692870f87d1379d7"
+    },
+    {
+      "filename": "ampharos.png",
+      "dex": 181,
+      "variant": "",
+      "species": "Ampharos",
+      "forms": [
+        "超级电龙"
+      ],
+      "source_file": "Archivo:Ampharosita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Ampharosita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/59/latest/20251015165326/Ampharosita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "7195785b9e5a4aacebae76ef5d194d3ccbe8b471e161abe1d9d06727fcc6c5b2"
+    },
+    {
+      "filename": "steelix.png",
+      "dex": 208,
+      "variant": "",
+      "species": "Steelix",
+      "forms": [
+        "超级大钢蛇"
+      ],
+      "source_file": "Archivo:Steelixita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Steelixita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/2/2c/latest/20251015180923/Steelixita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "99687764926ad7e648742a751452c78cde6c28fa024860fadc475c18cccf07e4"
+    },
+    {
+      "filename": "scizor.png",
+      "dex": 212,
+      "variant": "",
+      "species": "Scizor",
+      "forms": [
+        "超级巨钳螳螂"
+      ],
+      "source_file": "Archivo:Scizorita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Scizorita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/4/48/latest/20251015172233/Scizorita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "f381f7ca25eb5a127031867ff065162a48eaeedd07c5367ef7053f45284fb50f"
+    },
+    {
+      "filename": "heracross.png",
+      "dex": 214,
+      "variant": "",
+      "species": "Heracross",
+      "forms": [
+        "超级赫拉克罗斯"
+      ],
+      "source_file": "Archivo:Heracrossita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Heracrossita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/2/2d/latest/20251015173904/Heracrossita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "95ac741970bc455b47df9cd8b2e41aff6bcbde569b9f9b0e86580368e1e469ef"
+    },
+    {
+      "filename": "skarmory.png",
+      "dex": 227,
+      "variant": "",
+      "species": "Skarmory",
+      "forms": [
+        "超级盔甲鸟"
+      ],
+      "source_file": "Archivo:Skarmorita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Skarmorita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/9/94/latest/20251015160449/Skarmorita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "d322e2f316b44bdc67d968630dcb62bfd1412014d8bd085c4992b87254b5328b"
+    },
+    {
+      "filename": "houndoom.png",
+      "dex": 229,
+      "variant": "",
+      "species": "Houndoom",
+      "forms": [
+        "超级黑鲁加"
+      ],
+      "source_file": "Archivo:Houndoomita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Houndoomita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/9/90/latest/20251015172042/Houndoomita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "38c180d3661e1a68b3b9893a85f222997828f03d526e5945ec43e1b1528537da"
+    },
+    {
+      "filename": "tyranitar.png",
+      "dex": 248,
+      "variant": "",
+      "species": "Tyranitar",
+      "forms": [
+        "超级班基拉斯"
+      ],
+      "source_file": "Archivo:Tyranitarita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Tyranitarita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/1/1c/latest/20251015172218/Tyranitarita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "82b10d8421f4fbe7b013adb72a3e0f25e835171e449139881a6f0eaae7b768c5"
+    },
+    {
+      "filename": "sceptile.png",
+      "dex": 254,
+      "variant": "",
+      "species": "Sceptile",
+      "forms": [
+        "超级蜥蜴王"
+      ],
+      "source_file": "Archivo:Sceptilita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Sceptilita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/6/69/latest/20251210184806/Sceptilita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "9f8a09bbb1c4b85477b0d3f06c74e5addb643f26c3d16e09320b574e75cff93f"
+    },
+    {
+      "filename": "blaziken.png",
+      "dex": 257,
+      "variant": "",
+      "species": "Blaziken",
+      "forms": [
+        "超级火焰鸡"
+      ],
+      "source_file": "Archivo:Blazikenita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Blazikenita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/f/f2/latest/20251210184727/Blazikenita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "e12e4bca41a870be0c81781b35738f1fb3f417da0e4feb9f167e91a379a20ab8"
+    },
+    {
+      "filename": "swampert.png",
+      "dex": 260,
+      "variant": "",
+      "species": "Swampert",
+      "forms": [
+        "超级巨沼怪"
+      ],
+      "source_file": "Archivo:Swampertita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Swampertita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/d/dd/latest/20251210184744/Swampertita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "4a942ff8cc37040a467c8bb508c70cbe720139068067a9221201cd7178cf4a9e"
+    },
+    {
+      "filename": "gardevoir.png",
+      "dex": 282,
+      "variant": "",
+      "species": "Gardevoir",
+      "forms": [
+        "超级沙奈朵"
+      ],
+      "source_file": "Archivo:Gardevoirita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Gardevoirita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/3/30/latest/20251015164150/Gardevoirita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "ca7e7efb69980795ae298250e2174d91f187d99e31d7052f4c1d31dddca057f2"
+    },
+    {
+      "filename": "sableye.png",
+      "dex": 302,
+      "variant": "",
+      "species": "Sableye",
+      "forms": [
+        "超级勾魂眼"
+      ],
+      "source_file": "Archivo:Sableynita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Sableynita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/6/6a/latest/20251015180547/Sableynita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "bef86962ae959daa18a779df1152bc19a5cfc8ac901cea8f4a9eb60b4aa55e12"
+    },
+    {
+      "filename": "mawile.png",
+      "dex": 303,
+      "variant": "",
+      "species": "Mawile",
+      "forms": [
+        "超级大嘴娃"
+      ],
+      "source_file": "Archivo:Mawilita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Mawilita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/a/a9/latest/20251015175935/Mawilita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "0aec916f920658c489c9dd04b8fd49c717dae77facdfbfe7541c77ebb4a300e7"
+    },
+    {
+      "filename": "aggron.png",
+      "dex": 306,
+      "variant": "",
+      "species": "Aggron",
+      "forms": [
+        "超级波士可多拉"
+      ],
+      "source_file": "Archivo:Aggronita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Aggronita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/2/2e/latest/20251015172123/Aggronita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "11c96585126ff710c2301f609fc221b1bd548d32879e9fb627333b0a3be3b020"
+    },
+    {
+      "filename": "medicham.png",
+      "dex": 308,
+      "variant": "",
+      "species": "Medicham",
+      "forms": [
+        "超级恰雷姆"
+      ],
+      "source_file": "Archivo:Medichamita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Medichamita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/d/d2/latest/20251015172103/Medichamita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "01a9164c9bafc48c6f776b3f9f2281180e645d4b1f0a758b4fa66ee77ffa5a12"
+    },
+    {
+      "filename": "manectric.png",
+      "dex": 310,
+      "variant": "",
+      "species": "Manectric",
+      "forms": [
+        "超级雷电兽"
+      ],
+      "source_file": "Archivo:Manectricita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Manectricita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/50/latest/20251015175950/Manectricita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "a90d3ca703f29efac88d6ca8de498f088da59f4b44404a711e5716c6d0e8589d"
+    },
+    {
+      "filename": "sharpedo.png",
+      "dex": 319,
+      "variant": "",
+      "species": "Sharpedo",
+      "forms": [
+        "超级巨牙鲨"
+      ],
+      "source_file": "Archivo:Sharpedonita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Sharpedonita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/0/00/latest/20251015180848/Sharpedonita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "799e431e8e706ddb62f33d1ffe92b94a9c1ece7bdad2392f1cd9804ead4846a5"
+    },
+    {
+      "filename": "camerupt.png",
+      "dex": 323,
+      "variant": "",
+      "species": "Camerupt",
+      "forms": [
+        "超级喷火驼"
+      ],
+      "source_file": "Archivo:Cameruptita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Cameruptita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/d/d0/latest/20251015181152/Cameruptita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "00d3f48106cbef968e065368bb44068ad5fdd0371b36c095df4cad8571a47c16"
+    },
+    {
+      "filename": "altaria.png",
+      "dex": 334,
+      "variant": "",
+      "species": "Altaria",
+      "forms": [
+        "超级七夕青鸟"
+      ],
+      "source_file": "Archivo:Altarianita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Altarianita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/54/latest/20251015180616/Altarianita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "ff98732abca23fc61e01b6018c2b215acb54e00d776535c1dbd5f560c833568b"
+    },
+    {
+      "filename": "banette.png",
+      "dex": 354,
+      "variant": "",
+      "species": "Banette",
+      "forms": [
+        "超级诅咒娃娃"
+      ],
+      "source_file": "Archivo:Banettita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Banettita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/a/a9/latest/20251015172155/Banettita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "4e28a0a1fa381fb6d4368052dc9c6c7e86528da49a978fec6bf5c0b6b65e3173"
+    },
+    {
+      "filename": "chimecho.png",
+      "dex": 358,
+      "variant": "",
+      "species": "Chimecho",
+      "forms": [
+        "超级风铃铃"
+      ],
+      "source_file": "Archivo:Chimechita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Chimechita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/7/7b/latest/20251210183357/Chimechita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "11ec249b080c08f97835eaf21438c2d44c902653b31bd26c02282a10dff6001d"
+    },
+    {
+      "filename": "absol.png",
+      "dex": 359,
+      "variant": "",
+      "species": "Absol",
+      "forms": [
+        "超级阿勃梭鲁"
+      ],
+      "source_file": "Archivo:Absolita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Absolita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/2/21/latest/20251015173736/Absolita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "6841b0cf65f8b5ee71baf1a5845b98c0ba11f529ba064b6abfd2ed3c89362579"
+    },
+    {
+      "filename": "absol-z.png",
+      "dex": 359,
+      "variant": "Z",
+      "species": "Absol",
+      "forms": [
+        "超级阿勃梭鲁Ｚ"
+      ],
+      "source_file": "Archivo:Absolita Z LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Absolita_Z_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/b/b7/latest/20251210183438/Absolita_Z_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "ddf5c1337541b8a22b39e9263a6d9735e1ecd0cfed2d926dae5423121d0dc432"
+    },
+    {
+      "filename": "glalie.png",
+      "dex": 362,
+      "variant": "",
+      "species": "Glalie",
+      "forms": [
+        "超级冰鬼护"
+      ],
+      "source_file": "Archivo:Glalita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Glalita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/e/e0/latest/20251015181000/Glalita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "906b2021db020e402d6eb3513484ed543db9d8de4b024bdaf3c8cffbd2a12df0"
+    },
+    {
+      "filename": "salamence.png",
+      "dex": 373,
+      "variant": "",
+      "species": "Salamence",
+      "forms": [
+        "超级暴飞龙"
+      ],
+      "source_file": "Archivo:Salamencita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Salamencita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/6/6c/latest/20251015181227/Salamencita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "33b6a8337a9444c8b588cd3451dbface3d577313fc80a2d5d2f8a957f38886ce"
+    },
+    {
+      "filename": "metagross.png",
+      "dex": 376,
+      "variant": "",
+      "species": "Metagross",
+      "forms": [
+        "超级巨金怪"
+      ],
+      "source_file": "Archivo:Metagrossita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Metagrossita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/a/a3/latest/20251015180826/Metagrossita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "925ba4979a1b14c91aaf45c90db5280a5479fd5b0ebc91aa4c2871ea3cb8aa08"
+    },
+    {
+      "filename": "latias.png",
+      "dex": 380,
+      "variant": "",
+      "species": "Latias",
+      "forms": [
+        "超级拉帝亚斯"
+      ],
+      "source_file": "Archivo:Latiasita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Latiasita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/7/73/latest/20251210184613/Latiasita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "05d2a1b24eb1cdca758b95e911963410041d803c32adabcacfda89c0c66100f7"
+    },
+    {
+      "filename": "latios.png",
+      "dex": 381,
+      "variant": "",
+      "species": "Latios",
+      "forms": [
+        "超级拉帝欧斯"
+      ],
+      "source_file": "Archivo:Latiosita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Latiosita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/e/e6/latest/20251210184630/Latiosita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "e6babdcaa79281f2c62d3deb4bd088286f4e0a02461c75211e1c300764f1e039"
+    },
+    {
+      "filename": "staraptor.png",
+      "dex": 398,
+      "variant": "",
+      "species": "Staraptor",
+      "forms": [
+        "超级姆克鹰"
+      ],
+      "source_file": "Archivo:Staraptorita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Staraptorita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/3/35/latest/20251210183541/Staraptorita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "de87f7a5be3defd6fd6d148feb58b4271941f4eb379338b463dbc55e739a337a"
+    },
+    {
+      "filename": "lopunny.png",
+      "dex": 428,
+      "variant": "",
+      "species": "Lopunny",
+      "forms": [
+        "超级长耳兔"
+      ],
+      "source_file": "Archivo:Lopunnita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Lopunnita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/8/87/latest/20251015181206/Lopunnita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "58cca808549c39d5086647eddb4c81dd1562939eb7c23759aaa6449693674188"
+    },
+    {
+      "filename": "garchomp.png",
+      "dex": 445,
+      "variant": "",
+      "species": "Garchomp",
+      "forms": [
+        "超级烈咬陆鲨"
+      ],
+      "source_file": "Archivo:Garchompita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Garchompita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/3/38/latest/20251015180019/Garchompita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "ebe2daa15146a5bbb500249ba4c2cc118339d749f60cc269156f1e90098126a4"
+    },
+    {
+      "filename": "garchomp-z.png",
+      "dex": 445,
+      "variant": "Z",
+      "species": "Garchomp",
+      "forms": [
+        "超级烈咬陆鲨Ｚ"
+      ],
+      "source_file": "Archivo:Garchompita Z LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Garchompita_Z_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/e/ee/latest/20251210183639/Garchompita_Z_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "0f8afb96b95877e7fdb84ee790c23cc798b7fb7cc4cea946263661a5afad8f5c"
+    },
+    {
+      "filename": "lucario.png",
+      "dex": 448,
+      "variant": "",
+      "species": "Lucario",
+      "forms": [
+        "超级路卡利欧"
+      ],
+      "source_file": "Archivo:Lucarita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Lucarita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/c/ce/latest/20251015172712/Lucarita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "283d44ed581b3d547f140d5eb842e5d29b79a3cb87e01cad8aa61c34268a37a9"
+    },
+    {
+      "filename": "lucario-z.png",
+      "dex": 448,
+      "variant": "Z",
+      "species": "Lucario",
+      "forms": [
+        "超级路卡利欧Ｚ"
+      ],
+      "source_file": "Archivo:Lucarita Z LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Lucarita_Z_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/7/7d/latest/20251210183724/Lucarita_Z_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "4b8166b202cfa451aa46d59e133bef5cf7e16202025298196fc5553da1aa6915"
+    },
+    {
+      "filename": "abomasnow.png",
+      "dex": 460,
+      "variant": "",
+      "species": "Abomasnow",
+      "forms": [
+        "超级暴雪王"
+      ],
+      "source_file": "Archivo:Abomasnowita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Abomasnowita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/d/de/latest/20251015172729/Abomasnowita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "527256e1904f11f75de86401402ca115577d7828f019e5150b4042ae83866034"
+    },
+    {
+      "filename": "gallade.png",
+      "dex": 475,
+      "variant": "",
+      "species": "Gallade",
+      "forms": [
+        "超级艾路雷朵"
+      ],
+      "source_file": "Archivo:Galladita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Galladita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/c/ca/latest/20251015180631/Galladita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "9f6937b21b698fc7bdee3504a018641a729710ce4bbd745bee70b9a1ad88576d"
+    },
+    {
+      "filename": "froslass.png",
+      "dex": 478,
+      "variant": "",
+      "species": "Froslass",
+      "forms": [
+        "超级雪妖女"
+      ],
+      "source_file": "Archivo:Froslassita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Froslassita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/d/da/latest/20251015160521/Froslassita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "0ed0d503e362939e6d38b87305762ae05d5c763469459c15e612b0515d8ae40d"
+    },
+    {
+      "filename": "heatran.png",
+      "dex": 485,
+      "variant": "",
+      "species": "Heatran",
+      "forms": [
+        "超级席多蓝恩"
+      ],
+      "source_file": "Archivo:Heatranita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Heatranita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/0/0f/latest/20251210184221/Heatranita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "86bfeeeed84894894d50683cf54e4b296a46e306e939e1f45ebc0942e1e995e6"
+    },
+    {
+      "filename": "darkrai.png",
+      "dex": 491,
+      "variant": "",
+      "species": "Darkrai",
+      "forms": [
+        "超级达克莱伊"
+      ],
+      "source_file": "Archivo:Darkrainita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Darkrainita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/c/c1/latest/20251210184243/Darkrainita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "80b0ecfcce6806798b489edad37bda15c8755494fd8bf9f57827cad863737337"
+    },
+    {
+      "filename": "emboar.png",
+      "dex": 500,
+      "variant": "",
+      "species": "Emboar",
+      "forms": [
+        "超级炎武王"
+      ],
+      "source_file": "Archivo:Emboarita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Emboarita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/9/94/latest/20251015160845/Emboarita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "14d9d7d53cf0ca028f28e2d72272aae778e4975dd653726316b719f966db231c"
+    },
+    {
+      "filename": "excadrill.png",
+      "dex": 530,
+      "variant": "",
+      "species": "Excadrill",
+      "forms": [
+        "超级龙头地鼠"
+      ],
+      "source_file": "Archivo:Excadrillita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Excadrillita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/9/98/latest/20251015161101/Excadrillita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "75c7b0b269d3b419b8a40dc47654a5cd353c86d9970a8d57b2ca1ec1ad577771"
+    },
+    {
+      "filename": "audino.png",
+      "dex": 531,
+      "variant": "",
+      "species": "Audino",
+      "forms": [
+        "超级差不多娃娃"
+      ],
+      "source_file": "Archivo:Audinita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Audinita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/1/1f/latest/20251015180811/Audinita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "3e8fa00d5588522dd8d50112be2694267980802229b956c5163926259c1c9967"
+    },
+    {
+      "filename": "scolipede.png",
+      "dex": 545,
+      "variant": "",
+      "species": "Scolipede",
+      "forms": [
+        "超级蜈蚣王"
+      ],
+      "source_file": "Archivo:Scolipedita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Scolipedita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/9/9b/latest/20251015161117/Scolipedita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "d4a23053246f6f21c4cb4c7a380fc4f42ca5badb944e7a940fafd3bd791522ee"
+    },
+    {
+      "filename": "scrafty.png",
+      "dex": 560,
+      "variant": "",
+      "species": "Scrafty",
+      "forms": [
+        "超级头巾混混"
+      ],
+      "source_file": "Archivo:Scraftita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Scraftita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/b/b1/latest/20251015161138/Scraftita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "90f96fc663c9c36055ffcae0f170aa7fa5bf42d47349dead70cef5f5351cc649"
+    },
+    {
+      "filename": "eelektross.png",
+      "dex": 604,
+      "variant": "",
+      "species": "Eelektross",
+      "forms": [
+        "超级麻麻鳗鱼王"
+      ],
+      "source_file": "Archivo:Eelektrossita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Eelektrossita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/5f/latest/20251015161155/Eelektrossita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "d9cf211f0412fe0a1e1e8cdbcb75a27fef6fc011942b22004e49c5338483b1bf"
+    },
+    {
+      "filename": "chandelure.png",
+      "dex": 609,
+      "variant": "",
+      "species": "Chandelure",
+      "forms": [
+        "超级水晶灯火灵"
+      ],
+      "source_file": "Archivo:Chandelurita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Chandelurita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/1/10/latest/20251015161216/Chandelurita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "5c349ed311941fd42fdf4fcbc29b3ac8db3683598bb05850d1824904df320dca"
+    },
+    {
+      "filename": "golurk.png",
+      "dex": 623,
+      "variant": "",
+      "species": "Golurk",
+      "forms": [
+        "超级泥偶巨人"
+      ],
+      "source_file": "Archivo:Golurkita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Golurkita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/6/62/latest/20251210183801/Golurkita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "0e61028c06b3e1b2d1353da2266e87b7f4f0e159ac37d54f929aecbfe06d2da8"
+    },
+    {
+      "filename": "chesnaught.png",
+      "dex": 652,
+      "variant": "",
+      "species": "Chesnaught",
+      "forms": [
+        "超级布里卡隆"
+      ],
+      "source_file": "Archivo:Chesnaughtita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Chesnaughtita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/9/91/latest/20251015161257/Chesnaughtita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "1195aa65fe756beeecf391df5f84c32956ae06f31e2dd6678d30961920353650"
+    },
+    {
+      "filename": "delphox.png",
+      "dex": 655,
+      "variant": "",
+      "species": "Delphox",
+      "forms": [
+        "超级妖火红狐"
+      ],
+      "source_file": "Archivo:Delphoxita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Delphoxita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/51/latest/20251015161330/Delphoxita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "aa982214562122e07805cf49f92ffd84ce9774beab72fb31eaacc5d419fd8c2c"
+    },
+    {
+      "filename": "greninja.png",
+      "dex": 658,
+      "variant": "",
+      "species": "Greninja",
+      "forms": [
+        "超级甲贺忍蛙"
+      ],
+      "source_file": "Archivo:Greninjanita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Greninjanita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/b/b7/latest/20251015161356/Greninjanita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "b23bd7ea2462e32a82e9af2ce6cb69ae84255953f9e16d7e83a5c38a16bcf6ec"
+    },
+    {
+      "filename": "pyroar.png",
+      "dex": 668,
+      "variant": "",
+      "species": "Pyroar",
+      "forms": [
+        "超级火炎狮"
+      ],
+      "source_file": "Archivo:Pyroarita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Pyroarita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/59/latest/20251015162016/Pyroarita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "fd694540cadaa762255533442dc88e60c760a55bf3f039d36cb14d5c35ea1320"
+    },
+    {
+      "filename": "floette.png",
+      "dex": 670,
+      "variant": "",
+      "species": "Floette",
+      "forms": [
+        "超级花叶蒂"
+      ],
+      "source_file": "Archivo:Floettita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Floettita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/b/b1/latest/20251015162218/Floettita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "b6d13320d367f865e9086724a6cdb3749be3b4aa3539cc9bf0a9041d2ea04aa1"
+    },
+    {
+      "filename": "meowstic.png",
+      "dex": 678,
+      "variant": "",
+      "species": "Meowstic",
+      "forms": [
+        "超级超能妙喵"
+      ],
+      "source_file": "Archivo:Meowsticita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Meowsticita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/b/b3/latest/20251210183841/Meowsticita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "ea620669b2977f3388fe30a212ce95c4058284990ae5794f05b8f01ea0f7e3c2"
+    },
+    {
+      "filename": "malamar.png",
+      "dex": 687,
+      "variant": "",
+      "species": "Malamar",
+      "forms": [
+        "超级乌贼王"
+      ],
+      "source_file": "Archivo:Malamarita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Malamarita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/d/d8/latest/20251015162236/Malamarita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "fd3381882cd90f3f1eb9c2438f51550e8cb60922cece48608501d1d73c7151fa"
+    },
+    {
+      "filename": "barbaracle.png",
+      "dex": 689,
+      "variant": "",
+      "species": "Barbaracle",
+      "forms": [
+        "超级龟足巨铠"
+      ],
+      "source_file": "Archivo:Barbaraclita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Barbaraclita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/1/13/latest/20251015162254/Barbaraclita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "d275beb824e93134854de220b56db1b304cd1ad4b64b1ff8c6a171de0fa94d35"
+    },
+    {
+      "filename": "dragalge.png",
+      "dex": 691,
+      "variant": "",
+      "species": "Dragalge",
+      "forms": [
+        "超级毒藻龙"
+      ],
+      "source_file": "Archivo:Dragalgita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Dragalgita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/6/67/latest/20251015162315/Dragalgita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "7361b80f1262cc12747e5f1d76bb5cd00c8a872525c224ef1b416f6fcf042a23"
+    },
+    {
+      "filename": "hawlucha.png",
+      "dex": 701,
+      "variant": "",
+      "species": "Hawlucha",
+      "forms": [
+        "超级摔角鹰人"
+      ],
+      "source_file": "Archivo:Hawluchanita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Hawluchanita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/8/86/latest/20251015162335/Hawluchanita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "05a4b05d0343a4fb6f97341751ab7825a808c26df3c4446ee90650a3986a43d7"
+    },
+    {
+      "filename": "zygarde.png",
+      "dex": 718,
+      "variant": "",
+      "species": "Zygarde",
+      "forms": [
+        "超级基格尔德"
+      ],
+      "source_file": "Archivo:Zygardita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Zygardita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/5f/latest/20251015162408/Zygardita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "e7d06c6d08cd6e7933685e1f12ea41ab37023bf76e01bb2b3e4ce5558e1ca426"
+    },
+    {
+      "filename": "diancie.png",
+      "dex": 719,
+      "variant": "",
+      "species": "Diancie",
+      "forms": [
+        "超级蒂安希"
+      ],
+      "source_file": "Archivo:Diancita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Diancita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/5e/latest/20251015181034/Diancita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "367552f4f1fbc30c24412a29d250983089eeff11f7cd76e88eba0d09f638ae32"
+    },
+    {
+      "filename": "crabominable.png",
+      "dex": 740,
+      "variant": "",
+      "species": "Crabominable",
+      "forms": [
+        "超级好胜毛蟹"
+      ],
+      "source_file": "Archivo:Crabominablita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Crabominablita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/8/84/latest/20251210183907/Crabominablita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "266025714c9e8f5b0077d24f68b51fbcfef5fb67265b70665e151453aee392ff"
+    },
+    {
+      "filename": "golisopod.png",
+      "dex": 768,
+      "variant": "",
+      "species": "Golisopod",
+      "forms": [
+        "超级具甲武者"
+      ],
+      "source_file": "Archivo:Golisopodita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Golisopodita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/c/c9/latest/20251210183933/Golisopodita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "6a75cc3234380104bedd2862b6ce8e4ebd55fde83f95801e4a1ab89f797d445c"
+    },
+    {
+      "filename": "drampa.png",
+      "dex": 780,
+      "variant": "",
+      "species": "Drampa",
+      "forms": [
+        "超级老翁龙"
+      ],
+      "source_file": "Archivo:Drampanita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Drampanita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/9/98/latest/20251015162429/Drampanita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "d426535d6df62579acbbccab8f9ae3cdd9d2e6e294db7c8f1c5c95123be58cdc"
+    },
+    {
+      "filename": "magearna.png",
+      "dex": 801,
+      "variant": "",
+      "species": "Magearna",
+      "forms": [
+        "超级玛机雅娜（现在的颜色）",
+        "超级玛机雅娜（５００年前的颜色）"
+      ],
+      "source_file": "Archivo:Magearnita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Magearnita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/e/ec/latest/20251210183958/Magearnita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "b32d54aeaa72a0a0a0220a26fb39f882ae4bbf858bb354d0c6af827dd3fec04a"
+    },
+    {
+      "filename": "zeraora.png",
+      "dex": 807,
+      "variant": "",
+      "species": "Zeraora",
+      "forms": [
+        "超级捷拉奥拉"
+      ],
+      "source_file": "Archivo:Zeraoranita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Zeraoranita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/f/f8/latest/20251210184318/Zeraoranita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "e51ac9434d6a9b5a6533c26949bafcfe161d723954c965eef2451781b8b7fd55"
+    },
+    {
+      "filename": "falinks.png",
+      "dex": 870,
+      "variant": "",
+      "species": "Falinks",
+      "forms": [
+        "超级列阵兵"
+      ],
+      "source_file": "Archivo:Falinksita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Falinksita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/c/c8/latest/20251015162449/Falinksita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "04019393a7b725c8d79b0bc66a86eaa0b525ca77f24b5980bcdc7d6b7bffc481"
+    },
+    {
+      "filename": "scovillain.png",
+      "dex": 952,
+      "variant": "",
+      "species": "Scovillain",
+      "forms": [
+        "超级狠辣椒"
+      ],
+      "source_file": "Archivo:Scovillainita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Scovillainita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/5/5b/latest/20251210184022/Scovillainita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "7b6bdbc0f27486a1fa9b57c0ee37f665b1a264c9a6375cfbeed9378e3b725ac5"
+    },
+    {
+      "filename": "glimmora.png",
+      "dex": 970,
+      "variant": "",
+      "species": "Glimmora",
+      "forms": [
+        "超级晶光花"
+      ],
+      "source_file": "Archivo:Glimmoranita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Glimmoranita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/3/31/latest/20251210184115/Glimmoranita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "80e6d96a2c52f77d85bf68a6baf24204642d81aad6fef744c7380c341e64193c"
+    },
+    {
+      "filename": "tatsugiri.png",
+      "dex": 978,
+      "variant": "",
+      "species": "Tatsugiri",
+      "forms": [
+        "超级米立龙（上弓姿势）",
+        "超级米立龙（下垂姿势）",
+        "超级米立龙（平挺姿势）"
+      ],
+      "source_file": "Archivo:Tatsugirita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Tatsugirita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/a/ab/latest/20251210184044/Tatsugirita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "6d8b5a073df1c7944106877a2e3fa89f5e2ab6aca5851b648d631c3501e18b59"
+    },
+    {
+      "filename": "baxcalibur.png",
+      "dex": 998,
+      "variant": "",
+      "species": "Baxcalibur",
+      "forms": [
+        "超级戟脊龙"
+      ],
+      "source_file": "Archivo:Baxcaliburita LPZA.png",
+      "source_page": "https://www.wikidex.net/wiki/Archivo:Baxcaliburita_LPZA.png",
+      "download_url": "https://images.wikidexcdn.net/mwuploads/wikidex/c/c4/latest/20251106154002/Baxcaliburita_LPZA.png",
+      "dimensions": [
+        160,
+        160
+      ],
+      "sha256": "d0556c0316e00b5cb648dc90ae826ced9b0695e1add32e4ead9063f3af60809e"
+    }
+  ]
+}

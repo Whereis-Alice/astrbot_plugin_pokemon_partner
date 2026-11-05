@@ -10,6 +10,7 @@ import io
 import math
 import re
 from collections.abc import Callable, Sequence
+from dataclasses import replace
 from functools import lru_cache
 
 from PIL import Image, ImageDraw, ImageFilter
@@ -24,6 +25,10 @@ try:
     from .yugioh_fonts import load_card_font, load_card_name_mask, card_name_artwork_metrics
     from .yugioh_foil import render_foil_name
     from .yugioh_frames import paint_frame
+    from .mega_forms import is_mega, mega_name, mega_profile, render_mega_emblem, render_mega_stone
+    from .yugioh_mega_materials import (
+        paint_mega_outer, paint_mega_dark_stock, finish_mega_outer, paint_mega_portrait,
+    )
 except ImportError:
     from card_renderer import _split_top_level
     from card_text import single_line_text, paragraph_text
@@ -34,6 +39,10 @@ except ImportError:
     from yugioh_fonts import load_card_font, load_card_name_mask, card_name_artwork_metrics
     from yugioh_foil import render_foil_name
     from yugioh_frames import paint_frame
+    from mega_forms import is_mega, mega_name, mega_profile, render_mega_emblem, render_mega_stone
+    from yugioh_mega_materials import (
+        paint_mega_outer, paint_mega_dark_stock, finish_mega_outer, paint_mega_portrait,
+    )
 
 
 CARD_W, CARD_H = 1080, 1680
@@ -178,7 +187,7 @@ def _rarity_star(base: Image.Image, x: int, y: int, kind: str):
     base.alpha_composite(render_level_star(64), (x, y))
 
 
-def _portrait(base: Image.Image, item: DrawItem, loader: Callable | None, box):
+def _portrait(base: Image.Image, item: DrawItem, loader: Callable | None, box, *, mega: bool = False):
     x, y, width, height = map(round, box)
     row = dict(item.row)
     if item.shiny:
@@ -201,6 +210,9 @@ def _portrait(base: Image.Image, item: DrawItem, loader: Callable | None, box):
         ink = (252, 241, 209)
         draw.text((x + width / 2, y + height / 2 + 90), label, font=_font(28),
                   anchor="mt", fill=ink, stroke_width=2, stroke_fill=(33, 31, 40))
+        return
+    if mega:
+        paint_mega_portrait(base, art, box)
         return
     scale = min(3.0, width / art.width, height / art.height)
     art = art.resize((max(1, round(art.width * scale)), max(1, round(art.height * scale))),
@@ -438,11 +450,31 @@ def _footer(base, item, kind, missing):
     _text(draw, 1009 - right_width, serial_y, serial, size, ink)
 
 
+def _mega_name_layout(draw, name: str, kind: str, available: int):
+    """Keep the complete form title and emblem before the actual type seals."""
+    height_limit = 62 if kind == 'SHINY' else 81
+    for size in range(66, 25, -1):
+        face = _name_font(size, name)
+        width, height = card_name_artwork_metrics(name, size) or (
+            draw.textlength(name, font=face), face.getbbox(name, anchor='lt')[3])
+        if width <= available and height <= height_limit:
+            return size, face, round(width), height
+    raise ValueError("Mega 形态名称超出卡片的标题空间，请使用文本。")
+
+
 def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool = False):
+    mega = is_mega(item.row)
+    if mega:
+        item = replace(item, name=mega_name(item.row, item.name),
+                       row={**item.row, 'profile': mega_profile(item.row)})
     kind, types = _kind(item), _types(item)
     ink, muted, _rule = INKS[kind]
     base = render_stock(kind, CARD_W, CARD_H)
-    _outer_frame(base, kind)
+    if mega:
+        paint_mega_dark_stock(base, kind)
+        paint_mega_outer(base, kind)
+    else:
+        _outer_frame(base, kind)
     title = base.crop((67, 66, 1012, 147))
     paint_frame(base, 'title', (54, 54, 1026, 159), kind)
     if kind in {'C', 'R'}:
@@ -453,10 +485,17 @@ def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool =
     base.alpha_composite(title, (67, 66))
     draw = ImageDraw.Draw(base)
     name = single_line_text(item.name)
-    size, lines = _name_layout(draw, name, kind)
-    name_face = _name_font(size, name)
-    heights = [(card_name_artwork_metrics(line, size) or
-                (0, name_face.getbbox(line, anchor='lt')[3]))[1] for line in lines]
+    emblem = render_mega_emblem(42, 56) if mega else None
+    first_attribute_x = 925-(len(types)-1)*83
+    if emblem is not None:
+        available = first_attribute_x-18-78-emblem.width-15
+        size, name_face, name_width, name_height = _mega_name_layout(draw, name, kind, available)
+        lines, heights = (name,), (name_height,)
+    else:
+        size, lines = _name_layout(draw, name, kind)
+        name_face = _name_font(size, name)
+        heights = [(card_name_artwork_metrics(line, size) or
+                    (0, name_face.getbbox(line, anchor='lt')[3]))[1] for line in lines]
     title_center = 97 if kind == 'SHINY' else (66+147)/2
     text_top = title_center - (sum(heights) + (len(lines)-1)*4) / 2
     for index, line in enumerate(lines):
@@ -465,15 +504,24 @@ def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool =
     for index, type_name in enumerate(types):
         x = 925 - (len(types) - index - 1) * 83
         base.alpha_composite(render_attribute_icon(type_name, 78), (x, round(title_center-39)))
+    if emblem is not None:
+        base.alpha_composite(emblem, (78+name_width+15, round(title_center-emblem.height/2)))
     stars = {"C": 2, "R": 4, "SR": 6, "SSR": 8, "SHINY": 12}[kind]
     for index in range(stars):
         _rarity_star(base, 930 - index * 68, 172, kind)
+    if mega:
+        stone = render_mega_stone(item.row, 66, 66)
+        if stone is not None:
+            base.alpha_composite(stone, (79, round(204-stone.height/2)))
 
     # The supplied picture mould and light field share an actual print texture.
     paint_frame(base, 'picture', (75, 253, 1005, 1080), kind)
     art_box = (96, 274, 888, 785)
     base.alpha_composite(render_art_scene(kind, types[0], 888, 785), (96, 274))
-    _portrait(base, item, loader, (114, 292, 852, 749))
+    if mega:
+        _portrait(base, item, loader, (76, 271, 928, 793), mega=True)
+    else:
+        _portrait(base, item, loader, (114, 292, 852, 749))
     apply_print_finish(base, art_box, kind)
 
     missing = []
@@ -509,6 +557,8 @@ def _card(item: DrawItem, loader: Callable | None, *, profile_black_bold: bool =
     _matchups(base, layout, matchup_top, kind, item.bst)
     _stats_band(base, item, kind)
     _footer(base, item, kind, missing)
+    if mega:
+        finish_mega_outer(base)
     return base, ()
 
 
