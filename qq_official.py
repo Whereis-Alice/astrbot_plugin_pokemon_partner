@@ -129,7 +129,6 @@ def build_keyboard(event, kind='menu', *, prefix='', target_user_id='') -> dict 
     if kind == 'draw':
         rows = [[b('再抽一次', '今日宝可梦', primary=True), b('我的宝可梦', '我的宝可梦')],
                 [b('收集资料', '收集资料'), b('星尘兑换', '兑换宝可梦 ', enter=False)],
-                [b('对战记录', '对战记录'), b('全部功能', '图鉴帮助')],
                 [b('本群训练家', '本群训练家'), b('我的编号', '训练家编号')]]
     elif kind == 'collection':
         text = str(getattr(event, 'get_message_str', lambda: '')() or '')
@@ -174,8 +173,8 @@ def _format_draw(text: str) -> tuple[str, list[str]]:
         if single:
             owner, name, rarity, badge = single.groups()
             result += ['> '+_escape(owner)+'的今日宝可梦是',
-                       '## '+('✨ ' if '闪光' in badge else '✦ ')+_escape(name),
-                       '**'+_escape(rarity+' · '+badge)+'**']
+                       '**'+('✨ ' if '闪光' in badge else '✦ ')
+                       +_escape(name+'｜'+rarity+'·'+badge)+'**']
         elif line.startswith('今日剩余 '):
             status = re.match(r'^今日剩余 (\d+/\d+) 次｜星尘(\d+)(.*)$', line)
             if status:
@@ -206,7 +205,7 @@ def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, i
                 title = heading.group(1)
                 lines[0] = heading.group(2).strip()
         lines = [_escape(line) for line in lines]
-    body = ['# '+_escape(title)]
+    body = [] if kind == 'draw' else ['# '+_escape(title)]
     if images:
         # Main card art leads the reading flow. The image bytes are uploaded at
         # native resolution; the size hint only controls mobile presentation.

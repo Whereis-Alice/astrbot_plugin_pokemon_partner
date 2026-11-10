@@ -467,8 +467,9 @@ class PresentationTests(unittest.TestCase):
         text = '小智的今日宝可梦是 炎帝｜SSR·传说（NEW）\n今日剩余 2/3 次｜星尘0｜SSR 保底进度 0/30\n重复宝可梦自动折算星尘。'
         markdown = qq.build_markdown(text, 'draw', images=[('qqbot-media://image/v1/test', 1024, 1600)])
         self.assertIn('小智的今日宝可梦是', markdown)
-        self.assertIn('## ✦ 炎帝', markdown)
-        self.assertIn('**SSR · 传说（NEW）**', markdown)
+        self.assertTrue(markdown.startswith('> 小智的今日宝可梦是\n'))
+        self.assertIn('**✦ 炎帝｜SSR·传说（NEW）**', markdown.splitlines())
+        self.assertNotIn('# 今日宝可梦\n', markdown)
         self.assertIn('今日剩余 **2/3** 次', markdown)
         self.assertIn('星尘 **0**', markdown)
         self.assertIn('SSR 保底进度 0/30', markdown)
