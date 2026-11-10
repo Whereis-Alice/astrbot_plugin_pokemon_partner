@@ -580,13 +580,71 @@ function setupMembers() {
     try {
       const scope = scopeSel.value;
       const stamp = new Date().toISOString().slice(0, 10);
-      await bridge.download("sessions/export", { scope }, `pokemon-partner-${scope ? "session" : "all"}-${stamp}.json`);
-      toast("收藏数据已导出", "success");
+      await bridge.download("migration/export", { scope }, `pokemon-partner-${scope ? "session" : "all"}-${stamp}.json`);
+      toast("完整迁移备份已导出", "success");
     } catch (error) { toast(`导出失败：${error.message}`, "error"); }
     finally { exportScope.disabled = false; }
   });
   const page = { index: 1, size: 20, total: 0 };
   let sessionsLoaded = false;
+  const migrationFile = document.getElementById("migrationFile");
+  const migrationMode = document.getElementById("migrationMode");
+  const migrationScopes = document.getElementById("migrationScopes");
+  const migrationUsers = document.getElementById("migrationUsers");
+  const previewButton = document.getElementById("migrationPreview");
+  const importButton = document.getElementById("migrationApply");
+  const migrationSummary = document.getElementById("migrationSummary");
+  let importPayload = null;
+  let previewVersion = 0;
+  const invalidatePreview = () => { previewVersion++; importPayload = null; importButton.disabled = true; clear(migrationSummary); };
+  for (const field of [migrationFile, migrationMode, migrationScopes, migrationUsers]) field.addEventListener("change", invalidatePreview);
+  for (const field of [migrationScopes, migrationUsers]) field.addEventListener("input", invalidatePreview);
+  previewButton.addEventListener("click", async () => {
+    const version = ++previewVersion;
+    importPayload = null; importButton.disabled = true; previewButton.disabled = true;
+    try {
+      const file = migrationFile.files?.[0];
+      if (!file) throw new Error("请先选择 JSON 备份文件");
+      if (file.size > 32 * 1024 * 1024) throw new Error("备份超过 32 MB，请先按会话导出");
+      const payload = { bundle: JSON.parse(await file.text()), mode: migrationMode.value,
+        scope_map: JSON.parse(migrationScopes.value.trim() || "{}"), user_map: JSON.parse(migrationUsers.value.trim() || "{}") };
+      const result = await apiPost("/migration/preview", payload);
+      if (version !== previewVersion) return;
+      clear(migrationSummary);
+      const summary = result.summary || {};
+      migrationSummary.append(el("p", { text: `备份包含 ${num(summary.scopes)} 个会话、${num(summary.users)} 位成员、${num(summary.collections)} 种收藏、${num(summary.battle_records)} 条对战记录。` }));
+      migrationSummary.append(el("p", { class: "muted", text: `将导入 ${(result.import_scopes || []).length} 个会话，保留 ${(result.skip_scopes || []).length} 个已有会话。` }));
+      for (const warning of result.warnings || []) migrationSummary.append(el("p", { class: "muted", text: String(warning) }));
+      if (result.inactive_partner_keys?.length) migrationSummary.append(el("p", { class: "muted", text: "部分收藏当前未计入卡池，原始收藏数据仍会保留。" }));
+      importPayload = payload;
+      importButton.disabled = !(result.import_scopes || []).length;
+    } catch (error) { if (version === previewVersion) toast(`预览失败：${error.message}`, "error"); }
+    finally { previewButton.disabled = false; }
+  });
+  importButton.addEventListener("click", async () => {
+    if (!importPayload || importButton.disabled) return;
+    const payload = importPayload;
+    if (!(await confirmAction({ title: "导入这份迁移备份？", message: payload.mode === "replace" ? "会先备份当前存档，再替换备份中的对应会话。其他会话保留。" : "会先备份当前存档，再导入新的会话。已有会话保留。", confirmLabel: "备份并导入", danger: payload.mode === "replace" }))) return;
+    if (payload !== importPayload || importButton.disabled) return;
+    importButton.disabled = true; previewButton.disabled = true;
+    for (const field of [migrationFile, migrationMode, migrationScopes, migrationUsers]) field.disabled = true;
+    try {
+      const result = await apiPost("/migration/import", { ...payload, confirmed: true });
+      importPayload = null; clear(migrationSummary);
+      migrationSummary.append(el("p", { text: `导入完成。原数据备份：${result.backup_path || "已保存"}` }));
+      toast("迁移数据已导入", "success");
+      state.loaded.delete("overview");
+      sessionsLoaded = false;
+      try {
+        await loadSessions(true);
+        await load();
+      } catch (error) { toast(`数据已导入，列表刷新失败：${error.message}`, "error"); }
+    } catch (error) { toast(`导入失败：${error.message}`, "error"); }
+    finally {
+      for (const field of [migrationFile, migrationMode, migrationScopes, migrationUsers]) field.disabled = false;
+      previewButton.disabled = false; importButton.disabled = !importPayload;
+    }
+  });
 
   const loadSessions = async (force = false) => {
     if (sessionsLoaded && !force) return;
@@ -891,6 +949,18 @@ function setupRules() {
 
 const SETTINGS_FIELDS = [
   {
+    group: "QQ 官方 Bot",
+    fields: [
+      { key: "qq_official_mode", label: "官方 Bot 富文本", type: "select", default: "auto", options: [["auto", "自动适配（推荐）"], ["raw", "原生 Markdown"], ["template", "已审核 Markdown 模板"], ["off", "普通图文"]], hint: "QQ群和私聊可直接用自定义 Markdown。卡图和战报集中排版；权限不足时自动回退。频道需要相应权限。" },
+      { key: "qq_official_buttons", label: "快捷操作按钮", type: "bool", default: true, hint: "按钮需要独立权限，未获权限时保留富文本与卡图。操作默认限定当前训练家。" },
+      { key: "qq_official_keyboard_id", label: "按钮模板 ID", type: "text", hint: "可选。留空尝试自定义按钮；填已审批的模板 ID 时使用模板按钮。" },
+      { key: "qq_official_command_prefix", label: "按钮指令前缀", type: "text", hint: "留空自动读取当前会话唤醒前缀，通常是 /。" },
+      { key: "qq_official_markdown_template_id", label: "Markdown 模板 ID", type: "text", hint: "仅模板模式需要；群和私聊的自动模式无需填写。" },
+      { key: "qq_official_markdown_title_key", label: "模板标题参数", type: "text", default: "title" },
+      { key: "qq_official_markdown_body_key", label: "模板正文参数", type: "text", default: "body", hint: "按已审批模板的实际参数名填写。" },
+    ],
+  },
+  {
     group: "今日宝可梦卡面",
     fields: [
       { key: "daily_card_style", label: "今日宝可梦卡面风格", type: "select", default: "classic", options: [["classic", "现有稀有度卡面"], ["tcg", "TCG 收藏卡面"], ["yugioh", "游戏王收藏卡面"]], hint: "三套均发送文字提示与纯卡牌，卡内以属性图标显示弱点、抗性和免疫。仅切换今日宝可梦卡面；关闭图片卡片时使用文本。" },
@@ -1081,7 +1151,7 @@ function setupSettings() {
         let input;
         if (field.type === "bool") {
           input = el("input", { type: "checkbox" });
-          input.checked = Boolean(value);
+          input.checked = Boolean(value ?? field.default ?? false);
         } else if (field.type === "select") {
           input = el("select", {}, field.options.map(([key, label]) => el("option", { value: key, text: label })));
           input.value = value ?? field.default;
@@ -1091,7 +1161,7 @@ function setupSettings() {
             min: field.min,
             max: field.max,
             step: field.step,
-            value: value === undefined || value === null ? "" : String(value),
+            value: value === undefined || value === null ? String(field.default ?? "") : String(value),
           });
         }
         input.id = `setting-${field.key.replaceAll(".", "-")}`;

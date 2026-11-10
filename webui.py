@@ -25,9 +25,11 @@ from astrbot.api import logger
 try:
     from .gacha import ConfigError, GachaRules
     from .gacha_store import today_key
+    from .migration import export_bundle, preview_import, apply_import
 except ImportError:  # 兼容插件以顶层模块加载
     from gacha import ConfigError, GachaRules
     from gacha_store import today_key
+    from migration import export_bundle, preview_import, apply_import
 
 try:  # AstrBot 的 Web 层基于 Quart
     from quart import jsonify, request
@@ -97,6 +99,9 @@ class PokemonPartnerWebUI:
             ("/dex/detail", self.api_dex_detail, ["GET"], "宝可梦图鉴详情"),
             ("/sessions", self.api_sessions, ["GET"], "会话与成员列表"),
             ("/sessions/export", self.api_sessions_export, ["GET"], "导出会话收藏备份"),
+            ("/migration/export", self.api_migration_export, ["GET"], "导出完整迁移备份"),
+            ("/migration/preview", self.api_migration_preview, ["POST"], "预览数据导入与会话映射"),
+            ("/migration/import", self.api_migration_import, ["POST"], "备份后导入迁移数据"),
             ("/members", self.api_members, ["GET"], "成员宝可梦详情"),
             ("/rules", self.api_rules, ["GET"], "抽卡规则与实际生效值"),
             ("/members/update", self.api_member_update, ["POST"], "修改成员数据"),
@@ -601,6 +606,40 @@ class PokemonPartnerWebUI:
         except Exception as exc:
             return _fail(str(exc), 500)
 
+    async def api_migration_export(self):
+        """Export the complete collection and battle snapshot without secrets."""
+        try:
+            bundle = await asyncio.to_thread(export_bundle, self._store(),
+                config=dict(getattr(self.plugin, 'config', {}) or {}), scope=_query('scope'))
+            return _json(bundle)
+        except Exception as exc:
+            return _fail(str(exc), 400)
+
+    async def _migration_request(self):
+        body = await self._body()
+        if not isinstance(body, Mapping) or 'bundle' not in body:
+            raise ValueError('请选择 JSON 备份文件并先预览。')
+        mode = body.get('mode', 'keep_existing')
+        return body, dict(mode=mode, scope_map=body.get('scope_map'), user_map=body.get('user_map'))
+
+    async def api_migration_preview(self):
+        try:
+            body, options = await self._migration_request()
+            result = await asyncio.to_thread(preview_import, self._store(), body['bundle'], **options)
+            return _json({'ok': True, **result})
+        except Exception as exc:
+            return _fail(str(exc))
+
+    async def api_migration_import(self):
+        try:
+            body, options = await self._migration_request()
+            if body.get('confirmed') is not True:
+                return _fail('请确认导入预览后再执行。')
+            result = await asyncio.to_thread(apply_import, self._store(), body['bundle'], **options)
+            return _json({'ok': True, **result})
+        except Exception as exc:
+            return _fail(str(exc))
+
     # ---------- 规则 / 设置 ----------
     async def api_rules(self):
         try:
@@ -735,6 +774,13 @@ class PokemonPartnerWebUI:
         timeout = merged.get("pokeapi_timeout", 15)
         if not 1 <= int(timeout) <= 120:
             raise ConfigError("pokeapi_timeout 必须在 1–120 秒之间")
+        if merged.get("qq_official_mode", "auto") == "template":
+            if not str(merged.get("qq_official_markdown_template_id", "")).strip():
+                raise ConfigError("模板模式需要填写 QQ Markdown 模板 ID")
+            title = str(merged.get("qq_official_markdown_title_key", "title")).strip()
+            body = str(merged.get("qq_official_markdown_body_key", "body")).strip()
+            if not title or not body or title == body:
+                raise ConfigError("QQ Markdown 模板的标题与正文参数名必须非空且不同")
 
     def _apply_settings(self, merged: Mapping[str, Any]) -> None:
         config = self.plugin.config

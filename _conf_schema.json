@@ -169,6 +169,48 @@
     "options": ["card", "card_forward", "forward", "text"],
     "hint": "card=三张精美卡片（默认）：封面、双方配招与效果长图、完整对战过程长图；card_forward=将所有图片合并转发（QQ/OneBot）；forward=文字合并转发；text=文本。命令末尾可加「卡片」「图片转发」「转发」「文本」临时覆盖。图片转发不支持或发送失败时改为普通卡片，图片生成失败时回退文本。"
   },
+  "qq_official_mode": {
+    "description": "QQ 官方 Bot 富文本模式",
+    "type": "string",
+    "default": "auto",
+    "options": ["auto", "raw", "template", "off"],
+    "hint": "auto=自动发送精美 Markdown 与卡图，权限不足时回退；raw=原生自定义 Markdown；template=使用已审核 Markdown 模板；off=普通图文。QQ群和私聊自定义 Markdown 已开放，频道需要相应权限。官方 Bot 无合并转发，战报会合并到 Markdown 中，普通图文模式逐图发送。"
+  },
+  "qq_official_buttons": {
+    "description": "QQ 官方 Bot 快捷按钮",
+    "type": "bool",
+    "default": true,
+    "hint": "按钮权限与 Markdown 权限独立；权限不足时去掉按钮，保留富文本和卡图。操作按钮限定当前训练家；需要填写的命令先填入输入框。"
+  },
+  "qq_official_keyboard_id": {
+    "description": "QQ 官方 Bot 按钮模板 ID",
+    "type": "string",
+    "default": "",
+    "hint": "留空使用自定义按钮（需相应权限）；填入已审批的按钮模板 ID 时优先使用模板。模板按钮内容由 QQ 开放平台管理。"
+  },
+  "qq_official_markdown_template_id": {
+    "description": "QQ 官方 Bot Markdown 模板 ID",
+    "type": "string",
+    "default": "",
+    "hint": "仅 template 模式需要。群和私聊使用 auto/raw 模式无需申请 Markdown 模板。"
+  },
+  "qq_official_markdown_title_key": {
+    "description": "QQ Markdown 模板标题参数名",
+    "type": "string",
+    "default": "title"
+  },
+  "qq_official_markdown_body_key": {
+    "description": "QQ Markdown 模板正文参数名",
+    "type": "string",
+    "default": "body",
+    "hint": "模板应包含标题与正文两个文本参数，正文承载提示和卡图。按开放平台模板实际参数名填写。"
+  },
+  "qq_official_command_prefix": {
+    "description": "QQ 官方 Bot 按钮指令前缀",
+    "type": "string",
+    "default": "",
+    "hint": "留空自动读取当前 AstrBot 会话配置的唤醒前缀，通常是 /。若使用其它前缀可在此填写。"
+  },
   "wishmaker_style": {
     "description": "许愿星结果输出样式",
     "type": "string",

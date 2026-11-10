@@ -30,7 +30,7 @@ https://github.com/Whereis-Alice/astrbot_plugin_pokemon_partner
 
 默认每天可抽 3 次，每次获得 1 只。重复宝可梦会变成星尘，用来兑换想要的宝可梦。
 
-群聊里直接发送完整的 `今日宝可梦` 即可，无需前缀或 @ 机器人；其他指令按机器人的指令设置使用。
+群聊里直接发送完整的 `今日宝可梦` 即可；其他指令按机器人的指令设置使用。QQ 官方 Bot 请按平台要求使用前缀或 @ Bot，支持精美 Markdown 排版和快捷按钮，详见 [QQ 官方 Bot 使用说明](docs/QQ_OFFICIAL.md)。
 
 | 发送这句话 | 可以做什么 |
 | --- | --- |
@@ -65,12 +65,16 @@ https://github.com/Whereis-Alice/astrbot_plugin_pokemon_partner
 
 在 AstrBot 插件页面打开「宝可梦图鉴管理台」，可以查看图鉴、管理收藏，调整每日次数、抽取概率和闪光概率，也能选择用卡片、图片合并转发或文字发送战报。
 
+更换服务器时，可在管理台导出完整数据，预览后导入新服务器，详见[备份与迁移](docs/MIGRATION.md)。
+
 ## 更多说明
 
 | 想了解什么 | 查看文档 |
 | --- | --- |
 | 抽卡、兑换、全部指令与对战规则 | [玩法与指令](docs/COMMANDS.md) |
 | 图片、配置、管理台、备份与常见问题 | [配置与管理](docs/ADMIN.md) |
+| QQ 官方机器人的排版、按钮与群友挑战 | [QQ 官方 Bot](docs/QQ_OFFICIAL.md) |
+| 收藏、星尘与对战记录搬到另一台服务器 | [备份与迁移](docs/MIGRATION.md) |
 | 五种卡片的单张大图 | [卡片预览](docs/CARDS.md) |
 | 代码结构、开发与测试 | [开发说明](docs/DEVELOPMENT.md) |
 | 插件更新了什么 | [更新记录](CHANGELOG.md) |

@@ -48,6 +48,9 @@ try:
     )
     from .card_renderer import CardRenderer
     from .daily_draw_trigger import DailyDrawTrigger
+    from .official_response import official_response
+    from .qq_official import is_qq_official
+    from .official_identity import official_scope, trainer_code, trainer_label, resolve_challenge_mentions
     from .champions_db import (
         OPTION_LABELS,
         ChampionsDB,
@@ -80,6 +83,9 @@ except ImportError:  # 兼容以普通模块方式加载插件
     )
     from card_renderer import CardRenderer
     from daily_draw_trigger import DailyDrawTrigger
+    from official_response import official_response
+    from qq_official import is_qq_official
+    from official_identity import official_scope, trainer_code, trainer_label, resolve_challenge_mentions
     from champions_db import (
         OPTION_LABELS,
         ChampionsDB,
@@ -289,6 +295,8 @@ class PokemonPartnerPlugin(Star):
         群聊按平台会话 ID 隔离，私聊按用户隔离。部分适配器不会填充
         ``message_obj.group_id``；此时必须回退到会话 ID，不能误判成私聊。
         """
+        if is_qq_official(event):
+            return official_scope(event)
         user_id = str(event.get_sender_id() or "")
         session_id = str(event.get_session_id() or "")
         group_id = str(event.get_group_id() or "")
@@ -444,11 +452,48 @@ class PokemonPartnerPlugin(Star):
         yield event.chain_result([Comp.Plain(parts[-1] + "\n"), Comp.Image.fromBytes(png)])
 
     @filter.command("图鉴帮助", alias={"图鉴菜单", "帮助菜单"})
+    @official_response
     async def cmd_partner_help(self, event: AstrMessageEvent):
         """宝可梦系统帮助：抽卡、图鉴、兑换与查询指令总览。"""
         yield event.plain_result(self._partner_help_text())
 
+    @filter.command("训练家编号", alias={"我的训练家编号", "我的训练家", "登记训练家"})
+    @official_response
+    async def cmd_trainer_identity(self, event: AstrMessageEvent):
+        """登记本群训练家，查看用于官方 Bot 挑战的唯一编号。"""
+        try:
+            service = self._partner_or_error()
+            scope, user_id, nickname = self._scope(event)
+            await asyncio.to_thread(service.profile, scope, user_id, nickname)
+            code = trainer_code(scope, user_id)
+            text = f"【训练家名片】{trainer_label(scope, user_id, nickname)}\n训练家编号：{code}\n"
+            text += f"群友可发送“宝可梦挑战 25 @{code} 20”向你挑战；把 25 换成已拥有的图鉴编号或宝可梦名字。"
+            if is_qq_official(event):
+                text += f"\n迁移时管理员使用的会话 ID：{scope}\n成员 ID：{user_id}"
+            yield event.plain_result(text)
+        except GachaError as exc:
+            yield event.plain_result(str(exc))
+
+    @filter.command("本群训练家", alias={"训练家列表"})
+    @official_response
+    async def cmd_trainer_list(self, event: AstrMessageEvent):
+        """查看本会话已登记成员的训练家编号，不猜测群友昵称。"""
+        try:
+            service = self._partner_or_error()
+            scope, user_id, nickname = self._scope(event)
+            await asyncio.to_thread(service.profile, scope, user_id, nickname)
+            snapshot = await asyncio.to_thread(service.store.snapshot)
+            users = snapshot.get('scopes', {}).get(scope, {}).get('users', {})
+            lines = ['【本群训练家】']
+            lines += [f"{trainer_code(scope, uid)} · {data.get('nickname') or '训练家'}" for uid, data in users.items()]
+            lines.append('挑战示例：宝可梦挑战 25 @T-编号 20。未登记的群友先发送“训练家编号”。')
+            for part in split_battle_text('\n'.join(lines), 1700):
+                yield event.plain_result(part)
+        except GachaError as exc:
+            yield event.plain_result(str(exc))
+
     @filter.command("今日宝可梦", alias={"抽取宝可梦", "抽宝可梦"})
+    @official_response
     async def cmd_partner_draw(self, event: AstrMessageEvent):
         """今日宝可梦：抽取宝可梦。每次数量与稀有度概率由插件配置决定。"""
         text = event.get_message_str().strip()
@@ -478,12 +523,14 @@ class PokemonPartnerPlugin(Star):
 
     @filter.custom_filter(DailyDrawTrigger)
     @filter.regex(r"\A今日宝可梦\Z")
+    @official_response
     async def cmd_partner_draw_bare(self, event: AstrMessageEvent):
         """直接发送整句今日宝可梦，无需唤醒前缀。"""
         async for result in self.cmd_partner_draw(event):
             yield result
 
     @filter.command("抽取概率", alias={"抽取规则", "抽卡概率"})
+    @official_response
     async def cmd_partner_odds(self, event: AstrMessageEvent):
         """查看稀有度概率、保底与每日次数。"""
         try:
@@ -511,6 +558,7 @@ class PokemonPartnerPlugin(Star):
         yield event.chain_result([Comp.Image.fromBytes(png)])
 
     @filter.command("我的宝可梦", alias={"我的图鉴", "图鉴收藏"})
+    @official_response
     async def cmd_partner_collection(self, event: AstrMessageEvent, page: str = "1"):
         """查看已收集宝可梦。我的宝可梦 <页码> 翻页。"""
         try:
@@ -565,6 +613,7 @@ class PokemonPartnerPlugin(Star):
         yield event.plain_result("\n".join(lines))
 
     @filter.command("收集资料", alias={"图鉴资料", "我的资料"})
+    @official_response
     async def cmd_partner_profile(self, event: AstrMessageEvent):
         """查看收集进度、剩余次数、星尘与保底进度。"""
         try:
@@ -602,6 +651,7 @@ class PokemonPartnerPlugin(Star):
         yield event.plain_result("\n".join(line for line in lines if line))
 
     @filter.command("兑换宝可梦", alias={"换取宝可梦"})
+    @official_response
     async def cmd_partner_exchange(self, event: AstrMessageEvent, keyword: str = ""):
         """用星尘定向兑换未拥有的宝可梦。兑换宝可梦 <名称> [闪光]。"""
         if not keyword:
@@ -680,6 +730,7 @@ class PokemonPartnerPlugin(Star):
         return words[0], shiny, words[1:]
 
     @filter.command("收集排行", alias={"图鉴排行"})
+    @official_response
     async def cmd_partner_ranking(self, event: AstrMessageEvent):
         """查看当前会话的宝可梦收集排行。"""
         try:
@@ -704,6 +755,7 @@ class PokemonPartnerPlugin(Star):
 
     @filter.command("重置今日宝可梦", alias={"重置宝可梦次数"})
     @filter.permission_type(filter.PermissionType.ADMIN)
+    @official_response
     async def cmd_partner_reset(self, event: AstrMessageEvent):
         """管理员重置自己今天的宝可梦抽取次数。"""
         try:
@@ -717,6 +769,7 @@ class PokemonPartnerPlugin(Star):
 
     @filter.command("增加宝可梦次数", alias={"增加抽取次数"})
     @filter.permission_type(filter.PermissionType.ADMIN)
+    @official_response
     async def cmd_partner_add_bonus(
         self, event: AstrMessageEvent, amount: str = "1"
     ):
@@ -739,16 +792,17 @@ class PokemonPartnerPlugin(Star):
 
     @filter.command("重置本群宝可梦", alias={"重置本群次数"})
     @filter.permission_type(filter.PermissionType.ADMIN)
+    @official_response
     async def cmd_partner_reset_group(self, event: AstrMessageEvent):
         """管理员重置本群所有人今天的宝可梦抽取次数。"""
-        group_id = event.get_group_id()
-        if not group_id:
+        if event.is_private_chat():
             yield event.plain_result("该指令仅支持群聊。")
             return
         try:
             service = self._partner_or_error()
+            scope, _user_id, _nickname = self._scope(event)
             changed = await asyncio.to_thread(
-                service.store.reset_scope_today, f"group:{group_id}"
+                service.store.reset_scope_today, scope
             )
         except GachaError as exc:
             yield event.plain_result(str(exc))
@@ -757,6 +811,7 @@ class PokemonPartnerPlugin(Star):
 
     @filter.command("下载立绘", alias={"下载全部立绘", "缓存立绘"})
     @filter.permission_type(filter.PermissionType.ADMIN)
+    @official_response
     async def cmd_download_artwork(self, event: AstrMessageEvent):
         """管理员一键下载全部宝可梦立绘到本地，之后抽卡更快。
 
@@ -868,6 +923,7 @@ class PokemonPartnerPlugin(Star):
             "宝可梦挑战 <图鉴编号/名字> @群友 [回合] — 用已持有的宝可梦邀请对战\n"
             "接收挑战 <自己的图鉴编号/名字>｜拒绝挑战｜取消挑战 — 群内挑战\n"
             "对战记录 [@群友]｜对战排行 — 收藏对战胜负与群榜\n"
+            "训练家编号｜本群训练家 — 官方 Bot 可用 @T-编号指定已登记的群友\n"
             "队伍分析 <名称...> — 队伍弱点分析\n"
             "筛选 <条件> — 按种族值筛选\n"
             "宝冠军 <关键词> — 冠军赛数据\n"
@@ -1086,6 +1142,7 @@ class PokemonPartnerPlugin(Star):
 
     # ---------- 指令 ----------
     @filter.command("宝可梦")
+    @official_response
     async def cmd_pokemon(self, event: AstrMessageEvent, keyword: str = ""):
         """宝可梦图鉴卡；宝可梦 <名> 招式表 [等级]｜宝可梦 <名> 能力值 [等级 个体 性格]"""
         tokens = (keyword or "").split()
@@ -1131,6 +1188,7 @@ class PokemonPartnerPlugin(Star):
             yield r
 
     @filter.command("特性")
+    @official_response
     async def cmd_ability(self, event: AstrMessageEvent, keyword: str = ""):
         """查询特性（效果与持有宝可梦）"""
         if not keyword:
@@ -1151,6 +1209,7 @@ class PokemonPartnerPlugin(Star):
         yield event.plain_result(text)
 
     @filter.command("招式")
+    @official_response
     async def cmd_move(self, event: AstrMessageEvent, keyword: str = ""):
         """查询招式（总表优先，详情补充）"""
         if not keyword:
@@ -1193,6 +1252,7 @@ class PokemonPartnerPlugin(Star):
         yield event.plain_result(text)
 
     @filter.command("道具")
+    @official_response
     async def cmd_item(self, event: AstrMessageEvent, keyword: str = ""):
         """查询道具"""
         if not keyword:
@@ -1209,6 +1269,7 @@ class PokemonPartnerPlugin(Star):
         )
 
     @filter.command("性格")
+    @official_response
     async def cmd_nature(self, event: AstrMessageEvent, keyword: str = ""):
         """性格速查：性格 [名称]"""
         keyword = (keyword or "").strip()
@@ -1240,6 +1301,7 @@ class PokemonPartnerPlugin(Star):
         return "特性修正：" + "；".join(parts) if parts else ""
 
     @filter.command("相性")
+    @official_response
     async def cmd_matchups(
         self, event: AstrMessageEvent, type1: str = "", type2: str = ""
     ):
@@ -1396,6 +1458,7 @@ class PokemonPartnerPlugin(Star):
         return f"小结：{panel}，{rel}"
 
     @filter.command("克制")
+    @official_response
     async def cmd_counter(
         self, event: AstrMessageEvent, name1: str = "", name2: str = ""
     ):
@@ -1634,6 +1697,7 @@ class PokemonPartnerPlugin(Star):
             yield event.plain_result(part)
 
     @filter.command("对战")
+    @official_response
     async def cmd_battle(
         self,
         event: AstrMessageEvent,
@@ -1684,7 +1748,7 @@ class PokemonPartnerPlugin(Star):
         for message in messages:
             if isinstance(message, Comp.At):
                 user_id = str(getattr(message, "qq", "") or "")
-                if user_id and user_id not in {bot_id, "all"} and user_id not in {x[0] for x in targets}:
+                if user_id and user_id not in {bot_id, "all", "qq_official", "qqofficial"} and user_id not in {x[0] for x in targets}:
                     targets.append((user_id, str(getattr(message, "name", "") or "")))
         return targets
 
@@ -1698,6 +1762,7 @@ class PokemonPartnerPlugin(Star):
         return text if any(command in text for command in commands) else str(getattr(event, "message_str", "") or "")
 
     @filter.command("宝可梦挑战", alias={"收藏挑战", "挑战宝可梦"})
+    @official_response
     async def cmd_owned_challenge(self, event: AstrMessageEvent, keyword: str = ""):
         """宝可梦挑战 <自己的图鉴编号或名字> @群友 [回合] [闪光]。"""
         try:
@@ -1707,7 +1772,11 @@ class PokemonPartnerPlugin(Star):
                 from duel_commands import parse_challenge
             duels, scope, user_id, nickname = self._owned_duel_context(event)
             raw = self._duel_raw(event)
-            request = parse_challenge(raw, self._duel_mentions(event), bot_id=str(event.get_self_id() or ""))
+            mentions = self._duel_mentions(event)
+            if is_qq_official(event):
+                raw, mentions = resolve_challenge_mentions(raw, self._partner_or_error().store, scope,
+                    sender_id=user_id, bot_id=str(event.get_self_id() or 'qq_official'), mentions=mentions)
+            request = parse_challenge(raw, mentions, bot_id=str(event.get_self_id() or ""))
             match = await asyncio.to_thread(
                 duels.challenge, scope, user_id, request.target_id, request.selection,
                 challenger_name=nickname, target_name=request.target_name,
@@ -1727,9 +1796,13 @@ class PokemonPartnerPlugin(Star):
             "直接发送“接收挑战”，后面加上你在本群已拥有的宝可梦图鉴编号或名字即可开战，例如“接收挑战 25”或“接收挑战 皮卡丘”。使用闪光个体时在末尾加“闪光”；不想应战可发送“拒绝挑战”。\n"
             "挑战 5 分钟内有效；达到回合上限仍未分胜负判平局。对局不消耗宝可梦和星尘，可用“取消挑战”撤回。"
         )
+        if is_qq_official(event):
+            heading, _, body = text.partition("\n")
+            text = f"{heading}\n邀请：{match['target']['nickname']}\n{body}"
         yield event.chain_result([Comp.At(qq=match["target"]["user_id"]), Comp.Plain(text)])
 
     @filter.command("接收挑战", alias={"接受对战", "接受挑战"})
+    @official_response
     async def cmd_owned_accept(self, event: AstrMessageEvent, keyword: str = ""):
         """接收挑战 <自己的图鉴编号或名字> [闪光] [详细] [卡片/图片转发/转发/文本]。"""
         match = None
@@ -1783,23 +1856,30 @@ class PokemonPartnerPlugin(Star):
         yield event.plain_result(f"已{'拒绝' if reject else '取消'} {match['challenger']['nickname']} 发起的挑战，未计入战绩。")
 
     @filter.command("拒绝对战", alias={"拒绝挑战"})
+    @official_response
     async def cmd_owned_reject(self, event: AstrMessageEvent):
         """拒绝等待自己接受的收藏挑战，不计入战绩。"""
         async for result in self._withdraw_owned_duel(event, reject=True):
             yield result
 
     @filter.command("取消对战", alias={"取消挑战"})
+    @official_response
     async def cmd_owned_cancel(self, event: AstrMessageEvent):
         """取消自己发起的收藏挑战，不计入战绩。"""
         async for result in self._withdraw_owned_duel(event, reject=False):
             yield result
 
     @filter.command("对战记录", alias={"我的战绩"})
+    @official_response
     async def cmd_owned_history(self, event: AstrMessageEvent):
         """查看自己或 @ 群友的胜负平统计及最近五场收藏对战。"""
         try:
             duels, scope, user_id, nickname = self._owned_duel_context(event)
             mentions = self._duel_mentions(event)
+            if is_qq_official(event):
+                _raw, mentions = resolve_challenge_mentions(
+                    self._duel_raw(event), self._partner_or_error().store, scope,
+                    bot_id=str(event.get_self_id() or 'qq_official'), mentions=mentions)
             if len(mentions) > 1:
                 raise GachaError("一次只能查看一位训练家的战绩。")
             if mentions:
@@ -1830,6 +1910,7 @@ class PokemonPartnerPlugin(Star):
             yield event.plain_result(part)
 
     @filter.command("对战排行")
+    @official_response
     async def cmd_owned_ranking(self, event: AstrMessageEvent):
         """本群收藏对战积分前十名，3分/胜、1分/平。"""
         try:
@@ -1890,6 +1971,7 @@ class PokemonPartnerPlugin(Star):
         return "\n".join(lines)
 
     @filter.command("队伍分析")
+    @official_response
     async def cmd_team(self, event: AstrMessageEvent, keyword: str = ""):
         """分析队伍弱点配置，如：队伍分析 皮卡丘、喷火龙、卡比兽"""
         names = [x for x in keyword.replace("，", " ").replace("、", " ").split() if x]
@@ -1902,6 +1984,7 @@ class PokemonPartnerPlugin(Star):
         yield event.plain_result(self._team_text(result))
 
     @filter.command("筛选")
+    @official_response
     async def cmd_by_stats(self, event: AstrMessageEvent, keyword: str = ""):
         """按种族值筛选宝可梦，如：筛选 速度>100 特攻>=120"""
         conds = parse_stat_conditions(keyword)
@@ -1925,6 +2008,7 @@ class PokemonPartnerPlugin(Star):
 
     # ---------- 许愿星基拉祈（WishMaker） ----------
     @filter.command("许愿星")
+    @official_response
     async def cmd_wishmaker(
         self,
         event: AstrMessageEvent,
@@ -2368,6 +2452,7 @@ class PokemonPartnerPlugin(Star):
         )
 
     @filter.command("宝冠军")
+    @official_response
     async def cmd_champion(self, event: AstrMessageEvent, keyword: str = ""):
         """冠军赛一站式查询：宝冠军 帮助 看用法"""
         if not self.champions.exists:
