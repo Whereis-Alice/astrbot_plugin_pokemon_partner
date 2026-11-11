@@ -90,6 +90,12 @@ class PokemonPartnerWebUI:
         if not callable(register):
             logger.warning("[%s] 当前 AstrBot 不支持 register_web_api，跳过 WebUI", PLUGIN_ID)
             return
+        # AstrBot replaces matching routes on reload but retains deleted routes.
+        # Refresh only this plugin's namespace before registering its current UI.
+        registered = getattr(context, "registered_web_apis", None)
+        if isinstance(registered, list):
+            prefix = f"/{PLUGIN_ID}/"
+            registered[:] = [api for api in registered if not api[0].startswith(prefix)]
         routes = (
             ("/overview", self.api_overview, ["GET"], "宝可梦数据概览"),
             ("/dex", self.api_dex_list, ["GET"], "宝可梦图鉴列表"),
@@ -105,6 +111,13 @@ class PokemonPartnerWebUI:
         )
         for path, handler, methods, desc in routes:
             register(f"/{PLUGIN_ID}{path}", handler, methods, desc)
+
+    def unregister(self) -> None:
+        """Release this instance's routes without removing a newer instance."""
+        context = getattr(self.plugin, "context", None)
+        registered = getattr(context, "registered_web_apis", None)
+        if isinstance(registered, list):
+            registered[:] = [api for api in registered if getattr(api[1], "__self__", None) is not self]
 
     # ---------- 通用 ----------
     def _service(self):

@@ -226,10 +226,15 @@ class PokemonPartnerPlugin(Star):
             self.webui = PokemonPartnerWebUI(self)
             self.webui.register()
         except Exception as exc:
+            if self.webui is not None:
+                self.webui.unregister()
             self.webui = None
             logger.warning(f"[{PLUGIN_ID}] WebUI 注册失败，聊天功能继续运行: {exc}")
 
     async def terminate(self):
+        webui = getattr(self, "webui", None)
+        if webui is not None:
+            webui.unregister()
         task = self._artwork_task
         if task is not None and not task.done():
             task.cancel()

@@ -22,6 +22,35 @@ from gacha_store import GachaStore, today_key
 from webui import PokemonPartnerWebUI
 
 
+class WebApiLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        self.other = ("/another_plugin/settings", lambda: None, ["GET"], "Other")
+        self.context = SimpleNamespace(registered_web_apis=[self.other])
+        self.context.register_web_api = lambda *api: self.context.registered_web_apis.append(api)
+        self.plugin = SimpleNamespace(context=self.context)
+
+    def test_reload_removes_obsolete_routes_and_keeps_other_plugins(self):
+        registered = self.context.registered_web_apis
+        registered.append(("/astrbot_plugin_pokemon_partner/obsolete", lambda: None, ["GET"], "Old"))
+        ui = PokemonPartnerWebUI(self.plugin)
+        ui.register()
+        self.assertIs(self.context.registered_web_apis, registered)
+        self.assertIn(self.other, registered)
+        self.assertFalse(any(api[0].endswith("/obsolete") for api in registered))
+        self.assertTrue(any(api[0].endswith("/settings") and getattr(api[1], "__self__", None) is ui for api in registered))
+
+    def test_terminating_old_instance_does_not_remove_new_instance_routes(self):
+        previous = PokemonPartnerWebUI(self.plugin)
+        previous.register()
+        current = PokemonPartnerWebUI(self.plugin)
+        current.register()
+        before = list(self.context.registered_web_apis)
+        previous.unregister()
+        self.assertEqual(self.context.registered_web_apis, before)
+        current.unregister()
+        self.assertEqual(self.context.registered_web_apis, [self.other])
+
+
 class SettingsActionTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(prefix="webui-settings-")
