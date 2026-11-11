@@ -205,14 +205,11 @@ def _format_draw(text: str) -> tuple[str, list[str]]:
     return '今日宝可梦', result
 
 
-def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, int]] = (),
-                   heading_image: tuple[str, int, int] | None = None) -> str:
+def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, int]] = ()) -> str:
     """Readable headings/status beside retained, full-resolution card artwork."""
     text = str(text or '').strip()
     if kind == 'draw':
         title, lines = _format_draw(text)
-        if heading_image:
-            lines = [line for line in lines if not re.match(r'^(?:\d+\. )?\*\*', line)]
     else:
         title = TITLES.get(kind, TITLES['menu'])
         lines = text.splitlines()
@@ -223,7 +220,7 @@ def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, i
                 lines[0] = heading.group(2).strip()
         lines = [_escape(line) for line in lines]
     body = [] if kind == 'draw' else ['# '+_escape(title)]
-    if images or heading_image:
+    if images:
         # Main card art leads the reading flow. The image bytes are uploaded at
         # native resolution; the size hint only controls mobile presentation.
         if kind == 'draw' and lines:
@@ -232,8 +229,7 @@ def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, i
             tail = lines[split:]
         else:
             tail = lines
-        display_images = ([heading_image] if heading_image else [])+list(images)
-        for index, (url, width, height) in enumerate(display_images, 1):
+        for index, (url, width, height) in enumerate(images, 1):
             if kind == 'draw':
                 # Draw pages retain native card pixels. Keep their real size
                 # in QQ's image hint instead of describing a 640px preview.
@@ -597,22 +593,7 @@ platforms and unsupported components are left to AstrBot's ordinary sender.
             else:
                 # The documented API also accepts a public external image URL.
                 image_refs.append((image.url, 640, 640))
-        heading_image = None
-        if keyboard_kind == 'draw' and image_refs:
-            try:
-                try:
-                    from .qq_draw_heading import render_draw_heading
-                except ImportError:
-                    from qq_draw_heading import render_draw_heading
-                heading = await asyncio.to_thread(render_draw_heading, text)
-                if heading:
-                    uploaded = await upload_markdown_image(event, heading)
-                    owned.append(uploaded)
-                    with PILImage.open(io.BytesIO(heading)) as source:
-                        heading_image = (uploaded.url, *source.size)
-            except Exception as exc:
-                log.warning('QQ draw heading unavailable (%s); keeping readable text', type(exc).__name__)
-        markdown = build_markdown(text, keyboard_kind, images=image_refs, heading_image=heading_image)
+        markdown = build_markdown(text, keyboard_kind, images=image_refs)
         if len(markdown) > MARKDOWN_LIMIT:
             return await fallback()
         payload = {'markdown': _markdown_payload(markdown, config, TITLES.get(keyboard_kind, TITLES['menu']))}

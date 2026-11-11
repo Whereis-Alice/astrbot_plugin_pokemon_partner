@@ -211,59 +211,61 @@ class QQOfficialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.sink.completed, 1)
         self.assertEqual(event.sent, [])
 
-    async def test_draw_title_image_preserves_card_and_has_no_duplicate_text_heading(self):
+    async def test_draw_title_is_native_markdown_and_only_card_is_uploaded(self):
         event = Event()
         original = card()
         text = '狐狸的今日宝可梦是 单卵细胞球｜C·普通（NEW）\n今日剩余 2/3 次｜星尘0'
         self.assertTrue(await qq.adapt_results(event, self.results(event, [original], text), keyboard_kind='draw'))
         payload = event.sink.messages[0][2]
         markdown = payload['markdown']['content']
-        self.assertEqual(markdown.count('qqbot-media://'), 2)
-        self.assertLess(markdown.index('token-2'), markdown.index('token-1'))
-        self.assertNotIn('**✦ 单卵细胞球', markdown)
+        self.assertEqual(markdown.count('qqbot-media://'), 1)
+        self.assertEqual(markdown.count('**✦ 单卵细胞球｜C**（NEW）'), 1)
+        self.assertLess(markdown.index('**✦ 单卵细胞球'), markdown.index('token-1'))
         self.assertIn('狐狸的今日宝可梦是', markdown)
         self.assertIn('今日剩余 **2/3**', markdown)
         prepared = [kw['json'] for method, path, kw in event.sink.calls if path.endswith('/prepare')]
         self.assertEqual(prepared[0]['md5'], hashlib.md5(original).hexdigest())
-        self.assertEqual(event.sink.prepared, 2)
-        self.assertEqual(len(event.sink.deletions), 2)
+        self.assertEqual([call.args[1] for call in self.put_mock.await_args_list], [original])
+        self.assertEqual(event.sink.prepared, 1)
+        self.assertEqual(len(event.sink.deletions), 1)
         rows = payload['keyboard']['content']['rows']
         self.assertEqual([len(row['buttons']) for row in rows], [3, 3])
 
-    async def test_draw_title_failure_keeps_compact_native_text_and_card(self):
+    async def test_draw_without_card_keeps_native_title_without_image_upload(self):
         event = Event()
         text = '小智的今日宝可梦是 炎帝｜SSR·传说（NEW）'
-        from qq_draw_heading import render_draw_heading
-        with patch('qq_draw_heading.render_draw_heading', side_effect=RuntimeError('font unavailable')):
-            self.assertTrue(await qq.adapt_results(event, self.results(event, [card()], text), keyboard_kind='draw'))
+        self.assertTrue(await qq.adapt_results(event, self.results(event, text=text), keyboard_kind='draw'))
         markdown = event.sink.messages[0][2]['markdown']['content']
         self.assertIn('**✦ 炎帝｜SSR**（NEW）', markdown)
-        self.assertEqual(markdown.count('qqbot-media://'), 1)
+        self.assertEqual(markdown.count('qqbot-media://'), 0)
+        self.put_mock.assert_not_awaited()
+        self.assertEqual(event.sink.prepared, 0)
 
     async def test_ten_draw_three_native_pages_preserve_pixels_and_complete_result(self):
         event = Event()
         pages = [card('red', (2190, 3670)), card('blue', (2190, 3670)),
                  card('gold', (2190, 1855))]
         text = '小智的今日宝可梦是：\n'+'\n'.join(
-            f'{index}. 皮卡丘｜C·普通（NEW）' for index in range(1, 11))
+            f'{index}. 宝可梦{index}｜C·普通（NEW）' for index in range(1, 11))
         text += '\n今日剩余 0/10 次｜星尘0｜SSR 保底进度 10/30'
         self.assertTrue(await qq.adapt_results(
             event, self.results(event, pages, text), keyboard_kind='draw'))
         self.assertEqual(len(event.sink.messages), 1)
         payload = event.sink.messages[0][2]
         markdown = payload['markdown']['content']
-        self.assertEqual(markdown.count('qqbot-media://'), 4)
+        self.assertEqual(markdown.count('qqbot-media://'), 3)
         self.assertEqual(markdown.count('#2190px #3670px'), 2)
         self.assertIn('#2190px #1855px', markdown)
         self.assertNotIn('#640px', markdown)
-        self.assertNotIn('**✦ 皮卡丘', markdown)
+        for index in range(1, 11):
+            self.assertEqual(markdown.count(f'{index}. **✦ 宝可梦{index}｜C**（NEW）'), 1)
         self.assertIn('今日剩余 **0/10**', markdown)
         self.assertIn('SSR 保底进度 10/30', markdown)
-        self.assertEqual([call.args[1] for call in self.put_mock.await_args_list[:3]], pages)
+        self.assertEqual([call.args[1] for call in self.put_mock.await_args_list], pages)
         prepared = [kw['json'] for method, path, kw in event.sink.calls if path.endswith('/prepare')]
-        self.assertEqual([p['md5'] for p in prepared[:3]], [hashlib.md5(p).hexdigest() for p in pages])
+        self.assertEqual([p['md5'] for p in prepared], [hashlib.md5(p).hexdigest() for p in pages])
         self.assertEqual([len(r['buttons']) for r in payload['keyboard']['content']['rows']], [3, 3])
-        self.assertEqual(event.sink.deletions, [f'/v2/media-images/own-{n}/delete' for n in range(1, 5)])
+        self.assertEqual(event.sink.deletions, [f'/v2/media-images/own-{n}/delete' for n in range(1, 4)])
         self.assertEqual(event.sent, [])
         self.assertEqual(event.files, [])
 
@@ -532,9 +534,9 @@ class PresentationTests(unittest.TestCase):
         self.assertIn('SSR 保底进度 0/30', markdown)
         self.assertLess(markdown.index('qqbot-media://'), markdown.index('今日剩余'))
         self.assertTrue(markdown.endswith('\n'))
-        title_only = qq.build_markdown(text, 'draw', heading_image=('qqbot-media://image/v1/title', 1280, 98))
-        self.assertIn('qqbot-media://image/v1/title', title_only)
-        self.assertNotIn('**✦ 炎帝', title_only)
+        text_only = qq.build_markdown(text, 'draw')
+        self.assertIn('**✦ 炎帝｜SSR**（NEW）', text_only)
+        self.assertNotIn('qqbot-media://', text_only)
 
     def test_multi_draw_keeps_each_number_and_all_annotations_compact(self):
         text = '小智的今日宝可梦是：\n1. 炎帝｜SSR·传说（NEW）\n2. 皮卡丘｜C·普通（✦闪光、+6星尘）'
@@ -543,10 +545,8 @@ class PresentationTests(unittest.TestCase):
         self.assertIn('2. **✨ 皮卡丘｜C**（✦闪光、+6星尘）', markdown)
         self.assertNotIn('·普通', markdown)
         self.assertNotIn('·传说', markdown)
-        from qq_draw_heading import render_draw_heading
-        with Image.open(io.BytesIO(render_draw_heading(text))) as heading:
-            self.assertEqual(heading.size, (1280, 196))
-            self.assertIn((103, 113, 126, 255), heading.getdata())
+        self.assertNotIn('（NEW）**', markdown)
+        self.assertNotIn('（✦闪光、+6星尘）**', markdown)
 
     def test_plain_content_is_escaped_without_format_injection(self):
         markdown = qq.build_markdown('训练家 <script> [点我](https://invalid) **标题**', 'profile')
