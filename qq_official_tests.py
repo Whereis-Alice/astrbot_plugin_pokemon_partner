@@ -211,6 +211,36 @@ class QQOfficialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(event.sink.completed, 1)
         self.assertEqual(event.sent, [])
 
+    async def test_draw_title_image_preserves_card_and_has_no_duplicate_text_heading(self):
+        event = Event()
+        original = card()
+        text = '狐狸的今日宝可梦是 单卵细胞球｜C·普通（NEW）\n今日剩余 2/3 次｜星尘0'
+        self.assertTrue(await qq.adapt_results(event, self.results(event, [original], text), keyboard_kind='draw'))
+        payload = event.sink.messages[0][2]
+        markdown = payload['markdown']['content']
+        self.assertEqual(markdown.count('qqbot-media://'), 2)
+        self.assertLess(markdown.index('token-2'), markdown.index('token-1'))
+        self.assertNotIn('**✦ 单卵细胞球', markdown)
+        self.assertIn('狐狸的今日宝可梦是', markdown)
+        self.assertIn('今日剩余 **2/3**', markdown)
+        prepared = [kw['json'] for method, path, kw in event.sink.calls if path.endswith('/prepare')]
+        self.assertEqual(prepared[0]['md5'], hashlib.md5(original).hexdigest())
+        self.assertEqual(event.sink.prepared, 2)
+        self.assertEqual(len(event.sink.deletions), 2)
+        rows = payload['keyboard']['content']['rows']
+        self.assertEqual([len(row['buttons']) for row in rows], [3, 3])
+
+    async def test_draw_title_failure_keeps_compact_native_text_and_card(self):
+        event = Event()
+        text = '小智的今日宝可梦是 炎帝｜SSR·传说（NEW）'
+        from qq_draw_heading import render_draw_heading
+        with patch('qq_draw_heading.render_draw_heading', side_effect=RuntimeError('font unavailable')):
+            self.assertTrue(await qq.adapt_results(event, self.results(event, [card()], text), keyboard_kind='draw'))
+        markdown = event.sink.messages[0][2]['markdown']['content']
+        self.assertIn('**✦ 炎帝｜SSR**（NEW）', markdown)
+        self.assertEqual(markdown.count('qqbot-media://'), 1)
+
+
     async def test_markdown_rejection_falls_back_to_all_original_cards(self):
         event = Event(post_responses=[qq.QQRequestError(403), qq.QQRequestError(400)])
         pages = [card('red'), card('blue'), card('gold')]
@@ -327,7 +357,7 @@ class QQOfficialTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(await qq.adapt_results(event, [event.chain_result([nodes])], keyboard_kind='challenge'))
         payload = event.sink.messages[0][2]
         self.assertEqual(payload['markdown']['content'].count('qqbot-media://'), 2)
-        accept, reject = payload['keyboard']['content']['rows'][0]['buttons']
+        accept, reject = payload['keyboard']['content']['rows'][0]['buttons'][:2]
         self.assertEqual(accept['action']['permission']['specify_user_ids'], ['opponent-openid'])
         self.assertEqual(reject['action']['permission']['specify_user_ids'], ['opponent-openid'])
 
@@ -440,7 +470,7 @@ class PresentationTests(unittest.TestCase):
                 rows = keyboard['content']['rows']
                 self.assertLessEqual(len(rows), 5)
                 for row in rows:
-                    self.assertLessEqual(len(row['buttons']), 5)
+                    self.assertLessEqual(len(row['buttons']), 3)
                     for button in row['buttons']:
                         action = button['action']
                         self.assertEqual(action['permission'], {'type': 0, 'specify_user_ids': ['sender-openid']})
@@ -450,8 +480,7 @@ class PresentationTests(unittest.TestCase):
 
     def test_challenge_accept_reject_target_and_cancel_initiator(self):
         rows = qq.build_keyboard(Event(), 'challenge', target_user_id='opponent')['content']['rows']
-        accept, reject = rows[0]['buttons']
-        cancel = rows[1]['buttons'][0]
+        accept, reject, cancel = rows[0]['buttons']
         self.assertEqual(accept['action']['permission']['specify_user_ids'], ['opponent'])
         self.assertEqual(reject['action']['permission']['specify_user_ids'], ['opponent'])
         self.assertEqual(cancel['action']['permission']['specify_user_ids'], ['sender-openid'])
@@ -461,20 +490,36 @@ class PresentationTests(unittest.TestCase):
 
     def test_collection_buttons_navigate_from_current_page(self):
         rows = qq.build_keyboard(Event(text='我的宝可梦 4'), 'collection')['content']['rows']
-        self.assertEqual([b['action']['data'] for b in rows[0]['buttons']], ['我的宝可梦 3', '我的宝可梦 5'])
+        self.assertEqual([b['action']['data'] for b in rows[0]['buttons'][:2]], ['我的宝可梦 3', '我的宝可梦 5'])
 
     def test_draw_keeps_existing_copy_new_status_and_card_first(self):
         text = '小智的今日宝可梦是 炎帝｜SSR·传说（NEW）\n今日剩余 2/3 次｜星尘0｜SSR 保底进度 0/30\n重复宝可梦自动折算星尘。'
         markdown = qq.build_markdown(text, 'draw', images=[('qqbot-media://image/v1/test', 1024, 1600)])
         self.assertIn('小智的今日宝可梦是', markdown)
         self.assertTrue(markdown.startswith('> 小智的今日宝可梦是\n'))
-        self.assertIn('**✦ 炎帝｜SSR·传说（NEW）**', markdown.splitlines())
+        self.assertIn('**✦ 炎帝｜SSR**（NEW）', markdown.splitlines())
+        self.assertNotIn('SSR·传说', markdown)
         self.assertNotIn('# 今日宝可梦\n', markdown)
         self.assertIn('今日剩余 **2/3** 次', markdown)
         self.assertIn('星尘 **0**', markdown)
         self.assertIn('SSR 保底进度 0/30', markdown)
         self.assertLess(markdown.index('qqbot-media://'), markdown.index('今日剩余'))
         self.assertTrue(markdown.endswith('\n'))
+        title_only = qq.build_markdown(text, 'draw', heading_image=('qqbot-media://image/v1/title', 1280, 98))
+        self.assertIn('qqbot-media://image/v1/title', title_only)
+        self.assertNotIn('**✦ 炎帝', title_only)
+
+    def test_multi_draw_keeps_each_number_and_all_annotations_compact(self):
+        text = '小智的今日宝可梦是：\n1. 炎帝｜SSR·传说（NEW）\n2. 皮卡丘｜C·普通（✦闪光、+6星尘）'
+        markdown = qq.build_markdown(text, 'draw')
+        self.assertIn('1. **✦ 炎帝｜SSR**（NEW）', markdown)
+        self.assertIn('2. **✨ 皮卡丘｜C**（✦闪光、+6星尘）', markdown)
+        self.assertNotIn('·普通', markdown)
+        self.assertNotIn('·传说', markdown)
+        from qq_draw_heading import render_draw_heading
+        with Image.open(io.BytesIO(render_draw_heading(text))) as heading:
+            self.assertEqual(heading.size, (1280, 196))
+            self.assertIn((103, 113, 126, 255), heading.getdata())
 
     def test_plain_content_is_escaped_without_format_injection(self):
         markdown = qq.build_markdown('训练家 <script> [点我](https://invalid) **标题**', 'profile')

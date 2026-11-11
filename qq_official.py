@@ -162,7 +162,17 @@ def build_keyboard(event, kind='menu', *, prefix='', target_user_id='') -> dict 
                 [b('星尘兑换', '兑换宝可梦 ', enter=False), b('对战记录', '对战记录')],
                 [b('发起挑战', '宝可梦挑战 ', enter=False), b('本群训练家', '本群训练家')],
                 [b('我的编号', '训练家编号'), b('全部功能', '图鉴帮助')]]
-    return {'content': {'rows': [{'buttons': row} for row in rows]}}
+    buttons = [button for row in rows for button in row]
+    return {'content': {'rows': [{'buttons': buttons[i:i+3]}
+                                 for i in range(0, len(buttons), 3)]}}
+
+
+def _draw_heading(name: str, rarity: str, description: str, prefix: str = '') -> str:
+    """Keep rarity compact and draw annotations separate from the bold name."""
+    _, bracket, tags = description.partition('（')
+    suffix = bracket+tags if bracket else ''
+    symbol = '✨ ' if '闪光' in tags else '✦ '
+    return prefix+'**'+symbol+_escape(name+'｜'+rarity)+'**'+_escape(suffix)
 
 
 def _format_draw(text: str) -> tuple[str, list[str]]:
@@ -173,8 +183,7 @@ def _format_draw(text: str) -> tuple[str, list[str]]:
         if single:
             owner, name, rarity, badge = single.groups()
             result += ['> '+_escape(owner)+'的今日宝可梦是',
-                       '**'+('✨ ' if '闪光' in badge else '✦ ')
-                       +_escape(name+'｜'+rarity+'·'+badge)+'**']
+                       _draw_heading(name, rarity, badge)]
         elif line.startswith('今日剩余 '):
             status = re.match(r'^今日剩余 (\d+/\d+) 次｜星尘(\d+)(.*)$', line)
             if status:
@@ -185,17 +194,25 @@ def _format_draw(text: str) -> tuple[str, list[str]]:
             else:
                 result.append('> '+_escape(line))
         elif re.match(r'^\d+\. ', line):
-            result.append(_escape(line))
+            numbered = re.match(r'^(\d+\. )(.+?)｜(SSR|SR|R|C)·(.+)$', line)
+            if numbered:
+                prefix, name, rarity, badge = numbered.groups()
+                result.append(_draw_heading(name, rarity, badge, prefix))
+            else:
+                result.append(_escape(line))
         else:
             result.append(_escape(line))
     return '今日宝可梦', result
 
 
-def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, int]] = ()) -> str:
+def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, int]] = (),
+                   heading_image: tuple[str, int, int] | None = None) -> str:
     """Readable headings/status beside retained, full-resolution card artwork."""
     text = str(text or '').strip()
     if kind == 'draw':
         title, lines = _format_draw(text)
+        if heading_image:
+            lines = [line for line in lines if not re.match(r'^(?:\d+\. )?\*\*', line)]
     else:
         title = TITLES.get(kind, TITLES['menu'])
         lines = text.splitlines()
@@ -206,7 +223,7 @@ def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, i
                 lines[0] = heading.group(2).strip()
         lines = [_escape(line) for line in lines]
     body = [] if kind == 'draw' else ['# '+_escape(title)]
-    if images:
+    if images or heading_image:
         # Main card art leads the reading flow. The image bytes are uploaded at
         # native resolution; the size hint only controls mobile presentation.
         if kind == 'draw' and lines:
@@ -215,7 +232,8 @@ def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, i
             tail = lines[split:]
         else:
             tail = lines
-        for index, (url, width, height) in enumerate(images, 1):
+        display_images = ([heading_image] if heading_image else [])+list(images)
+        for index, (url, width, height) in enumerate(display_images, 1):
             display_width = min(640, width)
             display_height = max(1, round(height*display_width/max(1, width)))
             body += [f'![{_escape(title)} {index} #{display_width}px #{display_height}px]({url})']
@@ -574,7 +592,22 @@ platforms and unsupported components are left to AstrBot's ordinary sender.
             else:
                 # The documented API also accepts a public external image URL.
                 image_refs.append((image.url, 640, 640))
-        markdown = build_markdown(text, keyboard_kind, images=image_refs)
+        heading_image = None
+        if keyboard_kind == 'draw' and image_refs:
+            try:
+                try:
+                    from .qq_draw_heading import render_draw_heading
+                except ImportError:
+                    from qq_draw_heading import render_draw_heading
+                heading = await asyncio.to_thread(render_draw_heading, text)
+                if heading:
+                    uploaded = await upload_markdown_image(event, heading)
+                    owned.append(uploaded)
+                    with PILImage.open(io.BytesIO(heading)) as source:
+                        heading_image = (uploaded.url, *source.size)
+            except Exception as exc:
+                log.warning('QQ draw heading unavailable (%s); keeping readable text', type(exc).__name__)
+        markdown = build_markdown(text, keyboard_kind, images=image_refs, heading_image=heading_image)
         if len(markdown) > MARKDOWN_LIMIT:
             return await fallback()
         payload = {'markdown': _markdown_payload(markdown, config, TITLES.get(keyboard_kind, TITLES['menu']))}
