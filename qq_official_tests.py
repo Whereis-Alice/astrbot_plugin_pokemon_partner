@@ -219,9 +219,9 @@ class QQOfficialTests(unittest.IsolatedAsyncioTestCase):
         payload = event.sink.messages[0][2]
         markdown = payload['markdown']['content']
         self.assertEqual(markdown.count('qqbot-media://'), 1)
-        self.assertEqual(markdown.count('**✦ 单卵细胞球｜C**（NEW）'), 1)
+        self.assertEqual(markdown.splitlines().count('**✦ 单卵细胞球｜C**（NEW）'), 1)
         self.assertLess(markdown.index('**✦ 单卵细胞球'), markdown.index('token-1'))
-        self.assertIn('狐狸的今日宝可梦是', markdown)
+        self.assertIn('> 狐狸的今日宝可梦是', markdown.splitlines())
         self.assertIn('今日剩余 **2/3**', markdown)
         prepared = [kw['json'] for method, path, kw in event.sink.calls if path.endswith('/prepare')]
         self.assertEqual(prepared[0]['md5'], hashlib.md5(original).hexdigest())
@@ -236,7 +236,8 @@ class QQOfficialTests(unittest.IsolatedAsyncioTestCase):
         text = '小智的今日宝可梦是 炎帝｜SSR·传说（NEW）'
         self.assertTrue(await qq.adapt_results(event, self.results(event, text=text), keyboard_kind='draw'))
         markdown = event.sink.messages[0][2]['markdown']['content']
-        self.assertIn('**✦ 炎帝｜SSR**（NEW）', markdown)
+        self.assertIn('> 小智的今日宝可梦是', markdown.splitlines())
+        self.assertIn('**✦ 炎帝｜SSR**（NEW）', markdown.splitlines())
         self.assertEqual(markdown.count('qqbot-media://'), 0)
         self.put_mock.assert_not_awaited()
         self.assertEqual(event.sink.prepared, 0)
@@ -257,8 +258,9 @@ class QQOfficialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(markdown.count('#2190px #3670px'), 2)
         self.assertIn('#2190px #1855px', markdown)
         self.assertNotIn('#640px', markdown)
+        self.assertTrue(markdown.startswith('> 小智的今日宝可梦是：\n'))
         for index in range(1, 11):
-            self.assertEqual(markdown.count(f'{index}. **✦ 宝可梦{index}｜C**（NEW）'), 1)
+            self.assertEqual(markdown.splitlines().count(f'{index}. **✦ 宝可梦{index}｜C**（NEW）'), 1)
         self.assertIn('今日剩余 **0/10**', markdown)
         self.assertIn('SSR 保底进度 10/30', markdown)
         self.assertEqual([call.args[1] for call in self.put_mock.await_args_list], pages)
@@ -535,21 +537,35 @@ class PresentationTests(unittest.TestCase):
         self.assertLess(markdown.index('qqbot-media://'), markdown.index('今日剩余'))
         self.assertTrue(markdown.endswith('\n'))
         text_only = qq.build_markdown(text, 'draw')
-        self.assertIn('**✦ 炎帝｜SSR**（NEW）', text_only)
+        self.assertTrue(text_only.startswith('> 小智的今日宝可梦是\n'))
+        self.assertIn('**✦ 炎帝｜SSR**（NEW）', text_only.splitlines())
         self.assertNotIn('qqbot-media://', text_only)
 
     def test_multi_draw_keeps_each_number_and_all_annotations_compact(self):
-        text = '小智的今日宝可梦是：\n1. 炎帝｜SSR·传说（NEW）\n2. 皮卡丘｜C·普通（✦闪光、+6星尘）'
-        markdown = qq.build_markdown(text, 'draw')
-        self.assertIn('1. **✦ 炎帝｜SSR**（NEW）', markdown)
-        self.assertIn('2. **✨ 皮卡丘｜C**（✦闪光、+6星尘）', markdown)
-        self.assertNotIn('·普通', markdown)
-        self.assertNotIn('·传说', markdown)
-        self.assertNotIn('（NEW）**', markdown)
-        self.assertNotIn('（✦闪光、+6星尘）**', markdown)
+        for colon in ('：', ':'):
+            with self.subTest(colon=colon):
+                text = f'小智的今日宝可梦是{colon}\n1. 炎帝｜SSR·传说（NEW）\n2. 皮卡丘｜C·普通（✦闪光、+6星尘）'
+                markdown = qq.build_markdown(text, 'draw')
+                self.assertTrue(markdown.startswith(f'> 小智的今日宝可梦是{colon}\n'))
+                self.assertIn('1. **✦ 炎帝｜SSR**（NEW）', markdown.splitlines())
+                self.assertIn('2. **✨ 皮卡丘｜C**（✦闪光、+6星尘）', markdown.splitlines())
+                self.assertNotIn('·普通', markdown)
+                self.assertNotIn('·传说', markdown)
+                self.assertNotIn('（NEW）**', markdown)
+                self.assertNotIn('（✦闪光、+6星尘）**', markdown)
+
+    def test_draw_owner_quote_does_not_change_other_presentations(self):
+        text = '小智的今日宝可梦是：\n1. 炎帝｜SSR·传说（NEW）'
+        for kind in ('profile', 'collection', 'challenge'):
+            with self.subTest(kind=kind):
+                markdown = qq.build_markdown(text, kind)
+                self.assertTrue(markdown.startswith('# '))
+                self.assertIn('小智的今日宝可梦是：', markdown.splitlines())
+                self.assertFalse(any(line.startswith('> ') for line in markdown.splitlines()))
 
     def test_plain_content_is_escaped_without_format_injection(self):
         markdown = qq.build_markdown('训练家 <script> [点我](https://invalid) **标题**', 'profile')
+        self.assertTrue(markdown.startswith('# '))
         self.assertIn(r'\<script\>', markdown)
         self.assertIn(r'\[点我\]', markdown)
         self.assertIn(r'\*\*标题\*\*', markdown)

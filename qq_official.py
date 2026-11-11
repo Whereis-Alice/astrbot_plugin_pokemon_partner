@@ -184,6 +184,8 @@ def _format_draw(text: str) -> tuple[str, list[str]]:
             owner, name, rarity, badge = single.groups()
             result += ['> '+_escape(owner)+'的今日宝可梦是',
                        _draw_heading(name, rarity, badge)]
+        elif re.match(r'^.+?的今日宝可梦是[：:]$', line):
+            result.append('> '+_escape(line))
         elif line.startswith('今日剩余 '):
             status = re.match(r'^今日剩余 (\d+/\d+) 次｜星尘(\d+)(.*)$', line)
             if status:
