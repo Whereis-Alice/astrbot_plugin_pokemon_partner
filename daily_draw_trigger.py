@@ -22,6 +22,7 @@ class DailyDrawTrigger(filter.CustomFilter):
         # CommandFilter.filter itself requires a wake prefix; only its name and
         # custom restrictions are reused for the bare-message route.
         from astrbot.core.star.filter.command import CommandFilter
+        from astrbot.core.star.star import star_map
         from astrbot.core.star.star_handler import star_handlers_registry
 
         main_module = f"{__package__}.main" if __package__ else "main"
@@ -29,6 +30,12 @@ class DailyDrawTrigger(filter.CustomFilter):
             f"{main_module}_cmd_partner_draw"
         )
         if metadata is None or not metadata.enabled:
+            return False
+        plugin = star_map.get(metadata.handler_module_path)
+        config = getattr(getattr(plugin, "star_cls", None), "config", None)
+        if config is None:
+            config = getattr(plugin, "config", None)
+        if config is not None and not config.get("gacha_enabled", True):
             return False
         for command_filter in metadata.event_filters:
             if isinstance(command_filter, CommandFilter):

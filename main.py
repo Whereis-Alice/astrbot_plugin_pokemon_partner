@@ -510,6 +510,10 @@ class PokemonPartnerPlugin(Star):
         text = event.get_message_str().strip()
         if text.startswith("今日宝可梦") and text != "今日宝可梦":
             return
+        if not self.config.get("gacha_enabled", True):
+            if not event.get_extra(f"{PLUGIN_ID}:daily_draw_dispatched", False):
+                event.stop_event()
+            return
         # 私聊、空唤醒前缀等情况下，command 和 regex 可以同时命中同一事件。
         # 在任何异步操作之前标记；抽取或发卡失败也不能从另一入口重抽。
         dispatch_key = f"{PLUGIN_ID}:daily_draw_dispatched"
@@ -1069,9 +1073,9 @@ class PokemonPartnerPlugin(Star):
             lines.append(
                 f"{rarity}（{rarity_label(rarity)}）：{pct:g}%，池内 {counts.get(rarity, 0)} 位"
             )
-        lines.append(f"每次召唤 {rules.draws_per_command} 位，每日 {rules.daily_limit} 次")
+        lines.append(f"每次召唤 {rules.draws_per_command} 只，每日 {rules.daily_limit} 次；一次召唤只扣 1 次")
         lines.append(
-            f"SSR 保底：{rules.ssr_pity_after} 次"
+            f"SSR 保底：{rules.ssr_pity_after} 只，逐只计算"
             if rules.ssr_pity_after and counts.get("SSR")
             else "SSR 保底：未启用（已关闭或卡池无 SSR）"
         )

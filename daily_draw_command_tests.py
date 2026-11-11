@@ -51,6 +51,7 @@ class DailyDrawCommandTests(unittest.TestCase):
             "platform_settings": {"no_permission_reply": False},
         }
         self.plugin = object.__new__(main.PokemonPartnerPlugin)
+        self.plugin.config = {}
         self.plugin.context = SimpleNamespace(get_config=lambda umo: self.cfg)
         self.draw = Mock(return_value=object())
         self.plugin.partner_service = SimpleNamespace(
@@ -79,6 +80,7 @@ class DailyDrawCommandTests(unittest.TestCase):
             ),
             patch.object(self.command, "enabled", True),
             patch.object(star_map["main"], "activated", True),
+            patch.object(star_map["main"], "star_cls", self.plugin),
             patch(
                 "astrbot.core.star.session_plugin_manager.sp.get_async",
                 new=AsyncMock(return_value={}),
@@ -205,6 +207,52 @@ class DailyDrawCommandTests(unittest.TestCase):
         self.assertFalse(event.is_wake)
         self.assertEqual(self.active_names, [])
         self.draw.assert_not_called()
+
+    def test_disabling_gacha_prevents_bare_group_wake_and_all_draw_work(self):
+        self.plugin.config["gacha_enabled"] = False
+        event = Event("今日宝可梦")
+        with patch.object(self.plugin, "_partner_or_error") as service:
+            self.assertEqual(self.dispatch(event), [])
+        self.assertFalse(event.is_wake)
+        self.assertTrue(event.is_stopped())
+        self.assertEqual(self.active_names, [])
+        service.assert_not_called()
+        self.draw.assert_not_called()
+        self.assertEqual(event.sent, [])
+
+    def test_disabling_gacha_silences_prefixed_private_at_and_alias_commands(self):
+        self.plugin.config["gacha_enabled"] = False
+        for event in (
+            Event("/今日宝可梦"),
+            Event("今日宝可梦", private=True),
+            Event("今日宝可梦", components=[At(qq="bot"), Plain("今日宝可梦")]),
+            Event("/抽取宝可梦"),
+            Event("/抽宝可梦"),
+        ):
+            with self.subTest(text=event.message_str, private=event.is_private_chat()), \
+                    patch.object(self.plugin, "_partner_or_error") as service:
+                self.assertEqual(self.dispatch(event), [])
+                self.assertTrue(event.is_stopped())
+                self.assertEqual(event.sent, [])
+                service.assert_not_called()
+        self.draw.assert_not_called()
+
+    def test_reenabling_gacha_restores_bare_command_without_reload(self):
+        self.plugin.config["gacha_enabled"] = False
+        self.assertEqual(self.dispatch(Event("今日宝可梦")), [])
+        self.plugin.config["gacha_enabled"] = True
+        self.assertEqual(len(self.dispatch(Event("今日宝可梦"))), 1)
+        self.draw.assert_called_once()
+
+    def test_disabling_during_an_already_started_draw_keeps_its_one_response(self):
+        def draw(*args):
+            self.plugin.config["gacha_enabled"] = False
+            return object()
+        self.draw.side_effect = draw
+        event = Event("今日宝可梦", private=True)
+        self.assertEqual(len(self.dispatch(event)), 1)
+        self.draw.assert_called_once()
+        self.assertFalse(event.is_stopped())
 
     def test_command_admin_permission_applies_to_bare_draw(self):
         self.command.event_filters.insert(0, PermissionTypeFilter(PermissionType.ADMIN))

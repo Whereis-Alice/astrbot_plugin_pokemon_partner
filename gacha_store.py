@@ -611,6 +611,7 @@ class GachaStore:
         now: float | None = None,
         today: str | None = None,
     ) -> DrawOutcome:
+        """Draw a complete batch, consuming one daily summon only on success."""
         requested = _as_int(
             count if count is not None else self.rules.draws_per_command,
             self.rules.draws_per_command,
@@ -635,8 +636,8 @@ class GachaStore:
                         "当前没有可用的召唤次数。请联系管理员开放每日次数，"
                         "或等待收集里程碑发放额外次数。"
                     )
-                raise GachaError(f"今天的 {limit} 次今日宝可梦已经抽完了，明天再来吧。")
-            actual = min(requested, remaining)
+                raise GachaError(f"今天的 {limit} 次召唤机会已经用完了，明天再来吧。")
+            actual = requested
             items: list[DrawItem] = []
             milestones: list[MilestoneReward] = []
             for _ in range(actual):
@@ -645,7 +646,7 @@ class GachaStore:
                 milestones.extend(gained)
             counts = profile.setdefault("counts", {})
             if isinstance(counts, dict):
-                counts[today] = used + actual
+                counts[today] = used + 1
             profile["total_draws"] = (
                 max(0, _as_int(profile.get("total_draws"), 0)) + actual
             )
@@ -656,13 +657,13 @@ class GachaStore:
             return DrawOutcome(
                 items=tuple(items),
                 requested=requested,
-                used_today=used + actual,
+                used_today=used + 1,
                 daily_limit=limit,
-                remaining=max(0, limit - used - actual),
+                remaining=max(0, limit - used - 1),
                 dust=max(0, _as_int(profile.get("dust"), 0)),
                 pity_ssr=max(0, _as_int(profile.get("pity_ssr"), 0)),
                 pity_new=max(0, _as_int(profile.get("pity_new"), 0)),
-                capped=actual < requested,
+                capped=False,
                 milestones=tuple(milestones),
             )
 

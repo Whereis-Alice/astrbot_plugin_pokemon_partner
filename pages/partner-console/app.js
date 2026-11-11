@@ -106,7 +106,7 @@ function setupOverview() {
       ["训练家", num(s.trainers), "至少收集过 1 位宝可梦"],
       ["图鉴收录", num(s.collected), "全部会话累计变体数"],
       ["闪光变体", num(s.shiny), "含闪光首次获得"],
-      ["累计抽取", num(s.draws), "所有会话总次数"],
+      ["累计抽取", num(s.draws), "所有会话累计抽取只数"],
       ["今日活跃", num(s.active_today), "今天有抽取记录"],
       ["会话数", num(s.sessions), "群聊与私聊"],
     ];
@@ -136,9 +136,9 @@ function setupOverview() {
       ["文件大小", bytes(health.state_bytes)],
       ["从备份恢复", health.restored_from_backup ? "是（可能丢失最后一次写入）" : "否"],
       ["写入已锁定", health.load_failed ? "是（数据损坏，需人工检查）" : "否"],
-      ["每次抽取", `${data.rules?.draws_per_command ?? "—"} 位`],
-      ["每日次数", `${data.rules?.daily_limit ?? "—"} 次`],
-      ["SSR 保底", `${data.rules?.ssr_pity_after ?? "—"} 次`],
+      ["每次召唤", `${data.rules?.draws_per_command ?? "—"} 只`],
+      ["每日召唤", `${data.rules?.daily_limit ?? "—"} 次`],
+      ["SSR 保底", `${data.rules?.ssr_pity_after ?? "—"} 只`],
       ["闪光概率", `${data.rules?.shiny_chance_percent ?? "—"}%`],
     ];
     for (const [label, value] of rows) {
@@ -639,7 +639,7 @@ function setupMembers() {
   const removeMember = async (scope, userId, name) => {
     if (updating) return;
     updating = true;
-    const approved = await confirmAction({ title: `删除 ${name} 的收藏数据？`, message: `仅删除 ${scope} 中这位成员的收藏、星尘和抽取进度，其他成员保留。此操作不可撤销，建议先导出备份。`, confirmLabel: "删除该成员", danger: true });
+    const approved = await confirmAction({ title: `删除 ${name} 的收藏数据？`, message: `仅删除 ${scope} 中这位成员的收藏、星尘和抽取进度，其他成员保留。此操作不可撤销，建议先备份数据目录。`, confirmLabel: "删除该成员", danger: true });
     if (!approved) { updating = false; return; }
     const buttons = [...tableBody.querySelectorAll("button")];
     buttons.forEach((button) => { button.disabled = true; });
@@ -707,7 +707,7 @@ function setupMembers() {
             "td",
             {
               class: "num",
-              title: `基础次数 + 额外 ${item.bonus_today}`,
+              title: `已用召唤次数；额外额度 ${item.bonus_today} 次`,
               text: `${item.used_today}${item.bonus_today ? ` (+${item.bonus_today})` : ""}`,
             },
           ),
@@ -788,7 +788,7 @@ function setupMembers() {
       toast("请先选择一个会话", "error");
       return;
     }
-    if (!(await confirmAction({ title: "重置今日次数？", message: `重置 ${scope} 全部成员今天的抽取次数，收藏和星尘保留。`, confirmLabel: "重置今日次数" }))) return;
+    if (!(await confirmAction({ title: "重置今日次数？", message: `重置 ${scope} 全部成员今天的召唤次数，收藏和星尘保留。`, confirmLabel: "重置今日次数" }))) return;
     try {
       const result = await apiPost("/sessions/reset", { scope });
       state.loaded.delete("overview");
@@ -841,11 +841,11 @@ function setupRules() {
       ["R 阈值（种族值）", data.thresholds?.rare_min_bst],
       ["SR 阈值", data.thresholds?.super_rare_min_bst],
       ["SSR 阈值", data.thresholds?.ultra_rare_min_bst],
-      ["每次抽取", `${data.limits?.draws_per_command} 位`],
-      ["每日次数", `${data.limits?.daily_limit} 次`],
+      ["每次召唤", `${data.limits?.draws_per_command} 只`],
+      ["每日召唤", `${data.limits?.daily_limit} 次`],
       ["冷却", `${data.limits?.cooldown_seconds} 秒`],
-      ["SSR 保底", data.limits?.ssr_pity_after ? `${data.limits.ssr_pity_after} 次` : "关闭"],
-      ["新宝可梦保底", data.limits?.new_pity_after ? `${data.limits.new_pity_after} 次` : "关闭"],
+      ["SSR 保底", data.limits?.ssr_pity_after ? `${data.limits.ssr_pity_after} 只` : "关闭"],
+      ["新宝可梦保底", data.limits?.new_pity_after ? `${data.limits.new_pity_after} 只` : "关闭"],
       ["允许重复", data.limits?.allow_duplicate_draw ? "是" : "否"],
       ["闪光概率", `${data.economy?.shiny_chance_percent}%`],
       ["闪光重复倍率", `×${data.economy?.shiny_dust_multiplier}`],
@@ -905,11 +905,11 @@ const SETTINGS_FIELDS = [
     group: "抽取规则",
     fields: [
       { key: "gacha_enabled", label: "启用宝可梦系统", type: "bool", hint: "关闭后聊天指令会提示未启用" },
-      { key: "draws_per_command", label: "每次抽取数量", type: "number", min: 1, max: 10 },
-      { key: "daily_draw_limit", label: "每日基础次数", type: "number", min: 0, max: 100 },
+      { key: "draws_per_command", label: "每次召唤数量", type: "number", min: 1, max: 10 },
+      { key: "daily_draw_limit", label: "每日召唤次数", type: "number", min: 0, max: 100 },
       { key: "draw_cooldown_seconds", label: "冷却（秒）", type: "number", min: 0, max: 3600, step: 0.5 },
-      { key: "ssr_pity_after", label: "SSR 保底次数", type: "number", min: 0, max: 999, hint: "0 表示关闭" },
-      { key: "new_pity_after", label: "新宝可梦保底次数", type: "number", min: 0, max: 999, hint: "0 表示关闭" },
+      { key: "ssr_pity_after", label: "SSR 保底次数", type: "number", min: 0, max: 999, hint: "按每只宝可梦计数，0 表示关闭" },
+      { key: "new_pity_after", label: "新宝可梦保底次数", type: "number", min: 0, max: 999, hint: "按每只宝可梦计数，0 表示关闭" },
       { key: "allow_duplicate_draw", label: "允许抽到已拥有", type: "bool" },
       { key: "include_alternate_forms", label: "形态计入卡池", type: "bool", hint: "开启后卡池 1229 项" },
     ],

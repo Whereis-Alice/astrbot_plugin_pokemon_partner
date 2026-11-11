@@ -28,7 +28,7 @@ https://github.com/Whereis-Alice/astrbot_plugin_pokemon_partner
 
 ## 开始玩
 
-默认每天可抽 3 次，每次获得 1 只。重复宝可梦会变成星尘，用来兑换想要的宝可梦。
+默认每天可召唤 3 次，每次获得 1 只；一次十连也只扣一次召唤额度。重复宝可梦会变成星尘，用来兑换想要的宝可梦。
 
 群聊里直接发送完整的 `今日宝可梦` 即可；其他指令按机器人的指令设置使用。QQ 官方 Bot 请按平台要求使用前缀或 @ Bot，支持精美 Markdown 排版和快捷按钮，详见 [QQ 官方 Bot 使用说明](docs/QQ_OFFICIAL.md)。
 

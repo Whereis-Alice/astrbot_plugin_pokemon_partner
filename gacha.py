@@ -264,6 +264,7 @@ class DrawItem:
 
 @dataclass(frozen=True)
 class DrawOutcome:
+    """One summon's cards; quota fields count summons, pity counts cards."""
     items: tuple[DrawItem, ...]
     requested: int
     used_today: int
@@ -286,6 +287,7 @@ class DrawOutcome:
 
 @dataclass(frozen=True)
 class ProfileSummary:
+    """Collection totals in cards and the remaining daily summon quota."""
     nickname: str
     collected: int
     total: int

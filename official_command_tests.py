@@ -148,6 +148,21 @@ class OfficialCommandTests(unittest.TestCase):
         profile = self.store.snapshot()['scopes'][SCOPE]['users']['USER_OPENID_01']
         self.assertEqual(profile['total_draws'], 1)
 
+    def test_disabled_official_draw_stays_silent_without_transport_or_storage(self):
+        self.plugin.config['gacha_enabled'] = False
+        before = self.store.snapshot()
+        for command in ('cmd_partner_draw', 'cmd_partner_draw_bare'):
+            for private in (False, True):
+                with self.subTest(command=command, private=private), \
+                        patch.object(self.plugin, '_partner_or_error') as service:
+                    event = Event('今日宝可梦', private=private)
+                    self.assertEqual(self.run_command(command, event), [])
+                    self.assertTrue(event.is_stopped())
+                    self.assertFalse(event.get_extra(main.PLUGIN_ID+':daily_draw_dispatched', False))
+                    service.assert_not_called()
+        self.transport.assert_not_awaited()
+        self.assertEqual(self.store.snapshot(), before)
+
     def test_sdk_command_registry_preserves_arguments_aliases_and_admin_filter(self):
         command = star_handlers_registry.get_handler_by_full_name('main_cmd_owned_challenge')
         signature = inspect.signature(command.handler)

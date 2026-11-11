@@ -1046,13 +1046,15 @@ def test_gacha_store():
             "按配置概率只出 C 档",
             all(item.rarity == "C" for item in outcome.items),
         )
-        check("剩余次数正确", outcome.remaining == 2, str(outcome.remaining))
+        check("三只宝可梦只消耗一次召唤", outcome.used_today == 1 and outcome.remaining == 4, str(outcome.remaining))
         outcome2 = store.draw("group:1", "u1", "小明", today="2026-10-27")
         check(
-            "剩余次数不足时按剩余抽取并标记 capped",
-            len(outcome2.items) == 2 and outcome2.capped,
+            "后续召唤继续完整抽取配置数量",
+            len(outcome2.items) == 3 and not outcome2.capped and outcome2.remaining == 3,
             str(outcome2),
         )
+        for _ in range(3):
+            store.draw("group:1", "u1", "小明", today="2026-10-27")
         try:
             store.draw("group:1", "u1", "小明", today="2026-10-27")
             check("次数耗尽应报错", False)
@@ -1067,7 +1069,7 @@ def test_gacha_store():
         )
         check(
             "资料统计与当日使用一致",
-            summary.collected >= 3 and summary.used_today == 3,
+            summary.collected >= 3 and summary.used_today == 1 and summary.total_draws == 18,
             str(summary),
         )
         check("图鉴只记录已拥有", len(store.owned_partners("group:1", "u1")) == summary.collected)
@@ -1970,7 +1972,8 @@ def test_session_isolation_and_my_pokemon():
         b = store.get_profile("group:2002", "u1", today="2026-10-27")
         check(
             "同一用户在不同群的数据独立",
-            a.collected != b.collected and a.used_today == 5 and b.used_today == 3,
+            a.collected != b.collected and a.used_today == b.used_today == 1
+            and a.total_draws == 5 and b.total_draws == 3,
             f"A={a.collected}/{a.used_today}, B={b.collected}/{b.used_today}",
         )
         check(

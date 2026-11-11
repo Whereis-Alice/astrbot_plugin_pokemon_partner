@@ -104,16 +104,16 @@ data/plugin_data/astrbot_plugin_pokemon_partner/artwork/
 
 | 配置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| `gacha_enabled` | `true` | 启用抽卡、收藏和群友挑战；关闭后仍可查图鉴和进行普通对战模拟 |
+| `gacha_enabled` | `true` | 启用抽卡、收藏和群友挑战；关闭后不响应今日宝可梦，仍可查图鉴和进行普通对战模拟 |
 | `draws_per_command` | `1` | 每次召唤固定抽取几位（1–10） |
-| `daily_draw_limit` | `3` | 每日基础次数（0–100） |
+| `daily_draw_limit` | `3` | 每日可成功召唤的次数（0–100），一次十连也只消耗一次 |
 | `draw_cooldown_seconds` | `3.0` | 两次召唤的最短间隔 |
 | `rarity_weights` | `C55/R30/SR12/SSR3` | 四档稀有权重，按比例归一化 |
 | `rare_min_bst` | `400` | R 档最低种族值总和 |
 | `super_rare_min_bst` | `480` | SR 档最低种族值总和 |
 | `ultra_rare_min_bst` | `580` | SSR 档最低种族值总和 |
-| `ssr_pity_after` | `30` | 前 29 次未出时第 30 次必出；0 关闭，SSR 保底优先 |
-| `new_pity_after` | `0` | 连续多少次重复后必出新；0 关闭 |
+| `ssr_pity_after` | `30` | 按每只计数，前 29 只未出时第 30 只必出；0 关闭，SSR 保底优先 |
+| `new_pity_after` | `0` | 连续多少只重复后，下一只必出新；0 关闭 |
 | `allow_duplicate_draw` | `true` | 关闭后优先抽未拥有的宝可梦 |
 | `include_alternate_forms` | `false` | 是否把地区形态、Mega 等计入卡池；缺少种族值的形态会跳过 |
 | `shiny_chance_percent` | `1.5` | 闪光概率 |
@@ -121,6 +121,8 @@ data/plugin_data/astrbot_plugin_pokemon_partner/artwork/
 | `spark_costs` | `20/60/150/400` | 星尘兑换价格 |
 | `shiny_dust_multiplier` | `3.0` | 闪光重复的星尘倍率 |
 | `shiny_spark_multiplier` | `4.0` | 闪光兑换的价格倍率 |
+
+每次数量设为 `10`、每日召唤次数设为 `1`，就是每人每天十连一次。里程碑和管理员增加的额外次数同样按召唤次数计算。
 
 三个稀有度阈值必须严格递增，否则插件会记录错误并停用宝可梦系统，图鉴功能仍然可用。
 

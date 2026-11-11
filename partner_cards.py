@@ -1014,7 +1014,7 @@ def render_profile_card(
     draw.text((PAD + 30, PAD + 20), nickname, font=nickname_font, fill=TEXT)
     draw.text(
         (PAD + 32, PAD + 84),
-        f"训练家档案 · 已召唤 {summary.total_draws} 次",
+        f"训练家档案 · 累计抽取 {summary.total_draws} 只",
         font=_font(24),
         fill=SUBTEXT,
     )
@@ -1039,10 +1039,10 @@ def render_profile_card(
     stats = [
         ("已收集", f"{summary.collected}/{summary.total}", f"{summary.percent:.1f}%"),
         ("闪光宝可梦", f"{summary.shiny_count}", "计数"),
-        ("今日剩余", f"{summary.remaining}/{summary.daily_limit}", "次"),
+        ("今日剩余召唤", f"{summary.remaining}/{summary.daily_limit}", "次"),
         ("星尘", f"{summary.dust}", "余额"),
         ("SSR 保底", f"{summary.pity_ssr}/{rules.ssr_pity_after if rules else '—'}", ""),
-        ("连续未出新", f"{summary.pity_new}", "次"),
+        ("连续未出新", f"{summary.pity_new}", "只"),
     ]
     card_w = (W - PAD * 2 - 24) // 2
     card_h = 128
@@ -1115,9 +1115,9 @@ def render_rarity_legend(
         )
         y += 108
     notes = [
-        f"每次召唤固定 {rules.draws_per_command} 位；每日 {rules.daily_limit} 次。",
+        f"每次召唤 {rules.draws_per_command} 只；每日 {rules.daily_limit} 次，每次只扣 1 次。",
         (
-            f"连续 {rules.ssr_pity_after} 次未出 SSR 时，下一次必出 SSR。"
+            f"SSR 保底逐只计算，最多 {rules.ssr_pity_after} 只内必出 SSR。"
             if rules.ssr_pity_after and pool_counts.get("SSR", 0)
             else "SSR 保底未启用（已关闭或卡池无 SSR）。"
         ),
