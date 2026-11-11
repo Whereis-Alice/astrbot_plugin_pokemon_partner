@@ -35,7 +35,7 @@ class TcgCardTests(unittest.TestCase):
                              pity_ssr=1,ssr_pity_after=30,image_loader=loader)
         self.assertEqual(items,before)
         image = Image.open(io.BytesIO(raw))
-        self.assertEqual(image.width, CARD_W if len(items) == 1 else 1080)
+        self.assertEqual(image.width, CARD_W if len(items) == 1 else 2 * CARD_W + 66)
         if len(items) == 1:
             self.assertEqual(image.height, CARD_H)
         self.assertLess(image.height,5000)
@@ -127,7 +127,8 @@ class TcgCardTests(unittest.TestCase):
         def loader(row):
             calls.append(row)
             return None
-        self.render(values,loader)
+        for start in range(0, len(values), 4):
+            self.render(values[start:start+4],loader)
         self.assertEqual(len(calls),10)
         self.assertEqual(sum(bool(row.get('_artwork_shiny')) for row in calls),2)
 

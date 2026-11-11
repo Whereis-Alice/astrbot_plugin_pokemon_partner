@@ -1129,10 +1129,10 @@ def render_rarity_legend(
     return _encode(base)
 
 
-def _encode(image: Image.Image, *, quality: int = 92) -> bytes:
-    """统一输出 JPEG，控制单图体积。"""
+def _encode(image: Image.Image, *, quality: int = 96) -> bytes:
+    """保留文字和彩色图标边缘，以完整色度输出高清 JPEG。"""
     buf = io.BytesIO()
     image.convert("RGB").save(
-        buf, format="JPEG", quality=quality, optimize=True, progressive=True
+        buf, format="JPEG", quality=quality, subsampling=0, optimize=False
     )
     return buf.getvalue()

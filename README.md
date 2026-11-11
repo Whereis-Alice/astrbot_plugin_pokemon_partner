@@ -65,8 +65,6 @@ https://github.com/Whereis-Alice/astrbot_plugin_pokemon_partner
 
 在 AstrBot 插件页面打开「宝可梦图鉴管理台」，可以查看图鉴、管理收藏，调整每日次数、抽取概率和闪光概率，也能选择用卡片、图片合并转发或文字发送战报。
 
-更换服务器时，可在管理台导出完整数据，预览后导入新服务器，详见[备份与迁移](docs/MIGRATION.md)。
-
 ## 更多说明
 
 | 想了解什么 | 查看文档 |
@@ -74,7 +72,6 @@ https://github.com/Whereis-Alice/astrbot_plugin_pokemon_partner
 | 抽卡、兑换、全部指令与对战规则 | [玩法与指令](docs/COMMANDS.md) |
 | 图片、配置、管理台、备份与常见问题 | [配置与管理](docs/ADMIN.md) |
 | QQ 官方机器人的排版、按钮与群友挑战 | [QQ 官方 Bot](docs/QQ_OFFICIAL.md) |
-| 收藏、星尘与对战记录搬到另一台服务器 | [备份与迁移](docs/MIGRATION.md) |
 | 五种卡片的单张大图 | [卡片预览](docs/CARDS.md) |
 | 代码结构、开发与测试 | [开发说明](docs/DEVELOPMENT.md) |
 | 插件更新了什么 | [更新记录](CHANGELOG.md) |

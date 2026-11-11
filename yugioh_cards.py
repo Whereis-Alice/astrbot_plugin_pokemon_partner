@@ -579,18 +579,18 @@ def render_yugioh_draw(
     """Render collectible cards; counts, NEW and dust remain in the chat notice."""
     if not items:
         raise ValueError("抽卡卡片至少需要一个结果")
-    tile_width, gap = 518, 20
-    tile_height = round(CARD_H * tile_width / CARD_W)
+    tile_width, tile_height, gap = CARD_W, CARD_H, 20
+    page_width = 2 * tile_width + 3 * gap
     rows = math.ceil(len(items) / 2)
     sheet = None if len(items) == 1 else Image.new(
-        "RGBA", (CARD_W, rows * (tile_height + gap) + gap), (35, 33, 40, 255))
+        "RGBA", (page_width, rows * (tile_height + gap) + gap), (35, 33, 40, 255))
     for index, item in enumerate(items):
         card, missing = _card(item, image_loader, profile_black_bold=profile_black_bold)
         if sheet is None:
             return _encode(card)
         row, column = divmod(index, 2)
         count = min(2, len(items) - row * 2)
-        left = (CARD_W - count * tile_width - (count - 1) * gap) // 2
-        sheet.alpha_composite(card.resize((tile_width, tile_height), Image.Resampling.LANCZOS),
+        left = (page_width - count * tile_width - (count - 1) * gap) // 2
+        sheet.alpha_composite(card,
                               (left + column * (tile_width + gap), gap + row * (tile_height + gap)))
     return _encode(sheet)

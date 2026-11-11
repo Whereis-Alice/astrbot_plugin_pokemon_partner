@@ -234,8 +234,13 @@ def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, i
             tail = lines
         display_images = ([heading_image] if heading_image else [])+list(images)
         for index, (url, width, height) in enumerate(display_images, 1):
-            display_width = min(640, width)
-            display_height = max(1, round(height*display_width/max(1, width)))
+            if kind == 'draw':
+                # Draw pages retain native card pixels. Keep their real size
+                # in QQ's image hint instead of describing a 640px preview.
+                display_width, display_height = width, height
+            else:
+                display_width = min(640, width)
+                display_height = max(1, round(height*display_width/max(1, width)))
             body += [f'![{_escape(title)} {index} #{display_width}px #{display_height}px]({url})']
         if tail:
             body += ['***', *tail]

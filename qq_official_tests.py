@@ -240,6 +240,33 @@ class QQOfficialTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn('**✦ 炎帝｜SSR**（NEW）', markdown)
         self.assertEqual(markdown.count('qqbot-media://'), 1)
 
+    async def test_ten_draw_three_native_pages_preserve_pixels_and_complete_result(self):
+        event = Event()
+        pages = [card('red', (2190, 3670)), card('blue', (2190, 3670)),
+                 card('gold', (2190, 1855))]
+        text = '小智的今日宝可梦是：\n'+'\n'.join(
+            f'{index}. 皮卡丘｜C·普通（NEW）' for index in range(1, 11))
+        text += '\n今日剩余 0/10 次｜星尘0｜SSR 保底进度 10/30'
+        self.assertTrue(await qq.adapt_results(
+            event, self.results(event, pages, text), keyboard_kind='draw'))
+        self.assertEqual(len(event.sink.messages), 1)
+        payload = event.sink.messages[0][2]
+        markdown = payload['markdown']['content']
+        self.assertEqual(markdown.count('qqbot-media://'), 4)
+        self.assertEqual(markdown.count('#2190px #3670px'), 2)
+        self.assertIn('#2190px #1855px', markdown)
+        self.assertNotIn('#640px', markdown)
+        self.assertNotIn('**✦ 皮卡丘', markdown)
+        self.assertIn('今日剩余 **0/10**', markdown)
+        self.assertIn('SSR 保底进度 10/30', markdown)
+        self.assertEqual([call.args[1] for call in self.put_mock.await_args_list[:3]], pages)
+        prepared = [kw['json'] for method, path, kw in event.sink.calls if path.endswith('/prepare')]
+        self.assertEqual([p['md5'] for p in prepared[:3]], [hashlib.md5(p).hexdigest() for p in pages])
+        self.assertEqual([len(r['buttons']) for r in payload['keyboard']['content']['rows']], [3, 3])
+        self.assertEqual(event.sink.deletions, [f'/v2/media-images/own-{n}/delete' for n in range(1, 5)])
+        self.assertEqual(event.sent, [])
+        self.assertEqual(event.files, [])
+
 
     async def test_markdown_rejection_falls_back_to_all_original_cards(self):
         event = Event(post_responses=[qq.QQRequestError(403), qq.QQRequestError(400)])

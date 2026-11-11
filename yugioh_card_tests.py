@@ -116,7 +116,7 @@ class YugiohCardTests(unittest.TestCase):
         with Image.open(io.BytesIO(raw)) as image:
             if len(items) == 1:
                 self.assertEqual(image.size, (CARD_W, CARD_H))
-            self.assertLessEqual(image.width, 1200)
+            self.assertEqual(image.width, CARD_W if len(items) == 1 else 2 * CARD_W + 60)
             self.assertLessEqual(image.height, 5000)
             self.assertEqual(image.format, "JPEG")
             image.verify()
@@ -745,7 +745,8 @@ class YugiohCardTests(unittest.TestCase):
             requests.append(deepcopy(row))
             return portrait()
 
-        self.render(items, load)
+        for start in range(0, len(items), 4):
+            self.render(items[start:start+4], load)
         self.assertEqual(len(requests), len(items))
         self.assertEqual(sum(bool(r.get("_artwork_shiny")) for r in requests), 2)
 

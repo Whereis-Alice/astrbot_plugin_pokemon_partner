@@ -475,7 +475,7 @@ def _card(item, loader):
 
 def _finish(base):
     output = io.BytesIO()
-    base.convert("RGB").save(output, "JPEG", quality=95, optimize=True)
+    base.convert("RGB").save(output, "JPEG", quality=96, subsampling=0, optimize=False)
     return output.getvalue()
 
 
@@ -491,18 +491,18 @@ def _single(item, loader, details_out):
 
 
 def _grid(items, loader, details_out):
-    tile_width, gap = 506, 22
-    tile_height = round(CARD_H * tile_width / CARD_W)
+    tile_width, tile_height, gap = CARD_W, CARD_H, 22
+    page_width = 2 * tile_width + 3 * gap
     rows = math.ceil(len(items) / 2)
-    base = Image.new("RGBA", (WIDTH, rows * (tile_height + gap) + gap), (237, 236, 229, 255))
+    base = Image.new("RGBA", (page_width, rows * (tile_height + gap) + gap), (237, 236, 229, 255))
     for index, item in enumerate(items):
         row, column = divmod(index, 2)
         count = min(2, len(items) - row * 2)
-        left = (WIDTH - count * tile_width - (count - 1) * gap) // 2
+        left = (page_width - count * tile_width - (count - 1) * gap) // 2
         x, y = left + column * (tile_width + gap), gap + row * (tile_height + gap)
         card, missing = _card(item, loader)
         _collect_details(item, missing, details_out)
-        base.alpha_composite(card.resize((tile_width, tile_height), Image.Resampling.LANCZOS), (x, y))
+        base.alpha_composite(card, (x, y))
     return _finish(base)
 
 

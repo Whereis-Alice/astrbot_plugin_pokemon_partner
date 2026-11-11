@@ -2163,8 +2163,8 @@ def test_store_transaction_regressions():
         check("本次里程碑额外次数即时显示", result.daily_limit == 4 and result.remaining == 3)
 
 
-def test_artwork_repair_and_webui_export():
-    section("缓存与 WebUI / 损坏修复、缩略图、导出")
+def test_artwork_repair_and_webui_thumbnail():
+    section("缓存与 WebUI / 损坏修复、缩略图")
     import asyncio
     import base64
     import io
@@ -2202,9 +2202,6 @@ def test_artwork_repair_and_webui_export():
         api = PokemonPartnerWebUI(plugin)
         thumb = Image.open(io.BytesIO(base64.b64decode(api._local_thumbnail(row).partition(",")[2])))
         check("列表缩略图保持 240px 有界尺寸", thumb.size == (240, 240))
-        with patch("webui._query", return_value="group:g"):
-            exported = asyncio.run(api.api_sessions_export())
-        check("导出仅含指定会话并保留结构版本时间", exported["version"] == 2 and exported["data"]["users"]["u"]["dust"] == 42 and "exported_at" in exported and "config" not in exported)
     invalid = [{"gacha_enabled": "false"}, {"pokeapi_timeout": 0}, {"unknown_secret": "x"}]
     errors = 0
     for config in invalid:
@@ -2244,7 +2241,7 @@ if __name__ == "__main__":
     test_render_does_not_block_event_loop()
     test_multi_instance_no_data_loss()
     test_store_transaction_regressions()
-    test_artwork_repair_and_webui_export()
+    test_artwork_repair_and_webui_thumbnail()
     test_draw_card_includes_artwork()
     test_webui_settings_rollback_and_artwork()
     test_webui_bridge_protocol()

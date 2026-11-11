@@ -205,7 +205,7 @@ def assert_text(image, records, *, single):
         left, top, right, bottom = record.box
         assert 24 <= left < right <= image.width - 24, ("文字越过左右边界", record)
         assert 18 <= top < bottom <= image.height - 12, ("文字被画布裁切", record)
-        minimum = 24 if single else 11  # Complete cards are scaled to 506px in a two-column sheet.
+        minimum = 24  # Single and multi-draw cards keep the same native text pixels.
         assert record.size >= minimum, ("中文或状态字过小", record)
         # Large names/titles can use the large-text contrast threshold.
         required = 3 if record.size >= 48 else 4.5
@@ -398,7 +398,7 @@ def main():
         items = (editions + [replace(item, is_new=False, dust=120) for item in editions])[:count]
         image, records = capture_render(items, lambda _: sprite.copy())
         report[f"multi-{count}"] = assert_text(image, records, single=False)
-        assert image.width == 1080 and image.height < 4500
+        assert image.width == 2228 and image.height == 48 + ((count+1)//2)*1800 + ((count+1)//2-1)*20
         values = [record.value for record in records]
         assert not any(any(word in value for word in ("NEW", "新伙伴", "星尘", "保底", "今日剩余")) for value in values), "多抽卡牌仍含状态提示"
         assert sum(value.startswith("#0025") for value in values) == count, ("多抽卡牌数量遗漏", count)

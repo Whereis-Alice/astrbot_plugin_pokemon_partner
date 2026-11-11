@@ -181,6 +181,45 @@ class DailyCardSendTests(unittest.TestCase):
         self.assertEqual(text.count("重复宝可梦自动折算星尘"), 1)
         self.assertNotIn("新宝可梦已加入图鉴", text)
 
+    def test_ten_draws_send_three_bounded_card_images_with_all_results_once(self):
+        from base64 import b64decode
+        self.outcome.items = tuple(
+            SimpleNamespace(row={"id": index}, shiny=False, is_new=True, dust=0,
+                            name=f"精灵{index}", rarity="C", rarity_name="普通")
+            for index in range(1, 11)
+        )
+        self.outcome.requested = self.outcome.daily_limit = 10
+        self.outcome.remaining = 0
+        with patch.object(main, "render_draw_card", side_effect=(b"page1", b"page2", b"page3")) as render:
+            results = self.send()
+        self.assertEqual(len(results), 1)
+        text, *images = results[0]
+        self.assertEqual([len(call.args[0]) for call in render.call_args_list], [4, 4, 2])
+        self.assertEqual([item for call in render.call_args_list for item in call.args[0]],
+                         list(self.outcome.items))
+        self.assertEqual([b64decode(image.file.removeprefix("base64://")) for image in images],
+                         [b"page1", b"page2", b"page3"])
+        for index in range(1, 11):
+            self.assertEqual(text.text.count(f"{index}. 精灵{index}｜"), 1)
+        self.assertEqual(text.text.count("今日剩余"), 1)
+        self.plugin._ensure_artwork.assert_awaited_once()
+
+    def test_one_failed_multi_draw_page_keeps_other_images_and_complete_results(self):
+        self.outcome.items = tuple(
+            SimpleNamespace(row={}, shiny=False, is_new=True, dust=0,
+                            name=f"精灵{index}", rarity="C", rarity_name="普通")
+            for index in range(1, 11)
+        )
+        with patch.object(main, "render_draw_card", side_effect=(b"page1", RuntimeError("page2 failed"), b"page3")) as render:
+            results = self.send()
+        self.assertEqual(render.call_count, 3)
+        self.assertEqual(len(results), 1)
+        text, *images = results[0]
+        self.assertEqual(len(images), 2)
+        for index in range(1, 11):
+            self.assertIn(f"{index}. 精灵{index}｜", text.text)
+        self.plugin._ensure_artwork.assert_awaited_once()
+
     def test_images_disabled_keep_the_same_compact_text_format(self):
         self.plugin.config["enable_image_card"] = False
         with patch.object(main, "render_draw_card") as render:

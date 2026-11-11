@@ -223,9 +223,10 @@ def main():
         for x in editions
     ]
     image, records = render(editions, art=False)
-    assert_text_is_separate(image, [(text, box) for text, box, _ in records])
-    # Two columns keep each complete card; bounds are checked after scaling.
-    assert image.size == (1080, 4343)
+    with patch('card_layout_tests.W', image.width):
+        assert_text_is_separate(image, [(text, box) for text, box, _ in records])
+    # Multi-draw fine print keeps the complete native-size card pixels.
+    assert image.size == (2228, 9128)
     texts = [text for text, _, _ in records]
     assert sum(value.startswith("#0025") for value in texts) == 10
     assert not any("NEW" in value or "星尘" in value for value in texts)

@@ -1,8 +1,7 @@
 """Stable QQ official identities and collection-aware challenge addressing.
 
-Official user/group openids are opaque identifiers, not QQ numbers. A visible
-trainer code resolves only within the current collection scope; it never binds
-an old numeric QQ identity or searches another group.
+Official user/group openids identify profiles and conversations. A visible
+trainer code resolves only within the current collection scope.
 """
 from __future__ import annotations
 

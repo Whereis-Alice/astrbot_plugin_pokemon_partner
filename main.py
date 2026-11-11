@@ -420,25 +420,30 @@ class PokemonPartnerPlugin(Star):
             art_rows.append(item.row)
         await self._ensure_artwork(art_rows)
         details = []
-        try:
-            png = await asyncio.to_thread(
-                render_draw_card,
-                outcome.items,
-                nickname=nickname,
-                remaining=outcome.remaining,
-                daily_limit=outcome.daily_limit,
-                dust=outcome.dust,
-                pity_ssr=outcome.pity_ssr,
-                ssr_pity_after=service.store.rules.ssr_pity_after,
-                image_loader=service.artwork,
-                style=self.config.get("daily_card_style", "classic"),
-                details_out=details,
-                yugioh_profile_black_bold=self.config.get("yugioh_profile_black_bold", False),
-            )
-        except Exception as exc:
-            logger.warning(f"[{PLUGIN_ID}] 抽卡卡片渲染失败: {exc}")
-            png = None
-        if png is None:
+        card_images = []
+        # Keep complete card pixels and bound image height even for ten draws.
+        # Rendering these pages never changes the already committed outcome.
+        for start in range(0, len(outcome.items), 4):
+            try:
+                image = await asyncio.to_thread(
+                    render_draw_card,
+                    outcome.items[start:start + 4],
+                    nickname=nickname,
+                    remaining=outcome.remaining,
+                    daily_limit=outcome.daily_limit,
+                    dust=outcome.dust,
+                    pity_ssr=outcome.pity_ssr,
+                    ssr_pity_after=service.store.rules.ssr_pity_after,
+                    image_loader=service.artwork,
+                    style=self.config.get("daily_card_style", "classic"),
+                    details_out=details,
+                    yugioh_profile_black_bold=self.config.get("yugioh_profile_black_bold", False),
+                )
+                if image:
+                    card_images.append(image)
+            except Exception as exc:
+                logger.warning(f"[{PLUGIN_ID}] 抽卡卡片第 {start // 4 + 1} 页渲染失败: {exc}")
+        if not card_images:
             for part in split_battle_text(text, 1800):
                 yield event.plain_result(part)
             return
@@ -449,7 +454,10 @@ class PokemonPartnerPlugin(Star):
         parts = split_battle_text(text, 1799)
         for part in parts[:-1]:
             yield event.plain_result(part)
-        yield event.chain_result([Comp.Plain(parts[-1] + "\n"), Comp.Image.fromBytes(png)])
+        yield event.chain_result([
+            Comp.Plain(parts[-1] + "\n"),
+            *(Comp.Image.fromBytes(image) for image in card_images),
+        ])
 
     @filter.command("图鉴帮助", alias={"图鉴菜单", "帮助菜单"})
     @official_response
@@ -468,8 +476,6 @@ class PokemonPartnerPlugin(Star):
             code = trainer_code(scope, user_id)
             text = f"【训练家名片】{trainer_label(scope, user_id, nickname)}\n训练家编号：{code}\n"
             text += f"群友可发送“宝可梦挑战 25 @{code} 20”向你挑战；把 25 换成已拥有的图鉴编号或宝可梦名字。"
-            if is_qq_official(event):
-                text += f"\n迁移时管理员使用的会话 ID：{scope}\n成员 ID：{user_id}"
             yield event.plain_result(text)
         except GachaError as exc:
             yield event.plain_result(str(exc))

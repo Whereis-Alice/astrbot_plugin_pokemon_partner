@@ -8,7 +8,6 @@
 import {
   api,
   apiPost,
-  bridge,
   applyTheme,
   confirmAction,
   bytes,
@@ -571,81 +570,10 @@ function setupMembers() {
   const meta = document.getElementById("memberMeta");
   const pager = document.getElementById("memberPager");
   const resetScope = document.getElementById("resetScopeButton");
-  const exportScope = document.getElementById("exportScopeButton");
   let memberVersion = 0;
   let updating = false;
-  exportScope.addEventListener("click", async () => {
-    if (exportScope.disabled) return;
-    exportScope.disabled = true;
-    try {
-      const scope = scopeSel.value;
-      const stamp = new Date().toISOString().slice(0, 10);
-      await bridge.download("migration/export", { scope }, `pokemon-partner-${scope ? "session" : "all"}-${stamp}.json`);
-      toast("完整迁移备份已导出", "success");
-    } catch (error) { toast(`导出失败：${error.message}`, "error"); }
-    finally { exportScope.disabled = false; }
-  });
   const page = { index: 1, size: 20, total: 0 };
   let sessionsLoaded = false;
-  const migrationFile = document.getElementById("migrationFile");
-  const migrationMode = document.getElementById("migrationMode");
-  const migrationScopes = document.getElementById("migrationScopes");
-  const migrationUsers = document.getElementById("migrationUsers");
-  const previewButton = document.getElementById("migrationPreview");
-  const importButton = document.getElementById("migrationApply");
-  const migrationSummary = document.getElementById("migrationSummary");
-  let importPayload = null;
-  let previewVersion = 0;
-  const invalidatePreview = () => { previewVersion++; importPayload = null; importButton.disabled = true; clear(migrationSummary); };
-  for (const field of [migrationFile, migrationMode, migrationScopes, migrationUsers]) field.addEventListener("change", invalidatePreview);
-  for (const field of [migrationScopes, migrationUsers]) field.addEventListener("input", invalidatePreview);
-  previewButton.addEventListener("click", async () => {
-    const version = ++previewVersion;
-    importPayload = null; importButton.disabled = true; previewButton.disabled = true;
-    try {
-      const file = migrationFile.files?.[0];
-      if (!file) throw new Error("请先选择 JSON 备份文件");
-      if (file.size > 32 * 1024 * 1024) throw new Error("备份超过 32 MB，请先按会话导出");
-      const payload = { bundle: JSON.parse(await file.text()), mode: migrationMode.value,
-        scope_map: JSON.parse(migrationScopes.value.trim() || "{}"), user_map: JSON.parse(migrationUsers.value.trim() || "{}") };
-      const result = await apiPost("/migration/preview", payload);
-      if (version !== previewVersion) return;
-      clear(migrationSummary);
-      const summary = result.summary || {};
-      migrationSummary.append(el("p", { text: `备份包含 ${num(summary.scopes)} 个会话、${num(summary.users)} 位成员、${num(summary.collections)} 种收藏、${num(summary.battle_records)} 条对战记录。` }));
-      migrationSummary.append(el("p", { class: "muted", text: `将导入 ${(result.import_scopes || []).length} 个会话，保留 ${(result.skip_scopes || []).length} 个已有会话。` }));
-      for (const warning of result.warnings || []) migrationSummary.append(el("p", { class: "muted", text: String(warning) }));
-      if (result.inactive_partner_keys?.length) migrationSummary.append(el("p", { class: "muted", text: "部分收藏当前未计入卡池，原始收藏数据仍会保留。" }));
-      importPayload = payload;
-      importButton.disabled = !(result.import_scopes || []).length;
-    } catch (error) { if (version === previewVersion) toast(`预览失败：${error.message}`, "error"); }
-    finally { previewButton.disabled = false; }
-  });
-  importButton.addEventListener("click", async () => {
-    if (!importPayload || importButton.disabled) return;
-    const payload = importPayload;
-    if (!(await confirmAction({ title: "导入这份迁移备份？", message: payload.mode === "replace" ? "会先备份当前存档，再替换备份中的对应会话。其他会话保留。" : "会先备份当前存档，再导入新的会话。已有会话保留。", confirmLabel: "备份并导入", danger: payload.mode === "replace" }))) return;
-    if (payload !== importPayload || importButton.disabled) return;
-    importButton.disabled = true; previewButton.disabled = true;
-    for (const field of [migrationFile, migrationMode, migrationScopes, migrationUsers]) field.disabled = true;
-    try {
-      const result = await apiPost("/migration/import", { ...payload, confirmed: true });
-      importPayload = null; clear(migrationSummary);
-      migrationSummary.append(el("p", { text: `导入完成。原数据备份：${result.backup_path || "已保存"}` }));
-      toast("迁移数据已导入", "success");
-      state.loaded.delete("overview");
-      sessionsLoaded = false;
-      try {
-        await loadSessions(true);
-        await load();
-      } catch (error) { toast(`数据已导入，列表刷新失败：${error.message}`, "error"); }
-    } catch (error) { toast(`导入失败：${error.message}`, "error"); }
-    finally {
-      for (const field of [migrationFile, migrationMode, migrationScopes, migrationUsers]) field.disabled = false;
-      previewButton.disabled = false; importButton.disabled = !importPayload;
-    }
-  });
-
   const loadSessions = async (force = false) => {
     if (sessionsLoaded && !force) return;
     const data = await api("/sessions");

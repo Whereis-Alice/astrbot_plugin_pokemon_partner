@@ -181,30 +181,7 @@
               <input id="memberSearch" type="search" placeholder="昵称或用户 ID" autocomplete="off" />
             </label>
             <button class="button ghost" id="resetScopeButton" type="button">重置该会话今日次数</button>
-            <button class="button ghost" id="exportScopeButton" type="button">导出迁移备份</button>
           </div>
-
-          <details class="card migration-card">
-            <summary>数据迁移与恢复</summary>
-            <p class="muted">备份包含收藏、闪光、星尘、抽取进度与对战记录。先预览，确认后导入；导入前自动备份当前数据。</p>
-            <div class="form-grid">
-              <label class="field"><span>选择 JSON 备份</span><input id="migrationFile" type="file" accept=".json,application/json" /></label>
-              <label class="field"><span>已有会话的处理方式</span><select id="migrationMode"><option value="keep_existing">保留已有会话（推荐）</option><option value="replace">替换备份中的对应会话</option></select></label>
-            </div>
-            <details>
-              <summary>更换平台：群聊与成员映射</summary>
-              <p class="muted">QQ 官方 Bot 的 openid 与旧 QQ 号不同。先让成员在新 Bot 登记，再填写明确的对应关系；不会按昵称猜测归属。留空用于同平台搬家。</p>
-              <div class="form-grid">
-                <label class="field"><span>会话映射 JSON（旧会话 → 新会话）</span><textarea id="migrationScopes" rows="3" placeholder='{"group:旧群号":"group:qq_official:新群openid"}'></textarea></label>
-                <label class="field"><span>成员映射 JSON（旧 ID → 新 ID）</span><textarea id="migrationUsers" rows="3" placeholder='{"旧QQ号":"新用户openid"}'></textarea></label>
-              </div>
-            </details>
-            <div class="form-actions">
-              <button class="button ghost" id="migrationPreview" type="button">预览备份</button>
-              <button class="button primary" id="migrationApply" type="button" disabled>确认导入</button>
-            </div>
-            <div id="migrationSummary" role="status" aria-live="polite"></div>
-          </details>
 
           <div class="list-meta" id="memberMeta" aria-live="polite"></div>
           <div class="table-wrap">

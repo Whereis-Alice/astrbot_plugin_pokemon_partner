@@ -566,7 +566,7 @@ def _finish_image(base):
 
 def _encode(image):
     stream = io.BytesIO()
-    image.save(stream, "JPEG", quality=95, optimize=True)
+    image.convert("RGB").save(stream, "JPEG", quality=96, subsampling=0, optimize=False)
     return stream.getvalue()
 
 
@@ -750,20 +750,19 @@ def _single(item, context, loader, details_out=None):
 
 
 def _grid(items, context, loader, details_out=None):
-    # Every cell is the same complete physical card as a single draw. Scale
-    # only after its real layout has collected any fields that need text.
+    # Keep the same pixels as a single draw so fine print remains readable.
+    # The message entrypoint limits each spread to four cards.
     columns, margin, gap = 2, 24, 20
-    cell_width = (WIDTH - 2 * margin - gap) // columns
-    cell_height = round(CARD_HEIGHT * cell_width / WIDTH)
+    cell_width, cell_height = WIDTH, CARD_HEIGHT
+    page_width = columns * cell_width + 2 * margin + gap
     rows = math.ceil(len(items) / columns)
     page_height = 2 * margin + rows * cell_height + (rows - 1) * gap
-    base = Image.new("RGB", (WIDTH, page_height), (238, 237, 231))
+    base = Image.new("RGB", (page_width, page_height), (238, 237, 231))
     for index, item in enumerate(items):
         row, column = divmod(index, columns)
         count = min(columns, len(items) - row * columns)
-        offset = (WIDTH - count * cell_width - (count - 1) * gap) // 2
+        offset = (page_width - count * cell_width - (count - 1) * gap) // 2
         card = _single_image(item, context, loader, details_out)
-        card = card.resize((cell_width, cell_height), Image.Resampling.LANCZOS)
         base.paste(card, (offset + column * (cell_width + gap),
                           margin + row * (cell_height + gap)))
     return _encode(base)
