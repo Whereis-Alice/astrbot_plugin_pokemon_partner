@@ -724,6 +724,9 @@ class PokemonPartnerWebUI:
                     raise ConfigError(f"{key} 不在允许的选项中")
 
         validate(patch, schema)
+        for key in ("qq_official_draw_image_width", "qq_official_draw_image_height"):
+            if key in patch and not 32 <= patch[key] <= 2048:
+                raise ConfigError(f"{key} 必须在 32–2048 像素之间")
         GachaRules.from_config(merged)
         timeout = merged.get("pokeapi_timeout", 15)
         if not 1 <= int(timeout) <= 120:

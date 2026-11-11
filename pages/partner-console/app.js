@@ -881,6 +881,8 @@ const SETTINGS_FIELDS = [
     fields: [
       { key: "qq_official_mode", label: "官方 Bot 富文本", type: "select", default: "auto", options: [["auto", "自动适配（推荐）"], ["raw", "原生 Markdown"], ["template", "已审核 Markdown 模板"], ["off", "普通图文"]], hint: "QQ群和私聊可直接用自定义 Markdown。卡图和战报集中排版；权限不足时自动回退。频道需要相应权限。" },
       { key: "qq_official_buttons", label: "快捷操作按钮", type: "bool", default: true, hint: "按钮需要独立权限，未获权限时保留富文本与卡图。操作默认限定当前训练家。" },
+      { key: "qq_official_draw_image_width", label: "官方 Bot 抽卡图片显示宽度", type: "number", default: 128, min: 32, max: 2048, step: 1, hint: "Markdown 展示宽度上限（像素），与高度一起等比适配；不影响高清原图。" },
+      { key: "qq_official_draw_image_height", label: "官方 Bot 抽卡图片显示高度", type: "number", default: 220, min: 32, max: 2048, step: 1, hint: "Markdown 展示高度上限（像素），单抽与多抽均生效；不影响高清原图。" },
       { key: "qq_official_keyboard_id", label: "按钮模板 ID", type: "text", hint: "可选。留空尝试自定义按钮；填已审批的模板 ID 时使用模板按钮。" },
       { key: "qq_official_command_prefix", label: "按钮指令前缀", type: "text", hint: "留空自动读取当前会话唤醒前缀，通常是 /。" },
       { key: "qq_official_markdown_template_id", label: "Markdown 模板 ID", type: "text", hint: "仅模板模式需要；群和私聊的自动模式无需填写。" },

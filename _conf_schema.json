@@ -182,6 +182,20 @@
     "default": true,
     "hint": "按钮权限与 Markdown 权限独立；权限不足时去掉按钮，保留富文本和卡图。操作按钮限定当前训练家；需要填写的命令先填入输入框。"
   },
+  "qq_official_draw_image_width": {
+    "description": "官方 Bot 抽卡图片显示宽度",
+    "type": "int",
+    "default": 128,
+    "slider": {"min": 32, "max": 2048, "step": 1},
+    "hint": "Markdown 中的图片显示宽度上限（32–2048 像素），与高度一起等比适配，减少消息占用；不影响上传的高清原图。仅影响官方 Bot 的抽卡图片。"
+  },
+  "qq_official_draw_image_height": {
+    "description": "官方 Bot 抽卡图片显示高度",
+    "type": "int",
+    "default": 220,
+    "slider": {"min": 32, "max": 2048, "step": 1},
+    "hint": "Markdown 中的图片显示高度上限（32–2048 像素），与宽度一起等比适配，单抽和多抽均生效；不影响上传的高清原图。仅影响官方 Bot 的抽卡图片。"
+  },
   "qq_official_keyboard_id": {
     "description": "QQ 官方 Bot 按钮模板 ID",
     "type": "string",

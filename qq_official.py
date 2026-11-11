@@ -207,7 +207,15 @@ def _format_draw(text: str) -> tuple[str, list[str]]:
     return '今日宝可梦', result
 
 
-def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, int]] = ()) -> str:
+def _draw_image_limit(config: Mapping, key: str, default: int) -> int:
+    value = config.get(key, default)
+    if isinstance(value, str) and re.fullmatch(r'\s*[0-9]{1,4}\s*', value):
+        value = int(value)
+    return value if type(value) is int and 32 <= value <= 2048 else default
+
+
+def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, int]] = (),
+                   config: Mapping | None = None) -> str:
     """Readable headings/status beside retained, full-resolution card artwork."""
     text = str(text or '').strip()
     if kind == 'draw':
@@ -223,6 +231,9 @@ def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, i
         lines = [_escape(line) for line in lines]
     body = [] if kind == 'draw' else ['# '+_escape(title)]
     if images:
+        config = config or {}
+        draw_width = _draw_image_limit(config, 'qq_official_draw_image_width', 128)
+        draw_height = _draw_image_limit(config, 'qq_official_draw_image_height', 220)
         # Main card art leads the reading flow. The image bytes are uploaded at
         # native resolution; the size hint only controls mobile presentation.
         if kind == 'draw' and lines:
@@ -233,9 +244,11 @@ def build_markdown(text: str, kind='menu', *, images: Sequence[tuple[str, int, i
             tail = lines
         for index, (url, width, height) in enumerate(images, 1):
             if kind == 'draw':
-                # Draw pages retain native card pixels. Keep their real size
-                # in QQ's image hint instead of describing a 640px preview.
-                display_width, display_height = width, height
+                # Fit a compact preview without changing the uploaded artwork.
+                # Limit height as well so multi-draw pages do not fill the chat.
+                scale = min(1, draw_width/max(1, width), draw_height/max(1, height))
+                display_width = max(1, round(width*scale))
+                display_height = max(1, round(height*scale))
             else:
                 display_width = min(640, width)
                 display_height = max(1, round(height*display_width/max(1, width)))
@@ -595,7 +608,7 @@ platforms and unsupported components are left to AstrBot's ordinary sender.
             else:
                 # The documented API also accepts a public external image URL.
                 image_refs.append((image.url, 640, 640))
-        markdown = build_markdown(text, keyboard_kind, images=image_refs)
+        markdown = build_markdown(text, keyboard_kind, images=image_refs, config=config)
         if len(markdown) > MARKDOWN_LIMIT:
             return await fallback()
         payload = {'markdown': _markdown_payload(markdown, config, TITLES.get(keyboard_kind, TITLES['menu']))}

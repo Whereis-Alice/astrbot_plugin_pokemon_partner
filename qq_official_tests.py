@@ -219,17 +219,42 @@ class QQOfficialTests(unittest.IsolatedAsyncioTestCase):
         payload = event.sink.messages[0][2]
         markdown = payload['markdown']['content']
         self.assertEqual(markdown.count('qqbot-media://'), 1)
+        self.assertIn('#128px #200px', markdown)
         self.assertEqual(markdown.splitlines().count('**✦ 单卵细胞球｜C**（NEW）'), 1)
         self.assertLess(markdown.index('**✦ 单卵细胞球'), markdown.index('token-1'))
         self.assertIn('> 狐狸的今日宝可梦是', markdown.splitlines())
         self.assertIn('今日剩余 **2/3**', markdown)
         prepared = [kw['json'] for method, path, kw in event.sink.calls if path.endswith('/prepare')]
         self.assertEqual(prepared[0]['md5'], hashlib.md5(original).hexdigest())
+        self.assertEqual(prepared[0]['sha1'], hashlib.sha1(original).hexdigest())
+        self.assertEqual(prepared[0]['file_size'], len(original))
         self.assertEqual([call.args[1] for call in self.put_mock.await_args_list], [original])
         self.assertEqual(event.sink.prepared, 1)
         self.assertEqual(len(event.sink.deletions), 1)
         rows = payload['keyboard']['content']['rows']
         self.assertEqual([len(row['buttons']) for row in rows], [3, 3])
+
+    async def test_custom_draw_preview_box_is_used_by_native_send_without_resampling_upload(self):
+        event = Event()
+        pages = [card('red', (2190, 3670)), card('gold', (2190, 1855))]
+        text = '小智的今日宝可梦是：\n1. 炎帝｜SSR·传说（NEW）\n2. 皮卡丘｜C·普通（NEW）'
+        config = {'qq_official_draw_image_width': 320,
+                  'qq_official_draw_image_height': 480}
+        self.assertTrue(await qq.adapt_results(
+            event, self.results(event, pages, text), config, keyboard_kind='draw'))
+        self.assertEqual(len(event.sink.messages), 1)
+        payload = event.sink.messages[0][2]
+        markdown = payload['markdown']['content']
+        self.assertIn('#286px #480px', markdown)
+        self.assertIn('#320px #271px', markdown)
+        self.assertTrue(markdown.startswith('> 小智的今日宝可梦是：\n'))
+        self.assertIn('1. **✦ 炎帝｜SSR**（NEW）', markdown.splitlines())
+        self.assertEqual([call.args[1] for call in self.put_mock.await_args_list], pages)
+        prepared = [kw['json'] for method, path, kw in event.sink.calls if path.endswith('/prepare')]
+        self.assertEqual([p['md5'] for p in prepared], [hashlib.md5(p).hexdigest() for p in pages])
+        self.assertEqual([p['sha1'] for p in prepared], [hashlib.sha1(p).hexdigest() for p in pages])
+        self.assertEqual([p['file_size'] for p in prepared], [len(p) for p in pages])
+        self.assertEqual([len(r['buttons']) for r in payload['keyboard']['content']['rows']], [3, 3])
 
     async def test_draw_without_card_keeps_native_title_without_image_upload(self):
         event = Event()
@@ -255,8 +280,9 @@ class QQOfficialTests(unittest.IsolatedAsyncioTestCase):
         payload = event.sink.messages[0][2]
         markdown = payload['markdown']['content']
         self.assertEqual(markdown.count('qqbot-media://'), 3)
-        self.assertEqual(markdown.count('#2190px #3670px'), 2)
-        self.assertIn('#2190px #1855px', markdown)
+        self.assertEqual(markdown.count('#128px #215px'), 2)
+        self.assertIn('#128px #108px', markdown)
+        self.assertNotIn('#2190px', markdown)
         self.assertNotIn('#640px', markdown)
         self.assertTrue(markdown.startswith('> 小智的今日宝可梦是：\n'))
         for index in range(1, 11):
@@ -266,6 +292,8 @@ class QQOfficialTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual([call.args[1] for call in self.put_mock.await_args_list], pages)
         prepared = [kw['json'] for method, path, kw in event.sink.calls if path.endswith('/prepare')]
         self.assertEqual([p['md5'] for p in prepared], [hashlib.md5(p).hexdigest() for p in pages])
+        self.assertEqual([p['sha1'] for p in prepared], [hashlib.sha1(p).hexdigest() for p in pages])
+        self.assertEqual([p['file_size'] for p in prepared], [len(p) for p in pages])
         self.assertEqual([len(r['buttons']) for r in payload['keyboard']['content']['rows']], [3, 3])
         self.assertEqual(event.sink.deletions, [f'/v2/media-images/own-{n}/delete' for n in range(1, 4)])
         self.assertEqual(event.sent, [])
@@ -523,6 +551,71 @@ class PresentationTests(unittest.TestCase):
         rows = qq.build_keyboard(Event(text='我的宝可梦 4'), 'collection')['content']['rows']
         self.assertEqual([b['action']['data'] for b in rows[0]['buttons'][:2]], ['我的宝可梦 3', '我的宝可梦 5'])
 
+    def test_draw_previews_fit_portrait_square_and_landscape_images(self):
+        for source, display in (
+            ((1024, 1600), (128, 200)),
+            ((2190, 3670), (128, 215)),
+            ((2190, 1855), (128, 108)),
+            ((1024, 1024), (128, 128)),
+            ((1800, 900), (128, 64)),
+            ((800, 2400), (73, 220)),
+        ):
+            with self.subTest(source=source):
+                markdown = qq.build_markdown('抽卡结果', 'draw', images=[
+                    ('qqbot-media://image/v1/full-resolution', *source)])
+                self.assertIn(f'#{display[0]}px #{display[1]}px]', markdown)
+                self.assertEqual(markdown.count('qqbot-media://image/v1/full-resolution'), 1)
+
+    def test_draw_previews_do_not_enlarge_small_images(self):
+        for width, height in ((128, 220), (96, 180), (64, 100), (120, 60)):
+            with self.subTest(size=(width, height)):
+                markdown = qq.build_markdown('抽卡结果', 'draw', images=[
+                    ('qqbot-media://image/v1/small', width, height)])
+                self.assertIn(f'#{width}px #{height}px]', markdown)
+
+    def test_invalid_draw_preview_config_falls_back_to_each_default_dimension(self):
+        for invalid in (None, 'invalid', '32.0', '20480', 0, 31, 2049, -320,
+                        320.0, True, False, [], {}):
+            for config, display in (
+                ({'qq_official_draw_image_width': invalid,
+                  'qq_official_draw_image_height': invalid}, (128, 200)),
+                ({'qq_official_draw_image_width': invalid,
+                  'qq_official_draw_image_height': 480}, (128, 200)),
+                ({'qq_official_draw_image_width': 320,
+                  'qq_official_draw_image_height': invalid}, (141, 220)),
+            ):
+                with self.subTest(config=config):
+                    markdown = qq.build_markdown('抽卡结果', 'draw', config=config, images=[
+                        ('qqbot-media://image/v1/full-resolution', 1024, 1600)])
+                    self.assertIn(f'#{display[0]}px #{display[1]}px]', markdown)
+
+    def test_draw_preview_config_accepts_dimension_range_boundaries(self):
+        for config, source, display in (
+            ({'qq_official_draw_image_width': 32,
+              'qq_official_draw_image_height': 32}, (1024, 1024), (32, 32)),
+            ({'qq_official_draw_image_width': 2048,
+              'qq_official_draw_image_height': 2048}, (4096, 8192), (1024, 2048)),
+            ({'qq_official_draw_image_width': 2048,
+              'qq_official_draw_image_height': 2048}, (64, 100), (64, 100)),
+            ({'qq_official_draw_image_width': '320',
+              'qq_official_draw_image_height': '480'}, (1024, 1600), (307, 480)),
+        ):
+            with self.subTest(config=config, source=source):
+                markdown = qq.build_markdown('抽卡结果', 'draw', config=config, images=[
+                    ('qqbot-media://image/v1/full-resolution', *source)])
+                self.assertIn(f'#{display[0]}px #{display[1]}px]', markdown)
+
+    def test_other_presentations_keep_existing_640px_image_width(self):
+        config = {'qq_official_draw_image_width': 128,
+                  'qq_official_draw_image_height': 220}
+        for kind in ('menu', 'collection', 'profile', 'battle', 'challenge'):
+            for source, display in (((1024, 1600), (640, 1000)),
+                                    ((120, 160), (120, 160))):
+                with self.subTest(kind=kind, source=source):
+                    markdown = qq.build_markdown('图文结果', kind, config=config, images=[
+                        ('qqbot-media://image/v1/other', *source)])
+                    self.assertIn(f'#{display[0]}px #{display[1]}px]', markdown)
+
     def test_draw_keeps_existing_copy_new_status_and_card_first(self):
         text = '小智的今日宝可梦是 炎帝｜SSR·传说（NEW）\n今日剩余 2/3 次｜星尘0｜SSR 保底进度 0/30\n重复宝可梦自动折算星尘。'
         markdown = qq.build_markdown(text, 'draw', images=[('qqbot-media://image/v1/test', 1024, 1600)])
@@ -531,6 +624,7 @@ class PresentationTests(unittest.TestCase):
         self.assertIn('**✦ 炎帝｜SSR**（NEW）', markdown.splitlines())
         self.assertNotIn('SSR·传说', markdown)
         self.assertNotIn('# 今日宝可梦\n', markdown)
+        self.assertIn('#128px #200px', markdown)
         self.assertIn('今日剩余 **2/3** 次', markdown)
         self.assertIn('星尘 **0**', markdown)
         self.assertIn('SSR 保底进度 0/30', markdown)

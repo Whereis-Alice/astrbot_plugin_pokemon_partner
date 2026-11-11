@@ -14,6 +14,8 @@ QQ群和 C2C 自定义 Markdown 已于 **2026 年 4 月 23 日全量开放**，�
 | --- | --- | --- |
 | `qq_official_mode` | `auto` | 自动使用原生 Markdown；填写模板 ID 时使用模板。`raw` 强制原生 Markdown，`template` 强制模板模式，`off` 使用普通文字和图片 |
 | `qq_official_buttons` | `true` | 为当前功能附加快捷按钮；未开通按钮权限可关闭 |
+| `qq_official_draw_image_width` | `128` | 抽卡图片在消息内的最大显示宽度（像素），范围 32～2048 |
+| `qq_official_draw_image_height` | `220` | 抽卡图片在消息内的最大显示高度（像素），范围 32～2048 |
 | `qq_official_command_prefix` | 空 | 按钮发出的指令前缀；留空时读取当前 AstrBot 会话的指令前缀 |
 | `qq_official_markdown_template_id` | 空 | 可选的、已审核 Markdown 模板 ID |
 | `qq_official_markdown_title_key` | `title` | 模板中的标题参数名 |
@@ -27,6 +29,8 @@ QQ群和 C2C 自定义 Markdown 已于 **2026 年 4 月 23 日全量开放**，�
 ## 抽卡和快捷按钮
 
 发送 `今日宝可梦`，结果会将宝可梦名字、稀有度与 NEW/闪光标记放在卡片旁，剩余次数、星尘和保底单独显示。图片沿用基础、TCG 或游戏王卡面设置。
+
+单抽和多抽图片在消息内等比缩小展示，默认最大宽 128、高 220；可在配置中调整“官方 Bot 抽卡图片显示宽度”和“官方 Bot 抽卡图片显示高度”。上传保留高清原图，点开可查看细节。
 
 快捷按钮每行三个。抽卡等级只显示 C/R/SR/SSR；开头训练家提示使用原生 Markdown 块引用，名字与等级保持在一行并加粗，NEW、闪光和重复星尘注记以普通括号文字保留。只有卡牌本身是图片。
 

@@ -95,6 +95,34 @@ class SettingsActionTests(unittest.TestCase):
                 self.assertEqual(self.config["battle_output_mode"], "card")
                 self.assertEqual(self.config_path.read_bytes(), before)
 
+    def test_official_draw_image_sizes_persist_and_read_back(self):
+        sizes = {"qq_official_draw_image_width": 128, "qq_official_draw_image_height": 220}
+        for width, height in ((128, 220), (320, 480), (32, 2048)):
+            sizes.update(qq_official_draw_image_width=width, qq_official_draw_image_height=height)
+            with self.subTest(width=width, height=height), patch.object(
+                self.ui, "_body", AsyncMock(return_value={"config": dict(sizes)})
+            ):
+                self.assertEqual(asyncio.run(self.ui.api_settings_save()), {"ok": True})
+                persisted = json.loads(self.config_path.read_text(encoding="utf-8"))
+                loaded = asyncio.run(self.ui.api_settings())["config"]
+                for key, value in sizes.items():
+                    self.assertEqual(persisted[key], value)
+                    self.assertEqual(loaded[key], value)
+                self.assertEqual(persisted["daily_draw_limit"], 3)
+
+    def test_invalid_official_draw_image_sizes_leave_saved_settings_unchanged(self):
+        before = self.config_path.read_bytes()
+        original = dict(self.config)
+        for key in ("qq_official_draw_image_width", "qq_official_draw_image_height"):
+            for value in (0, -1, 31, 2049, True, False, 128.5, "128", None):
+                with self.subTest(key=key, value=value), patch.object(
+                    self.ui, "_body", AsyncMock(return_value={"config": {key: value}})
+                ):
+                    result = asyncio.run(self.ui.api_settings_save())
+                    self.assertFalse(result["ok"])
+                    self.assertEqual(dict(self.config), original)
+                    self.assertEqual(self.config_path.read_bytes(), before)
+
     def test_partial_nested_setting_preserves_other_custom_values(self):
         original = {"C": 70, "R": 20, "SR": 8, "SSR": 2}
         self.config["rarity_weights"] = original
